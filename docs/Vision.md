@@ -1,0 +1,1 @@
+Whetstone is a mobile RPG companion that organises information around what the player is doing rather than around the rulebook.

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'screens/character_vault.dart';
 
 void main() {
   runApp(const WhetstoneApp());
@@ -25,25 +26,3 @@ class WhetstoneApp extends StatelessWidget {
   }
 }
 
-class CharacterVault extends StatelessWidget {
-  const CharacterVault({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Whetstone'),
-      ),
-      body: const Center(
-        child: Text(
-          'Your Characters',
-          style: TextStyle(fontSize: 28),
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {},
-        child: const Icon(Icons.add),
-      ),
-    );
-  }
-}
