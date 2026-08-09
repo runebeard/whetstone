@@ -3,34 +3,45 @@ import '../models/character.dart';
 
 class CharacterCard extends StatelessWidget {
   final Character character;
+  final VoidCallback onTap;
 
   const CharacterCard({
     super.key,
     required this.character,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(character.name),
-            Text(
-              'Level ${character.level} ${character.characterClass}',
-            ),
-            Text(
-              '❤️ ${character.currentHp} / ${character.maxHp}',
-            ),
-            Text(
-              '🛡 AC ${character.ac}',
-            ),
-            Text(
-              character.status,
-            ),
-          ],
+    return InkWell(
+      onTap: onTap,
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                character.name,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                'Level ${character.level} ${character.characterClass}',
+              ),
+              Text(
+                '❤️ HP ${character.currentHp} / ${character.maxHp}',
+              ),
+              Text(
+                '🛡 AC ${character.armourClass}',
+              ),
+              Text(
+                character.status,
+              ),
+            ],
+          ),
         ),
       ),
     );

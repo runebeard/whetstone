@@ -4,7 +4,8 @@ class Character {
   final int level;
   final int currentHp;
   final int maxHp;
-  final int ac;
+  final int armourClass;
+  final int initiativeModifier;
   final String status;
 
   Character({
@@ -13,7 +14,8 @@ class Character {
     required this.level,
     required this.currentHp,
     required this.maxHp,
-    required this.ac,
+    required this.armourClass,
+    required this.initiativeModifier,
     required this.status,
-  });
+    });
 }

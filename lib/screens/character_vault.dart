@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-
 import '../models/character.dart';
 import '../widgets/character_card.dart';
+import 'character_overview.dart';
 
 class CharacterVault extends StatelessWidget {
   const CharacterVault({super.key});
@@ -15,7 +15,8 @@ class CharacterVault extends StatelessWidget {
     level: 6,
     currentHp: 34,
     maxHp: 42,
-    ac: 15,
+    armourClass: 15,
+    initiativeModifier: 2,
     status: 'Exploring',
   ),
   Character(
@@ -24,7 +25,8 @@ class CharacterVault extends StatelessWidget {
     level: 5,
     currentHp: 41,
     maxHp: 44,
-    ac: 16,
+    armourClass: 16,
+    initiativeModifier: 1,
     status: 'In Combat',
   ),
   Character(
@@ -33,7 +35,8 @@ class CharacterVault extends StatelessWidget {
     level: 8,
     currentHp: 62,
     maxHp: 70,
-    ac: 17,
+    armourClass: 17,
+    initiativeModifier: 3,
     status: 'Resting',
   ),
 ];
@@ -47,6 +50,16 @@ class CharacterVault extends StatelessWidget {
         itemBuilder: (context, index) {
           return CharacterCard(
             character: characters[index],
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => CharacterOverview(
+                    character: characters[index],
+                    ),
+                ), 
+              ); 
+            },
           );
         },
       ),
