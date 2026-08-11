@@ -2,7 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
-import '../models/character.dart';
+import '../models/character_state.dart';
 import 'ac_box.dart';
 import 'conditions_box.dart';
 import 'conditions_dialog.dart';
@@ -13,10 +13,16 @@ import 'initiative_roll_dialog.dart';
 import 'stat_edit_dialog.dart';
 
 class CombatSummary extends StatefulWidget {
-  final Character character;
+  final CharacterState characterState;
+  final ValueChanged<CharacterState> onChanged;
   final int Function()? rollD20;
 
-  const CombatSummary({super.key, required this.character, this.rollD20});
+  const CombatSummary({
+    super.key,
+    required this.characterState,
+    required this.onChanged,
+    this.rollD20,
+  });
 
   @override
   State<CombatSummary> createState() => _CombatSummaryState();
@@ -24,97 +30,97 @@ class CombatSummary extends StatefulWidget {
 
 class _CombatSummaryState extends State<CombatSummary> {
   final Random random = Random();
-  late int maxHp;
-  late int currentHp;
-  late int armourClass;
-  late int initiativeModifier;
-  int temporaryHp = 0;
-  int deathSaveSuccesses = 0;
-  int deathSaveFailures = 0;
-  Set<String> activeConditions = {};
 
-  @override
-  void initState() {
-    super.initState();
-    currentHp = widget.character.currentHp;
-    maxHp = widget.character.maxHp;
-    armourClass = widget.character.armourClass;
-    initiativeModifier = widget.character.initiativeModifier;
-  }
+  CharacterState get characterState => widget.characterState;
 
   void changeHp(int newHp) {
-    setState(() {
-      currentHp = newHp.clamp(0, maxHp);
-    });
+    widget.onChanged(
+      characterState.copyWith(currentHp: newHp.clamp(0, characterState.maxHp)),
+    );
   }
 
   void addSuccess() {
-    if (deathSaveSuccesses < 3) {
-      setState(() {
-        deathSaveSuccesses++;
-      });
+    if (characterState.deathSaveSuccesses < 3) {
+      widget.onChanged(
+        characterState.copyWith(
+          deathSaveSuccesses: characterState.deathSaveSuccesses + 1,
+        ),
+      );
     }
   }
 
   void addFailure() {
-    if (deathSaveFailures < 3) {
-      setState(() {
-        deathSaveFailures++;
-      });
+    if (characterState.deathSaveFailures < 3) {
+      widget.onChanged(
+        characterState.copyWith(
+          deathSaveFailures: characterState.deathSaveFailures + 1,
+        ),
+      );
     }
   }
 
   void removeDeathSaveSuccess() {
-    setState(() {
-      if (deathSaveSuccesses > 0) {
-        deathSaveSuccesses--;
-      }
-    });
+    if (characterState.deathSaveSuccesses > 0) {
+      widget.onChanged(
+        characterState.copyWith(
+          deathSaveSuccesses: characterState.deathSaveSuccesses - 1,
+        ),
+      );
+    }
   }
 
   void removeDeathSaveFailure() {
-    setState(() {
-      if (deathSaveFailures > 0) {
-        deathSaveFailures--;
-      }
-    });
+    if (characterState.deathSaveFailures > 0) {
+      widget.onChanged(
+        characterState.copyWith(
+          deathSaveFailures: characterState.deathSaveFailures - 1,
+        ),
+      );
+    }
   }
 
   void applyDamage(int damage) {
     if (damage <= 0) return;
 
-    setState(() {
-      final damageAbsorbedByTempHp = damage > temporaryHp
-          ? temporaryHp
-          : damage;
+    final damageAbsorbedByTempHp = damage > characterState.temporaryHp
+        ? characterState.temporaryHp
+        : damage;
+    final remainingDamage = damage - damageAbsorbedByTempHp;
 
-      temporaryHp -= damageAbsorbedByTempHp;
-
-      final remainingDamage = damage - damageAbsorbedByTempHp;
-
-      currentHp = (currentHp - remainingDamage).clamp(0, maxHp);
-    });
+    widget.onChanged(
+      characterState.copyWith(
+        temporaryHp: characterState.temporaryHp - damageAbsorbedByTempHp,
+        currentHp: (characterState.currentHp - remainingDamage).clamp(
+          0,
+          characterState.maxHp,
+        ),
+      ),
+    );
   }
 
   void applyHealing(int healing) {
     if (healing <= 0) return;
 
-    setState(() {
-      currentHp = (currentHp + healing).clamp(0, maxHp);
+    final currentHp = (characterState.currentHp + healing).clamp(
+      0,
+      characterState.maxHp,
+    );
 
-      if (currentHp > 0) {
-      deathSaveSuccesses = 0;
-      deathSaveFailures = 0;
-      }
-    });
+    widget.onChanged(
+      characterState.copyWith(
+        currentHp: currentHp,
+        deathSaveSuccesses: currentHp > 0
+            ? 0
+            : characterState.deathSaveSuccesses,
+        deathSaveFailures: currentHp > 0 ? 0 : characterState.deathSaveFailures,
+      ),
+    );
   }
 
   void applyTemporaryHp(int newTemporaryHp) {
-    if (newTemporaryHp <= temporaryHp) return;
+    if (newTemporaryHp <= characterState.temporaryHp) return;
 
-    setState(() {
-      temporaryHp = newTemporaryHp;
-    });
+    widget.onChanged(characterState.copyWith(temporaryHp: newTemporaryHp));
   }
 
   void changeMaxHp(int newMaxHp) {
@@ -122,16 +128,18 @@ class _CombatSummaryState extends State<CombatSummary> {
       return;
     }
 
-    setState(() {
-      maxHp = newMaxHp;
-      currentHp = currentHp.clamp(0, maxHp);
-    });
+    widget.onChanged(
+      characterState.copyWith(
+        maxHp: newMaxHp,
+        currentHp: characterState.currentHp.clamp(0, newMaxHp),
+      ),
+    );
   }
 
   Future<void> editMaxHp(BuildContext context) async {
     final newMaxHp = await showDialog<int>(
       context: context,
-      builder: (context) => StatEditDialog(initialValue: maxHp),
+      builder: (context) => StatEditDialog(initialValue: characterState.maxHp),
     );
 
     if (newMaxHp != null) {
@@ -142,13 +150,12 @@ class _CombatSummaryState extends State<CombatSummary> {
   Future<void> editArmourClass(BuildContext context) async {
     final newArmourClass = await showDialog<int>(
       context: context,
-      builder: (context) => StatEditDialog(initialValue: armourClass),
+      builder: (context) =>
+          StatEditDialog(initialValue: characterState.armourClass),
     );
 
     if (newArmourClass != null) {
-      setState(() {
-        armourClass = newArmourClass;
-      });
+      widget.onChanged(characterState.copyWith(armourClass: newArmourClass));
     }
   }
 
@@ -156,16 +163,16 @@ class _CombatSummaryState extends State<CombatSummary> {
     final newInitiativeModifier = await showDialog<int>(
       context: context,
       builder: (context) => StatEditDialog(
-        initialValue: initiativeModifier,
+        initialValue: characterState.initiativeModifier,
         allowNegative: true,
         allowZero: true,
       ),
     );
 
     if (newInitiativeModifier != null) {
-      setState(() {
-        initiativeModifier = newInitiativeModifier;
-      });
+      widget.onChanged(
+        characterState.copyWith(initiativeModifier: newInitiativeModifier),
+      );
     }
   }
 
@@ -175,7 +182,7 @@ class _CombatSummaryState extends State<CombatSummary> {
     return showDialog<void>(
       context: context,
       builder: (context) => InitiativeRollDialog(
-        initiativeModifier: initiativeModifier,
+        initiativeModifier: characterState.initiativeModifier,
         rollD20: rollD20,
       ),
     );
@@ -185,11 +192,11 @@ class _CombatSummaryState extends State<CombatSummary> {
     return showDialog<void>(
       context: context,
       builder: (context) => ConditionsDialog(
-        activeConditions: activeConditions,
+        activeConditions: characterState.activeConditions,
         onChanged: (conditions) {
-          setState(() {
-            activeConditions = conditions;
-          });
+          widget.onChanged(
+            characterState.copyWith(activeConditions: conditions),
+          );
         },
       ),
     );
@@ -213,9 +220,9 @@ class _CombatSummaryState extends State<CombatSummary> {
                 Expanded(
                   flex: 2,
                   child: HpBox(
-                    currentHp: currentHp,
-                    maxHp: maxHp,
-                    temporaryHp: temporaryHp,
+                    currentHp: characterState.currentHp,
+                    maxHp: characterState.maxHp,
+                    temporaryHp: characterState.temporaryHp,
                     onDamage: applyDamage,
                     onHealing: applyHealing,
                     onTemporaryHp: applyTemporaryHp,
@@ -226,13 +233,13 @@ class _CombatSummaryState extends State<CombatSummary> {
                 ),
                 Expanded(
                   child: AcBox(
-                    armourClass: armourClass,
+                    armourClass: characterState.armourClass,
                     onLongPress: () => editArmourClass(context),
                   ),
                 ),
                 Expanded(
                   child: InitiativeBox(
-                    initiativeModifier: initiativeModifier,
+                    initiativeModifier: characterState.initiativeModifier,
                     onTap: () => showInitiativeRoll(context),
                     onLongPress: () => editInitiativeModifier(context),
                   ),
@@ -241,15 +248,15 @@ class _CombatSummaryState extends State<CombatSummary> {
             ),
             const SizedBox(height: 12),
             SizedBox(
-              height: 140,
+              height: 150,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Expanded(
                     child: DeathSaveBox(
-                      successes: deathSaveSuccesses,
-                      failures: deathSaveFailures,
-                      isActive: currentHp == 0,
+                      successes: characterState.deathSaveSuccesses,
+                      failures: characterState.deathSaveFailures,
+                      isActive: characterState.currentHp == 0,
                       onSuccessTap: addSuccess,
                       onFailureTap: addFailure,
                       onSuccessLongPress: removeDeathSaveSuccess,
@@ -259,7 +266,7 @@ class _CombatSummaryState extends State<CombatSummary> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: ConditionsBox(
-                      activeConditions: activeConditions,
+                      activeConditions: characterState.activeConditions,
                       onTap: () => editConditions(context),
                     ),
                   ),

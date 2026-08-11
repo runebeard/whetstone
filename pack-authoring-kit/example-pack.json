@@ -1,0 +1,60 @@
+{
+  "format": "whetstone-content-pack",
+  "schemaVersion": 1,
+  "pack": {
+    "id": "moonfall-d20-adventuring",
+    "name": "Moonfall d20 Adventuring",
+    "gameSystem": "Generic d20 Fantasy",
+    "version": "1.0.0",
+    "author": "Whetstone Example Authors",
+    "description": "Fictional example content demonstrating every supported pack entry type.",
+    "weapons": [
+      {
+        "id": "moonsteel_sabre",
+        "name": "Moonsteel Sabre",
+        "attackModifier": 5,
+        "damage": "1d8 + 3 radiant",
+        "damageFormula": "1d8 + 3",
+        "damageType": "radiant",
+        "range": "Melee"
+      }
+    ],
+    "spells": [
+      {
+        "id": "falling_star",
+        "name": "Falling Star",
+        "level": 1,
+        "prepared": false,
+        "summary": "+5 to hit - 2d6 fire - 90 ft",
+        "rollModifier": 5,
+        "damageFormula": "2d6",
+        "damageType": "fire"
+      }
+    ],
+    "resources": [
+      {
+        "id": "lunar_focus",
+        "name": "Lunar Focus",
+        "maximum": 3,
+        "initialValue": 3,
+        "rechargePeriod": "longRest"
+      }
+    ],
+    "features": [
+      {
+        "id": "star_sense",
+        "name": "Star Sense",
+        "summary": "Gain a +2 bonus when navigating beneath an open sky.",
+        "rollModifier": 2
+      }
+    ],
+    "items": [
+      {
+        "name": "Phial of Moonlight",
+        "quantity": 1,
+        "weightPerItem": 0.5,
+        "category": "consumable"
+      }
+    ]
+  }
+}

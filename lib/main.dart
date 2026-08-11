@@ -1,12 +1,38 @@
 import 'package:flutter/material.dart';
+import 'models/check_roll.dart';
+import 'persistence/character_session_repository.dart';
+import 'persistence/character_definition_repository.dart';
+import 'persistence/content_pack_repository.dart';
+import 'persistence/app_settings_repository.dart';
 import 'screens/character_vault.dart';
 
 void main() {
-  runApp(const WhetstoneApp());
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(
+    WhetstoneApp(
+      repository: FileCharacterSessionRepository(),
+      definitionRepository: FileCharacterDefinitionRepository(),
+      contentPackRepository: FileContentPackRepository(),
+      settingsRepository: FileAppSettingsRepository(),
+    ),
+  );
 }
 
 class WhetstoneApp extends StatelessWidget {
-  const WhetstoneApp({super.key});
+  final CharacterSessionRepository? repository;
+  final CharacterDefinitionRepository? definitionRepository;
+  final DiceRoller? diceRoller;
+  final ContentPackRepository? contentPackRepository;
+  final AppSettingsRepository? settingsRepository;
+
+  const WhetstoneApp({
+    super.key,
+    this.repository,
+    this.definitionRepository,
+    this.diceRoller,
+    this.contentPackRepository,
+    this.settingsRepository,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -21,8 +47,13 @@ class WhetstoneApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const CharacterVault(),
+      home: CharacterVault(
+        repository: repository,
+        definitionRepository: definitionRepository,
+        diceRoller: diceRoller,
+        contentPackRepository: contentPackRepository,
+        settingsRepository: settingsRepository,
+      ),
     );
   }
 }
-

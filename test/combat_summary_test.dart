@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:whetstone/models/character.dart';
+import 'package:whetstone/models/character_state.dart';
 import 'package:whetstone/widgets/combat_summary.dart';
+import 'package:whetstone/widgets/conditions_dialog.dart';
 
 void main() {
   testWidgets('edited max HP controls current HP and healing', (tester) async {
@@ -21,7 +23,7 @@ void main() {
         home: Scaffold(
           body: SizedBox(
             width: 800,
-            child: CombatSummary(character: character),
+            child: _CombatSummaryHarness(character: character),
           ),
         ),
       ),
@@ -77,7 +79,7 @@ void main() {
         home: Scaffold(
           body: SizedBox(
             width: 800,
-            child: CombatSummary(character: character),
+            child: _CombatSummaryHarness(character: character),
           ),
         ),
       ),
@@ -122,7 +124,7 @@ void main() {
         home: Scaffold(
           body: SizedBox(
             width: 800,
-            child: CombatSummary(
+            child: _CombatSummaryHarness(
               character: character,
               rollD20: () => rolls.removeAt(0),
             ),
@@ -170,7 +172,7 @@ void main() {
         home: Scaffold(
           body: SizedBox(
             width: 360,
-            child: CombatSummary(character: character),
+            child: _CombatSummaryHarness(character: character),
           ),
         ),
       ),
@@ -183,7 +185,7 @@ void main() {
     await tester.scrollUntilVisible(
       find.text('Poisoned'),
       200,
-      scrollable: find.byType(Scrollable),
+      scrollable: _conditionsList(),
     );
     await tester.tap(find.text('Poisoned'));
     await tester.tap(find.text('Prone'));
@@ -199,7 +201,7 @@ void main() {
     await tester.scrollUntilVisible(
       find.text('Poisoned'),
       200,
-      scrollable: find.byType(Scrollable),
+      scrollable: _conditionsList(),
     );
     await tester.tap(find.text('Poisoned'));
     await tester.pumpAndSettle();
@@ -213,4 +215,46 @@ void main() {
 
 String? _textAtKey(WidgetTester tester, String key) {
   return tester.widget<Text>(find.byKey(ValueKey(key))).data;
+}
+
+Finder _conditionsList() {
+  return find
+      .descendant(
+        of: find.byType(ConditionsDialog),
+        matching: find.byType(Scrollable),
+      )
+      .last;
+}
+
+class _CombatSummaryHarness extends StatefulWidget {
+  final Character character;
+  final int Function()? rollD20;
+
+  const _CombatSummaryHarness({required this.character, this.rollD20});
+
+  @override
+  State<_CombatSummaryHarness> createState() => _CombatSummaryHarnessState();
+}
+
+class _CombatSummaryHarnessState extends State<_CombatSummaryHarness> {
+  late CharacterState characterState;
+
+  @override
+  void initState() {
+    super.initState();
+    characterState = CharacterState.fromCharacter(widget.character);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CombatSummary(
+      characterState: characterState,
+      onChanged: (updatedState) {
+        setState(() {
+          characterState = updatedState;
+        });
+      },
+      rollD20: widget.rollD20,
+    );
+  }
 }

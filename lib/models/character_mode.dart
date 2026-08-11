@@ -1,5 +1,1 @@
-enum CharacterMode {
-  overview,
-  exploration,
-  combat,
-}
+enum CharacterMode { exploration, combat, spellbook, profile }

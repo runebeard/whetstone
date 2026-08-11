@@ -21,10 +21,18 @@ class DeathSaveRow extends StatelessWidget {
       onTap: onTap,
       onLongPress: onLongPress,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(vertical: 4),
         child: Row(
           children: [
-            Expanded(child: Text(title)),
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.fade,
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
             const SizedBox(width: 6),
             Row(
               mainAxisSize: MainAxisSize.min,

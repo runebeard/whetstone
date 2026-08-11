@@ -1,0 +1,24 @@
+{
+  "format": "whetstone-content-pack",
+  "schemaVersion": 1,
+  "pack": {
+    "id": "your-name-your-pack",
+    "name": "Your Pack Name",
+    "gameSystem": "System and Edition",
+    "version": "1.0.0",
+    "author": "Your Name",
+    "description": "Describe what this pack adds to Whetstone.",
+    "weapons": [],
+    "spells": [],
+    "resources": [],
+    "features": [
+      {
+        "id": "replace_this_example",
+        "name": "Replace This Example",
+        "summary": "Replace this entry with your own content, or remove it after adding another entry.",
+        "rollModifier": null
+      }
+    ],
+    "items": []
+  }
+}

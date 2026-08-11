@@ -9,12 +9,12 @@ class InventoryItemCard extends StatelessWidget {
   final VoidCallback? onLongPress;
 
   const InventoryItemCard({
-  super.key,
-  required this.item,
-  required this.isDepleted,
-  this.onTap,
-  this.onLongPress,
-});
+    super.key,
+    required this.item,
+    required this.isDepleted,
+    this.onTap,
+    this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -26,10 +26,7 @@ class InventoryItemCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: Card(
           child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 10,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             child: Row(
               children: [
                 Expanded(
@@ -47,9 +44,7 @@ class InventoryItemCard extends StatelessWidget {
                       Text(
                         '${item.weightPerItem} lb each • '
                         '${item.totalWeight.toStringAsFixed(1)} lb total',
-                        style: TextStyle(
-                          color: Colors.grey.shade500,
-                        ),
+                        style: TextStyle(color: Colors.grey.shade500),
                       ),
                     ],
                   ),

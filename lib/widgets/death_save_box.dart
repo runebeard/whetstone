@@ -33,6 +33,7 @@ class DeathSaveBox extends StatelessWidget {
               '☠ Death Saves',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
+            const SizedBox(height: 6),
             Opacity(
               opacity: isActive ? 1.0 : 0.4,
               child: IgnorePointer(
@@ -45,6 +46,7 @@ class DeathSaveBox extends StatelessWidget {
                       onTap: onSuccessTap,
                       onLongPress: onSuccessLongPress,
                     ),
+                    const SizedBox(height: 2),
                     DeathSaveRow(
                       title: 'Failures',
                       filledPips: failures,

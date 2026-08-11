@@ -3,10 +3,7 @@ import 'package:flutter/material.dart';
 class DeathSavePip extends StatelessWidget {
   final bool isFilled;
 
-  const DeathSavePip({
-    super.key,
-    required this.isFilled,
-  });
+  const DeathSavePip({super.key, required this.isFilled});
 
   @override
   Widget build(BuildContext context) {
@@ -16,10 +13,7 @@ class DeathSavePip extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: isFilled ? Colors.white : Colors.transparent,
-        border: Border.all(
-          color: Colors.white,
-          width: 2,
-        ),
+        border: Border.all(color: Colors.white, width: 2),
       ),
     );
   }

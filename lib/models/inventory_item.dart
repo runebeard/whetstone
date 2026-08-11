@@ -1,10 +1,4 @@
-enum ItemCategory {
-  consumable,
-  equipment,
-  tool,
-  quest,
-  general,
-}
+enum ItemCategory { consumable, equipment, tool, quest, general }
 
 class InventoryItem {
   final String name;
@@ -24,10 +18,7 @@ class InventoryItem {
     int? quantity,
     double? weightPerItem,
     ItemCategory? category,
-    
-  }) 
-  
-  {
+  }) {
     return InventoryItem(
       name: name ?? this.name,
       quantity: quantity ?? this.quantity,
@@ -35,6 +26,25 @@ class InventoryItem {
       category: category ?? this.category,
     );
   }
+
+  Map<String, Object> toJson() {
+    return {
+      'name': name,
+      'quantity': quantity,
+      'weightPerItem': weightPerItem,
+      'category': category.name,
+    };
+  }
+
+  factory InventoryItem.fromJson(Map<String, Object?> json) {
+    return InventoryItem(
+      name: json['name'] as String,
+      quantity: json['quantity'] as int,
+      weightPerItem: (json['weightPerItem'] as num).toDouble(),
+      category: ItemCategory.values.byName(json['category'] as String),
+    );
+  }
+
   double get totalWeight => weightPerItem * quantity;
   bool get isDepleted => quantity == 0;
 }

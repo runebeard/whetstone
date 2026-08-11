@@ -17,3 +17,8 @@ Phase 4
 Import System
 Data Packs
 Polish
+
+Phase 5
+Pack Authoring and Community Distribution
+Optional Ruleset Modules
+Rules Automation beginning with D&D

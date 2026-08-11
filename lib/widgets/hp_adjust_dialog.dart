@@ -82,7 +82,7 @@ class _HpAdjustDialogState extends State<HpAdjustDialog> {
               _submitAdjustment(HpAdjustmentType.damage);
             },
           ),
-      
+
           const SizedBox(height: 10),
 
           DialogueActionButton(
@@ -102,7 +102,7 @@ class _HpAdjustDialogState extends State<HpAdjustDialog> {
           ),
 
           const SizedBox(height: 12),
-          
+
           TextButton(
             onPressed: () {
               Navigator.pop(context);
