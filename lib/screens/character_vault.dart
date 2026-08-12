@@ -14,6 +14,7 @@ import '../models/weapon.dart';
 import '../widgets/character_card.dart';
 import '../widgets/character_export_dialog.dart';
 import '../widgets/character_import_dialog.dart';
+import '../widgets/app_title.dart';
 import '../widgets/vault_backup_export_dialog.dart';
 import '../widgets/vault_backup_import_dialog.dart';
 import '../persistence/character_session_repository.dart';
@@ -769,7 +770,7 @@ class _CharacterVaultState extends State<CharacterVault> {
 
     if (loadError != null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Whetstone')),
+        appBar: AppBar(title: const WhetstoneAppTitle()),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -809,7 +810,7 @@ class _CharacterVaultState extends State<CharacterVault> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Whetstone'),
+        title: const WhetstoneAppTitle(),
         actions: [
           TextButton.icon(
             key: const ValueKey('content-library'),

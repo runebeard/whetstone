@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'app_info.dart';
 import 'models/check_roll.dart';
 import 'persistence/character_session_repository.dart';
 import 'persistence/character_definition_repository.dart';
@@ -37,7 +38,7 @@ class WhetstoneApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Whetstone',
+      title: appName,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,

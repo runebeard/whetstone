@@ -12,6 +12,7 @@ Character Export
 Full Vault Backup and Restore
 Data Packs
 Pack Authoring Kit
+Friend Test Alpha identification and guidance
 Content Library
 Add from Library during character creation and advancement
 Short Rest

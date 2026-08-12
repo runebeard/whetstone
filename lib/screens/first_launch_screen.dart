@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../app_info.dart';
+import '../widgets/app_title.dart';
+
 class FirstLaunchScreen extends StatelessWidget {
   final VoidCallback onCreateCharacter;
   final VoidCallback onUseSamples;
@@ -13,7 +16,7 @@ class FirstLaunchScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Whetstone')),
+      appBar: AppBar(title: const WhetstoneAppTitle()),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -61,6 +64,12 @@ class FirstLaunchScreen extends StatelessWidget {
                     'choose to export it.',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Friend Test $appBuildLabel',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.labelSmall,
                   ),
                 ],
               ),

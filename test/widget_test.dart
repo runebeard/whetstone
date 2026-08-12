@@ -44,7 +44,7 @@ void main() {
     await tester.pumpWidget(const WhetstoneApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('Whetstone'), findsOneWidget);
+    expect(find.text('Whetstone α'), findsOneWidget);
     expect(find.text('Eldrin'), findsOneWidget);
 
     await tester.tap(find.text('Eldrin'));
@@ -1074,7 +1074,7 @@ void main() {
     await tester.tap(find.text('Exit'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Whetstone'), findsOneWidget);
+    expect(find.text('Whetstone α'), findsOneWidget);
     expect(find.text('Eldrin'), findsOneWidget);
   });
 

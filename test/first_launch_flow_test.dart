@@ -31,6 +31,8 @@ void main() {
 
     await pumpApp();
     expect(find.text('Your characters, ready for play'), findsOneWidget);
+    expect(find.text('Friend Test Alpha 0.1.0'), findsOneWidget);
+    expect(find.byKey(const ValueKey('alpha-release-badge')), findsOneWidget);
     expect(find.text('Eldrin'), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('first-launch-use-samples')));

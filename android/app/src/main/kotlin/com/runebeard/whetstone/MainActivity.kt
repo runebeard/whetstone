@@ -1,4 +1,4 @@
-package com.example.whetstone
+package com.runebeard.whetstone
 
 import io.flutter.embedding.android.FlutterActivity
 

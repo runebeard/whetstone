@@ -114,6 +114,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
+    expect(find.byKey(const ValueKey('alpha-release-badge')), findsOneWidget);
     expect(find.byKey(const ValueKey('content-library')), findsOneWidget);
     expect(find.byKey(const ValueKey('transfer-characters')), findsOneWidget);
   });
