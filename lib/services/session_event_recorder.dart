@@ -47,6 +47,18 @@ class SessionEventRecorder {
         ),
       );
     }
+    if (updated.concentrationSpellId != previous.concentrationSpellId) {
+      events.add(
+        create(
+          SessionEventType.condition,
+          updated.concentrationSpellId == null
+              ? 'Concentration ended'
+              : previous.concentrationSpellId == null
+              ? 'Concentration started'
+              : 'Concentration switched',
+        ),
+      );
+    }
     if (updated.deathSaveSuccesses != previous.deathSaveSuccesses) {
       events.add(
         create(

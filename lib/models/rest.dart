@@ -1,4 +1,6 @@
+import 'ability.dart';
 import 'character.dart';
+import 'check_roll.dart';
 import 'character_resource.dart';
 import 'character_state.dart';
 
@@ -23,6 +25,56 @@ class RestPlan {
   });
 
   bool get hasChanges => changes.isNotEmpty;
+
+  static int hitDieFor(Character character) =>
+      switch (character.characterClass.trim().toLowerCase()) {
+        'barbarian' => 12,
+        'fighter' || 'paladin' || 'ranger' => 10,
+        'sorcerer' || 'wizard' => 6,
+        _ => 8,
+      };
+
+  static int availableHitDice(Character character, CharacterState state) =>
+      (character.level - state.hitDiceSpent).clamp(0, character.level).toInt();
+
+  RestPlan spendHitDice({
+    required Character character,
+    required int count,
+    required DiceRoller roller,
+  }) {
+    if (type != RestType.shortRest ||
+        updatedState.currentHp <= 0 ||
+        updatedState.currentHp >= updatedState.maxHp) {
+      return this;
+    }
+    final constitution = ((character.scoreFor(Ability.constitution) - 10) / 2)
+        .floor();
+    final sides = hitDieFor(character);
+    var hp = updatedState.currentHp;
+    final limit = count.clamp(0, availableHitDice(character, updatedState));
+    final rolls = <int>[];
+    while (rolls.length < limit && hp < updatedState.maxHp) {
+      final roll = roller.rollDie(sides);
+      rolls.add(roll);
+      final healing = (roll + constitution)
+          .clamp(0, updatedState.maxHp - hp)
+          .toInt();
+      hp += healing;
+    }
+    if (rolls.isEmpty) return this;
+    return RestPlan(
+      type: type,
+      updatedState: updatedState.copyWith(
+        currentHp: hp,
+        hitDiceSpent: updatedState.hitDiceSpent + rolls.length,
+      ),
+      changes: [
+        ...changes,
+        'Hit points: ${updatedState.currentHp} → $hp '
+            '(${rolls.length}d$sides rolled: ${rolls.join(', ')})',
+      ],
+    );
+  }
 
   factory RestPlan.forCharacter({
     required RestType type,
@@ -49,7 +101,12 @@ class RestPlan {
     var deathSaveSuccesses = currentState.deathSaveSuccesses;
     var deathSaveFailures = currentState.deathSaveFailures;
 
+    var hitDiceSpent = currentState.hitDiceSpent;
     if (type == RestType.longRest) {
+      if (hitDiceSpent > 0) {
+        changes.add('Recovered $hitDiceSpent Hit Dice');
+        hitDiceSpent = 0;
+      }
       if (currentHp < currentState.maxHp) {
         changes.add('Hit points: $currentHp → ${currentState.maxHp}');
         currentHp = currentState.maxHp;
@@ -69,6 +126,7 @@ class RestPlan {
       type: type,
       updatedState: currentState.copyWith(
         currentHp: currentHp,
+        hitDiceSpent: hitDiceSpent,
         temporaryHp: temporaryHp,
         deathSaveSuccesses: deathSaveSuccesses,
         deathSaveFailures: deathSaveFailures,

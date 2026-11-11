@@ -1,0 +1,45 @@
+WHETSTONE BETA 5 - HOMEBREW CLASS TESTING
+Version: 0.1.0-beta.5+9
+17 October 2026
+
+This is the matching app build for Pack Builder 0.3 and replaces Beta 4 as
+the current friend-testing build. It is a private development-signed beta,
+not a store release or a claim that full custom-class progression is finished.
+
+MAIN TESTING FOCUS
+- Import original homebrew classes from the offline pack builder.
+- Detailed level-1 creation uses authored hit dice, saves, class skills,
+  training, starting equipment, features and resources.
+- Eligible single noncasting classes can save their first level-up to 2.
+- Newly unlocked descriptive/language choices are validated before saving.
+  Existing choices are locked and duplicate choices within a group are blocked.
+- Authored resource maxima can change without refilling spent uses.
+- Character-owned class rules survive reopening without the source pack.
+- Later grants, resource maxima and choices can be previewed from authored data.
+
+OTHER CURRENT EDITOR SUPPORT
+Custom spells expose casting details, Concentration, rituals, components,
+descriptions and repeatable effects. Custom weapons expose categories,
+properties, versatile dice, ammunition and ranges. Custom actions can use
+named prerequisite effects and shared once-per-activation limits.
+
+IMPORTANT LIMITS
+Custom-class saved advancement still stops at level 2 before subclasses.
+Class spellcasting advancement, subclasses, dependent/mastery/contextual
+choice pools, Quick Create and multiclass entry are not enabled by this
+homebrew builder. A level-20 data table is not full playable level-20 support.
+Descriptive option text does not automatically generate rule effects.
+Updating a library pack does not silently migrate existing character snapshots.
+
+INCLUDED PRACTICE CONTENT
+Lantern Warden.pack.json is original practice content, not a book extract.
+It is deliberately not a balanced/full class. Its level-1 Ward uses Sparks;
+level 2 grants Mend/Gift, requires a vocation choice and raises maximum
+Sparks from 3 to 4. Later authored data is preview-only.
+No private source books or private import packs are bundled.
+
+UPGRADING
+Back up the entire vault first. Install the new APK over Beta 4; do not
+uninstall or clear app storage. Check the displayed label says Beta 5 and
+that existing characters and their live state are still present.
+Build/signature checks do not replace real-device upgrade testing.

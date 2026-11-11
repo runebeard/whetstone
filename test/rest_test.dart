@@ -4,6 +4,8 @@ import 'package:whetstone/models/character_resource.dart';
 import 'package:whetstone/models/character_state.dart';
 import 'package:whetstone/models/rest.dart';
 
+import 'support/sequence_dice_roller.dart';
+
 void main() {
   final character = Character(
     name: 'Rest Tester',
@@ -50,6 +52,31 @@ void main() {
     pinnedActionKeys: {},
     resourceValues: {'short': 0, 'long': 1, 'manual': 0},
   );
+
+  test('hit dice heal, survive a save, and recover on a long rest', () {
+    final short =
+        RestPlan.forCharacter(
+          type: RestType.shortRest,
+          character: character,
+          currentState: state,
+        ).spendHitDice(
+          character: character,
+          count: 3,
+          roller: SequenceDiceRoller([6]),
+        );
+    expect(short.updatedState.currentHp, 11);
+    expect(short.updatedState.hitDiceSpent, 1);
+    final restored = CharacterState.fromJson(short.updatedState.toJson());
+    expect(RestPlan.availableHitDice(character, restored), 0);
+
+    final long = RestPlan.forCharacter(
+      type: RestType.longRest,
+      character: character,
+      currentState: restored,
+    );
+    expect(long.updatedState.hitDiceSpent, 0);
+    expect(RestPlan.availableHitDice(character, long.updatedState), 1);
+  });
 
   test('short rest only refills short-rest resources', () {
     final plan = RestPlan.forCharacter(

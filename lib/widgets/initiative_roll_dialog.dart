@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 
+import '../models/check_roll.dart';
 import 'dialogue_action_button.dart';
 
 class InitiativeRollDialog extends StatefulWidget {
   final int initiativeModifier;
   final int Function() rollD20;
+  final bool canRecord;
 
   const InitiativeRollDialog({
     super.key,
     required this.initiativeModifier,
     required this.rollD20,
+    this.canRecord = false,
   });
 
   @override
@@ -17,7 +20,11 @@ class InitiativeRollDialog extends StatefulWidget {
 }
 
 class _InitiativeRollDialogState extends State<InitiativeRollDialog> {
-  late int dieResult;
+  late int firstDie;
+  int? secondDie;
+  D20Mode mode = D20Mode.normal;
+
+  int get dieResult => mode.select(firstDie, secondDie);
 
   int get total => dieResult + widget.initiativeModifier;
 
@@ -28,12 +35,17 @@ class _InitiativeRollDialogState extends State<InitiativeRollDialog> {
   @override
   void initState() {
     super.initState();
-    dieResult = widget.rollD20();
+    rollDice();
+  }
+
+  void rollDice() {
+    firstDie = widget.rollD20();
+    secondDie = mode == D20Mode.normal ? null : widget.rollD20();
   }
 
   void rollAgain() {
     setState(() {
-      dieResult = widget.rollD20();
+      rollDice();
     });
   }
 
@@ -41,11 +53,34 @@ class _InitiativeRollDialogState extends State<InitiativeRollDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Initiative Roll', textAlign: TextAlign.center),
+      scrollable: true,
       content: SizedBox(
         width: 230,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            DropdownButton<D20Mode>(
+              value: mode,
+              items: const [
+                DropdownMenuItem(value: D20Mode.normal, child: Text('Normal')),
+                DropdownMenuItem(
+                  value: D20Mode.advantage,
+                  child: Text('Advantage'),
+                ),
+                DropdownMenuItem(
+                  value: D20Mode.disadvantage,
+                  child: Text('Disadvantage'),
+                ),
+              ],
+              onChanged: (value) {
+                if (value == null || value == mode) return;
+                setState(() {
+                  mode = value;
+                  rollDice();
+                });
+              },
+            ),
+            if (secondDie != null) Text('Rolled $firstDie and $secondDie'),
             _RollValue(
               label: 'd20',
               value: '$dieResult',
@@ -66,6 +101,11 @@ class _InitiativeRollDialogState extends State<InitiativeRollDialog> {
             ),
             const SizedBox(height: 20),
             DialogueActionButton(label: 'Roll Again', onTap: rollAgain),
+            if (widget.canRecord)
+              FilledButton(
+                onPressed: () => Navigator.pop(context, total),
+                child: const Text('Record Initiative'),
+              ),
             const SizedBox(height: 12),
             TextButton(
               onPressed: () => Navigator.pop(context),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/ability.dart';
 import '../models/spell.dart';
 import '../models/check_roll.dart';
 
@@ -33,6 +34,18 @@ class _SpellEditorDialogState extends State<SpellEditorDialog> {
   late final TextEditingController damageTypeController;
   late int level;
   late bool prepared;
+  late bool concentration;
+  late bool repeatableEffect;
+  late bool rollEffectOnCast;
+  late bool ritual;
+  Ability? castingAbility;
+  bool deriveAttackModifier = false;
+  bool scaleCantripDamage = false;
+  int additionalDicePerSlotLevel = 0;
+  bool addCastingModifierToDamage = false;
+  Ability? savingThrowAbility;
+  bool halfDamageOnSave = false;
+  late final Map<String, TextEditingController> castingDetails;
   late bool pinned;
 
   bool get canBePinned => level == 0 || prepared;
@@ -55,6 +68,24 @@ class _SpellEditorDialogState extends State<SpellEditorDialog> {
     );
     level = widget.spell?.level ?? 0;
     prepared = level > 0 && (widget.spell?.prepared ?? false);
+    concentration = widget.spell?.concentration ?? false;
+    repeatableEffect = widget.spell?.repeatableEffect ?? false;
+    rollEffectOnCast = widget.spell?.rollEffectOnCast ?? false;
+    ritual = widget.spell?.ritual ?? false;
+    castingAbility = widget.spell?.castingAbility;
+    deriveAttackModifier = widget.spell?.deriveAttackModifier ?? false;
+    scaleCantripDamage = widget.spell?.scaleCantripDamage ?? false;
+    additionalDicePerSlotLevel = widget.spell?.additionalDicePerSlotLevel ?? 0;
+    addCastingModifierToDamage =
+        widget.spell?.addCastingModifierToDamage ?? false;
+    savingThrowAbility = widget.spell?.savingThrowAbility;
+    halfDamageOnSave = widget.spell?.halfDamageOnSave ?? false;
+    castingDetails = {
+      'Casting time': TextEditingController(text: widget.spell?.castingTime),
+      'Range': TextEditingController(text: widget.spell?.range),
+      'Duration': TextEditingController(text: widget.spell?.duration),
+      'Components': TextEditingController(text: widget.spell?.components),
+    };
     pinned = widget.initiallyPinned && (level == 0 || prepared);
   }
 
@@ -65,11 +96,36 @@ class _SpellEditorDialogState extends State<SpellEditorDialog> {
     rollModifierController.dispose();
     damageController.dispose();
     damageTypeController.dispose();
+    for (final controller in castingDetails.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
   String? requiredText(String? value) {
     return value == null || value.trim().isEmpty ? 'Required' : null;
+  }
+
+  String? castingDetail(String label) {
+    final text = castingDetails[label]!.text.trim();
+    return text.isEmpty ? null : text;
+  }
+
+  Widget abilityPicker(
+    String label,
+    Ability? selected,
+    ValueChanged<Ability?> onChanged,
+  ) {
+    return DropdownButtonFormField<Ability>(
+      decoration: InputDecoration(labelText: label),
+      initialValue: selected,
+      items: [
+        const DropdownMenuItem(child: Text('None')),
+        for (final ability in Ability.values)
+          DropdownMenuItem(value: ability, child: Text(ability.label)),
+      ],
+      onChanged: onChanged,
+    );
   }
 
   void save() {
@@ -80,9 +136,28 @@ class _SpellEditorDialogState extends State<SpellEditorDialog> {
       name: nameController.text.trim(),
       level: level,
       prepared: level > 0 && prepared,
+      concentration: concentration,
+      rollEffectOnCast: damageExpression != null && rollEffectOnCast,
+      repeatableEffect:
+          concentration && damageExpression != null && repeatableEffect,
+      ritual: ritual,
+      castingAbility: castingAbility,
+      deriveAttackModifier: deriveAttackModifier && castingAbility != null,
+      savingThrowAbility: savingThrowAbility,
+      halfDamageOnSave: savingThrowAbility != null && halfDamageOnSave,
+      castingTime: castingDetail('Casting time'),
+      range: castingDetail('Range'),
+      duration: castingDetail('Duration'),
+      components: castingDetail('Components'),
       summary: summaryController.text.trim(),
       rollModifier: int.tryParse(rollModifierController.text),
       damageFormula: damageExpression?.notation,
+      scaleCantripDamage: level == 0 && scaleCantripDamage,
+      additionalDicePerSlotLevel: level > 0 && damageExpression != null
+          ? additionalDicePerSlotLevel
+          : 0,
+      addCastingModifierToDamage:
+          castingAbility != null && addCastingModifierToDamage,
       damageType:
           damageExpression == null || damageTypeController.text.trim().isEmpty
           ? null
@@ -236,6 +311,13 @@ class _SpellEditorDialogState extends State<SpellEditorDialog> {
                           },
                   ),
                   SwitchListTile(
+                    key: const ValueKey('spell-concentration'),
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Concentration'),
+                    value: concentration,
+                    onChanged: (value) => setState(() => concentration = value),
+                  ),
+                  SwitchListTile(
                     key: const ValueKey('spell-pinned'),
                     contentPadding: EdgeInsets.zero,
                     title: const Text('Pin to Combat'),
@@ -248,6 +330,113 @@ class _SpellEditorDialogState extends State<SpellEditorDialog> {
                     onChanged: canBePinned
                         ? (value) => setState(() => pinned = value)
                         : null,
+                  ),
+                  ExpansionTile(
+                    tilePadding: EdgeInsets.zero,
+                    title: const Text('Casting details'),
+                    children: [
+                      abilityPicker(
+                        'Casting ability',
+                        castingAbility,
+                        (value) => setState(() => castingAbility = value),
+                      ),
+                      abilityPicker(
+                        'Target saving throw',
+                        savingThrowAbility,
+                        (value) => setState(() => savingThrowAbility = value),
+                      ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Calculate spell attack bonus'),
+                        subtitle: const Text(
+                          'Uses casting ability and proficiency',
+                        ),
+                        value: deriveAttackModifier && castingAbility != null,
+                        onChanged: castingAbility == null
+                            ? null
+                            : (value) =>
+                                  setState(() => deriveAttackModifier = value),
+                      ),
+                      SwitchListTile(
+                        title: const Text('Add casting modifier to damage'),
+                        value:
+                            castingAbility != null &&
+                            addCastingModifierToDamage,
+                        onChanged: castingAbility == null
+                            ? null
+                            : (value) => setState(
+                                () => addCastingModifierToDamage = value,
+                              ),
+                      ),
+                      if (level == 0)
+                        SwitchListTile(
+                          title: const Text('Scale cantrip damage with level'),
+                          subtitle: const Text(
+                            'Adds one die at levels 5, 11, and 17',
+                          ),
+                          value: scaleCantripDamage,
+                          onChanged: (value) =>
+                              setState(() => scaleCantripDamage = value),
+                        ),
+                      if (savingThrowAbility != null)
+                        SwitchListTile(
+                          title: const Text('Half damage on a successful save'),
+                          value: halfDamageOnSave,
+                          onChanged: (value) =>
+                              setState(() => halfDamageOnSave = value),
+                        ),
+                      if (level > 0 && level < 9)
+                        DropdownButtonFormField<int>(
+                          initialValue: additionalDicePerSlotLevel.clamp(0, 9),
+                          decoration: const InputDecoration(
+                            labelText:
+                                'Extra damage dice per higher slot level',
+                          ),
+                          items: [
+                            for (var count = 0; count <= 9; count++)
+                              DropdownMenuItem(
+                                value: count,
+                                child: Text('$count'),
+                              ),
+                          ],
+                          onChanged: (count) => setState(
+                            () => additionalDicePerSlotLevel = count ?? 0,
+                          ),
+                        ),
+                      if (concentration)
+                        SwitchListTile(
+                          title: const Text(
+                            'Repeat effect while concentrating',
+                          ),
+                          subtitle: const Text(
+                            'Uses the spell’s damage formula',
+                          ),
+                          value: repeatableEffect,
+                          onChanged: (value) =>
+                              setState(() => repeatableEffect = value),
+                        ),
+                      SwitchListTile(
+                        key: const ValueKey('spell-roll-effect-on-cast'),
+                        title: const Text('Roll damage on cast'),
+                        subtitle: const Text(
+                          'For spells without an attack roll',
+                        ),
+                        value: rollEffectOnCast,
+                        onChanged: (value) =>
+                            setState(() => rollEffectOnCast = value),
+                      ),
+                      for (final detail in castingDetails.entries)
+                        TextFormField(
+                          controller: detail.value,
+                          decoration: InputDecoration(labelText: detail.key),
+                        ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Ritual'),
+                        value: ritual,
+                        onChanged: (value) => setState(() => ritual = value),
+                      ),
+                    ],
                   ),
                 ],
               ),

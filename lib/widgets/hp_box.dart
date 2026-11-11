@@ -7,6 +7,7 @@ class HpBox extends StatelessWidget {
   final int maxHp;
   final int temporaryHp;
   final ValueChanged<int> onDamage;
+  final ValueChanged<int>? onCriticalDamage;
   final ValueChanged<int> onHealing;
   final ValueChanged<int> onTemporaryHp;
   final VoidCallback onLongPress;
@@ -17,6 +18,7 @@ class HpBox extends StatelessWidget {
     required this.maxHp,
     required this.temporaryHp,
     required this.onDamage,
+    this.onCriticalDamage,
     required this.onHealing,
     required this.onTemporaryHp,
     required this.onLongPress,
@@ -28,7 +30,9 @@ class HpBox extends StatelessWidget {
       onTap: () async {
         final result = await showDialog<HpAdjustment>(
           context: context,
-          builder: (context) => const HpAdjustDialog(),
+          builder: (context) => HpAdjustDialog(
+            showCriticalDamage: currentHp == 0 && onCriticalDamage != null,
+          ),
         );
 
         if (result == null) {
@@ -38,6 +42,10 @@ class HpBox extends StatelessWidget {
         switch (result.type) {
           case HpAdjustmentType.damage:
             onDamage(result.amount);
+            break;
+
+          case HpAdjustmentType.criticalDamage:
+            onCriticalDamage?.call(result.amount);
             break;
 
           case HpAdjustmentType.healing:

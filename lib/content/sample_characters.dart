@@ -107,6 +107,8 @@ List<Character> get seedCharacters => [
         level: 1,
         prepared: false,
         summary: 'Ritual • Detect magic within 30 ft',
+        ritual: true,
+        concentration: true,
       ),
     ],
     initiallyPinnedActionKeys: const {'spell:fire_bolt', 'spell:magic_missile'},

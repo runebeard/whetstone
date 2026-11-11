@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Whetstone · Pack Builder</title>
+  <link rel="stylesheet" href="builder.css">
+  <script defer src="builder-core.js"></script>
+  <script defer src="builder-ui.js"></script>
+</head>
+<body>
+  <header>
+    <div><p class="eyebrow">WHETSTONE / AUTHORING KIT</p><h1>Your ideas. Ready to play.</h1>
+    <p>Create a homebrew content pack without writing JSON.</p></div>
+    <span class="badge">Offline · stays on your device</span>
+  </header>
+  <nav aria-label="Draft controls">
+    <button id="open">Open draft</button><input id="file" type="file" accept=".json,application/json" hidden>
+    <button id="save">Save draft</button><button id="export" class="primary">Check & export pack</button><button id="example">Try an example</button><button id="class-example">Try a class</button>
+    <button id="new" class="quiet">New pack</button>
+  </nav>
+  <p id="save-state" role="status">Not saved. Save a draft to keep your work; there is no browser autosave.</p>
+  <main>
+    <aside aria-label="Pack contents">
+      <button id="metadata-tab" class="section-button">Pack information</button>
+      <h2>Add content</h2><div class="add-buttons">
+        <button data-add="spell">+ Spell</button><button data-add="action">+ Action</button>
+        <button data-add="weapon">+ Weapon</button><button data-add="resource">+ Resource</button><button data-add="class">+ Class</button>
+      </div>
+      <h2 id="content-title">Your content (0)</h2><div id="entries"></div>
+      <p class="small">Save a <strong>draft</strong> to edit later. Export a <strong>pack</strong> to import into Whetstone. These are different files.</p>
+    </aside>
+    <section class="workspace" aria-labelledby="editor-title">
+      <div class="editor-heading"><h2 id="editor-title">Pack information</h2><button id="remove" class="danger" hidden>Remove entry</button></div>
+      <p id="guidance"></p>
+      <form id="editor" novalidate></form>
+    </section>
+    <section id="review" class="review" aria-labelledby="review-title" tabindex="-1">
+      <h2 id="review-title">Before you export</h2>
+      <div id="messages" role="status"><p>Add some content, then check and export your pack.</p></div>
+      <p class="small">Descriptions explain rules; they do not create automation. Targets, distances, material costs, special triggers and effects on other characters still need player or GM judgement.</p>
+      <p class="small">Author noncasting class grants through level 20, resource maxima and player choices. Later levels are preview-only: playable advancement still stops after level 2, before subclasses. This builder does not edit arbitrary packs or author subclasses.</p>
+      <p class="small">Only distribute content you have permission to share. Licence fields are not permission to redistribute a book.</p>
+    </section>
+  </main>
+  <noscript>This local tool needs JavaScript enabled. It makes no network requests.</noscript>
+</body>
+</html>

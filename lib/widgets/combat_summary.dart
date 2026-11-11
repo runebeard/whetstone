@@ -15,12 +15,19 @@ import 'stat_edit_dialog.dart';
 class CombatSummary extends StatefulWidget {
   final CharacterState characterState;
   final ValueChanged<CharacterState> onChanged;
+  final ValueChanged<int>? onDamageTaken;
   final int Function()? rollD20;
 
+  final VoidCallback? onDeathSaveRoll;
+  final ValueChanged<int>? onInitiativeRecorded;
+
   const CombatSummary({
+    this.onDeathSaveRoll,
+    this.onInitiativeRecorded,
     super.key,
     required this.characterState,
     required this.onChanged,
+    this.onDamageTaken,
     this.rollD20,
   });
 
@@ -79,23 +86,10 @@ class _CombatSummaryState extends State<CombatSummary> {
     }
   }
 
-  void applyDamage(int damage) {
+  void applyDamage(int damage, {bool critical = false}) {
     if (damage <= 0) return;
-
-    final damageAbsorbedByTempHp = damage > characterState.temporaryHp
-        ? characterState.temporaryHp
-        : damage;
-    final remainingDamage = damage - damageAbsorbedByTempHp;
-
-    widget.onChanged(
-      characterState.copyWith(
-        temporaryHp: characterState.temporaryHp - damageAbsorbedByTempHp,
-        currentHp: (characterState.currentHp - remainingDamage).clamp(
-          0,
-          characterState.maxHp,
-        ),
-      ),
-    );
+    widget.onChanged(characterState.takeDamage(damage, critical: critical));
+    widget.onDamageTaken?.call(damage);
   }
 
   void applyHealing(int healing) {
@@ -178,14 +172,18 @@ class _CombatSummaryState extends State<CombatSummary> {
 
   int rollD20() => widget.rollD20?.call() ?? random.nextInt(20) + 1;
 
-  Future<void> showInitiativeRoll(BuildContext context) {
-    return showDialog<void>(
+  Future<void> showInitiativeRoll(BuildContext context) async {
+    final initiative = await showDialog<int>(
       context: context,
       builder: (context) => InitiativeRollDialog(
         initiativeModifier: characterState.initiativeModifier,
         rollD20: rollD20,
+        canRecord: widget.onInitiativeRecorded != null,
       ),
     );
+    if (mounted && initiative != null) {
+      widget.onInitiativeRecorded?.call(initiative);
+    }
   }
 
   Future<void> editConditions(BuildContext context) {
@@ -193,6 +191,10 @@ class _CombatSummaryState extends State<CombatSummary> {
       context: context,
       builder: (context) => ConditionsDialog(
         activeConditions: characterState.activeConditions,
+        conditionTurns: characterState.conditionTurns,
+        onTimersChanged: (timers) {
+          widget.onChanged(characterState.copyWith(conditionTurns: timers));
+        },
         onChanged: (conditions) {
           widget.onChanged(
             characterState.copyWith(activeConditions: conditions),
@@ -224,6 +226,8 @@ class _CombatSummaryState extends State<CombatSummary> {
                     maxHp: characterState.maxHp,
                     temporaryHp: characterState.temporaryHp,
                     onDamage: applyDamage,
+                    onCriticalDamage: (damage) =>
+                        applyDamage(damage, critical: true),
                     onHealing: applyHealing,
                     onTemporaryHp: applyTemporaryHp,
                     onLongPress: () {
@@ -257,6 +261,9 @@ class _CombatSummaryState extends State<CombatSummary> {
                       successes: characterState.deathSaveSuccesses,
                       failures: characterState.deathSaveFailures,
                       isActive: characterState.currentHp == 0,
+                      onRoll: characterState.canRollDeathSave
+                          ? widget.onDeathSaveRoll
+                          : null,
                       onSuccessTap: addSuccess,
                       onFailureTap: addFailure,
                       onSuccessLongPress: removeDeathSaveSuccess,

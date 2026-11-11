@@ -4,6 +4,7 @@ import '../models/ability.dart';
 import '../models/character.dart';
 import '../models/character_action.dart';
 import '../models/character_resource.dart';
+import '../models/character_session.dart';
 import '../models/character_state.dart';
 import '../widgets/action_card.dart';
 import '../widgets/combat_summary.dart';
@@ -15,10 +16,19 @@ class CombatModeView extends StatelessWidget {
   final Character character;
   final CharacterState characterState;
   final ValueChanged<CharacterState> onCharacterStateChanged;
+  final ValueChanged<int>? onDamageTaken;
   final ValueChanged<CharacterAction> onActionTap;
   final ValueChanged<CharacterAction> onActionDetails;
   final ValueChanged<CharacterAction> onAttackRoll;
   final ValueChanged<CharacterAction> onDamageRoll;
+  final VoidCallback? onDeathSaveRoll;
+  final int combatRound;
+  final int? combatInitiative;
+  final ValueChanged<int>? onInitiativeRecorded;
+  final int Function()? rollD20;
+  final Set<CombatActionCost> usedCombatActions;
+  final void Function(CombatActionCost, bool)? onCombatActionChanged;
+  final VoidCallback? onNextTurn;
   final ValueChanged<CharacterAction> onTogglePinned;
   final ValueChanged<SavingThrowCheck> onSavingThrowTap;
   final ValueChanged<CharacterResource> onResourceSpend;
@@ -29,10 +39,19 @@ class CombatModeView extends StatelessWidget {
     required this.character,
     required this.characterState,
     required this.onCharacterStateChanged,
+    this.onDamageTaken,
     required this.onActionTap,
     required this.onActionDetails,
     required this.onAttackRoll,
     required this.onDamageRoll,
+    this.onDeathSaveRoll,
+    this.combatRound = 1,
+    this.combatInitiative,
+    this.onInitiativeRecorded,
+    this.rollD20,
+    this.usedCombatActions = const {},
+    this.onCombatActionChanged,
+    this.onNextTurn,
     required this.onTogglePinned,
     required this.onSavingThrowTap,
     required this.onResourceSpend,
@@ -62,13 +81,16 @@ class CombatModeView extends StatelessWidget {
         const SizedBox(height: 8),
         for (final action in actions)
           if (showRollControls &&
-              (action.rollModifier != null || action.damageFormula != null))
+              (character.attackModifierFor(action) != null ||
+                  action.damageFormula != null))
             CombatActionCard(
               action: action,
               controlKeyPrefix: title.toLowerCase().replaceAll(' ', '-'),
               isPinned: isPinned(action),
               onDetails: () => onActionDetails(action),
-              onAttack: action.rollModifier == null
+              attackModifier: character.attackModifierFor(action),
+              damageFormula: character.damageFormulaFor(action),
+              onAttack: character.attackModifierFor(action) == null
                   ? null
                   : () => onAttackRoll(action),
               onDamage: action.damageFormula == null
@@ -111,8 +133,40 @@ class CombatModeView extends StatelessWidget {
           CombatSummary(
             characterState: characterState,
             onChanged: onCharacterStateChanged,
+            onDamageTaken: onDamageTaken,
+            onDeathSaveRoll: onDeathSaveRoll,
+            onInitiativeRecorded: onInitiativeRecorded,
+            rollD20: rollD20,
           ),
           const SizedBox(height: 20),
+          if (onNextTurn != null) ...[
+            Wrap(
+              spacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text('Round $combatRound'),
+                if (combatInitiative case final initiative?)
+                  Text('Initiative $initiative'),
+                OutlinedButton(
+                  onPressed: onNextTurn,
+                  child: const Text('Next Turn'),
+                ),
+              ],
+            ),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final cost in CombatActionCost.values)
+                  FilterChip(
+                    label: Text(cost.label),
+                    selected: usedCombatActions.contains(cost),
+                    onSelected: (used) =>
+                        onCombatActionChanged?.call(cost, used),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
           buildActionSection('Attacks', attacks, showRollControls: true),
           buildActionSection('Actions', pinnedFeatures),
           buildActionSection(

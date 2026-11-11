@@ -1,0 +1,169 @@
+{
+  "format": "whetstone-content-pack",
+  "schemaVersion": 3,
+  "pack": {
+    "id": "homebrew-af434029-d2f0-44be-9582-315339e9b055",
+    "name": "Test",
+    "author": "Test",
+    "version": "1.0.0",
+    "gameSystem": "D&D 2024",
+    "description": "Test",
+    "weapons": [
+      {
+        "id": "weapon-08cec32f8ed80c51-5df989af-6417-494f-ad48-b01e8fefb2da",
+        "name": "Deathblade",
+        "attackModifier": 0,
+        "damage": "1d8 slashing",
+        "damageFormula": "1d8",
+        "damageDice": "1d8",
+        "damageType": "slashing",
+        "range": "Melee",
+        "attackAbility": "dexterity",
+        "finesse": true,
+        "addProficiencyBonus": true,
+        "addAbilityToDamage": true,
+        "equipmentBonus": 0,
+        "category": "martialMelee",
+        "properties": [
+          "finesse",
+          "thrown"
+        ]
+      }
+    ],
+    "spells": [],
+    "features": [
+      {
+        "id": "action-08cec32f8ed80c51-263aed3c-ae44-4616-b940-3cfc75b8e9de",
+        "name": "Mark prey",
+        "summary": "Magically places and invisible mark on an enemy. You can sense the direction of your prey up to 1 mile away. When within visible range, the marked enemy has a faint aura to distinguish them from others and attacks against said enemy cause 1d6 bonus damage and critically hit on 19 or 20.",
+        "actionMenu": {
+          "title": "Mark prey",
+          "resourceId": "resource-08cec32f8ed80c51-bcf6dcaf-0a97-478e-8193-1417511ead08",
+          "options": [
+            {
+              "id": "action-08cec32f8ed80c51-263aed3c-ae44-4616-b940-3cfc75b8e9de:use",
+              "label": "Mark prey",
+              "detail": "Magically places and invisible mark on an enemy. You can sense the direction of your prey up to 1 mile away. When within visible range, the marked enemy has a faint aura to distinguish them from others and attacks against said enemy cause 1d6 bonus damage and critically hit on 19 or 20.",
+              "effect": "spend",
+              "resourceCost": 1,
+              "actionCost": "bonusAction"
+            }
+          ]
+        }
+      },
+      {
+        "id": "action-08cec32f8ed80c51-69e05691-979a-4876-a6c0-95b6dca83f4b",
+        "name": "Silent hunter",
+        "summary": "Grants proficiency to stealth checks. If character already has stealth proficiency, they gain expertise in stealth."
+      },
+      {
+        "id": "action-08cec32f8ed80c51-0b865fc8-4164-4ff0-95a3-50df6ae3dfc4",
+        "name": "Shadow step",
+        "summary": "If stood in shadow, allows the character to spend a reaction to teleport to another shadowed spot within 60ft. This feature can be used a number of times equal to half their dexterity modifier rounded down. (minimum 1). This feature's charges are restored on a short rest."
+      }
+    ],
+    "resources": [
+      {
+        "id": "resource-08cec32f8ed80c51-bcf6dcaf-0a97-478e-8193-1417511ead08",
+        "name": "Deathmarks",
+        "maximum": 3,
+        "initialValue": 3,
+        "rechargePeriod": "longRest"
+      }
+    ],
+    "items": [
+      {
+        "id": "gear-08cec32f8ed80c51-5df989af-6417-494f-ad48-b01e8fefb2da",
+        "name": "Deathblade",
+        "quantity": 1,
+        "weightPerItem": 0,
+        "category": "weapon",
+        "equipped": false,
+        "linkedWeaponId": "weapon-08cec32f8ed80c51-5df989af-6417-494f-ad48-b01e8fefb2da"
+      }
+    ],
+    "feats": [],
+    "rulesets": [],
+    "classes": [
+      {
+        "id": "class-08cec32f8ed80c51-4c8eb3c1-fc54-48e7-8f8e-0aab09118a1c",
+        "name": "Deathstalker",
+        "description": "Chubby",
+        "hitDie": 8,
+        "savingThrows": [
+          "strength",
+          "wisdom"
+        ],
+        "skillChoiceCount": 2,
+        "skillOptions": [
+          "nature",
+          "stealth",
+          "investigation",
+          "survival",
+          "acrobatics"
+        ],
+        "subclassLevels": [
+          3
+        ],
+        "featureIdsByLevel": {
+          "1": [
+            "action-08cec32f8ed80c51-69e05691-979a-4876-a6c0-95b6dca83f4b"
+          ],
+          "2": [
+            "action-08cec32f8ed80c51-0b865fc8-4164-4ff0-95a3-50df6ae3dfc4"
+          ],
+          "3": [
+            "action-08cec32f8ed80c51-263aed3c-ae44-4616-b940-3cfc75b8e9de"
+          ]
+        },
+        "resources": {
+          "grantLevels": {
+            "resource-08cec32f8ed80c51-bcf6dcaf-0a97-478e-8193-1417511ead08": 3
+          },
+          "scaling": [
+            {
+              "resourceId": "resource-08cec32f8ed80c51-bcf6dcaf-0a97-478e-8193-1417511ead08",
+              "baseByLevel": {
+                "3": 3,
+                "5": 4
+              },
+              "minimum": 1
+            }
+          ]
+        },
+        "entryRules": {
+          "initialTraining": {
+            "weapons": [
+              "martial",
+              "simple"
+            ],
+            "armour": [
+              "light",
+              "medium"
+            ]
+          },
+          "multiclassTraining": {
+            "weapons": [],
+            "armour": []
+          },
+          "multiclassPrerequisites": null,
+          "multiclassSkills": {
+            "count": 0,
+            "options": []
+          },
+          "equipmentOptions": [
+            {
+              "id": "starting",
+              "label": "Starting weapons and gold",
+              "items": {
+                "gear-08cec32f8ed80c51-5df989af-6417-494f-ad48-b01e8fefb2da": 1
+              },
+              "gold": 50
+            }
+          ]
+        },
+        "choices": []
+      }
+    ]
+  }
+}

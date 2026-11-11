@@ -1,5 +1,20 @@
 import 'dart:math';
 
+enum D20Mode {
+  normal('Normal'),
+  advantage('Advantage'),
+  disadvantage('Disadvantage');
+
+  const D20Mode(this.label);
+  final String label;
+
+  int select(int first, int? second) => switch (this) {
+    D20Mode.normal => first,
+    D20Mode.advantage => max(first, second!),
+    D20Mode.disadvantage => min(first, second!),
+  };
+}
+
 class CheckRoll {
   final String label;
   final int naturalRoll;
@@ -72,6 +87,12 @@ class DiceExpression {
     final sign = modifier > 0 ? '+' : '−';
     return '${diceCount}d$dieSides $sign ${modifier.abs()}';
   }
+
+  DiceExpression withCriticalHitDice() => DiceExpression(
+    diceCount: diceCount * 2,
+    dieSides: dieSides,
+    modifier: modifier,
+  );
 
   DamageRoll roll(String label, DiceRoller diceRoller) {
     return DamageRoll(

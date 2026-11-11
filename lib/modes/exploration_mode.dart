@@ -17,6 +17,7 @@ class ExplorationModeView extends StatelessWidget {
   final Character character;
   final CharacterState characterState;
   final ValueChanged<CharacterState> onCharacterStateChanged;
+  final ValueChanged<int>? onDamageTaken;
   final List<InventoryItem> inventory;
   final VoidCallback onBeginCombat;
   final VoidCallback onAddItemFromLibrary;
@@ -35,6 +36,7 @@ class ExplorationModeView extends StatelessWidget {
     required this.character,
     required this.characterState,
     required this.onCharacterStateChanged,
+    this.onDamageTaken,
     required this.inventory,
     required this.onBeginCombat,
     required this.onAddItemFromLibrary,
@@ -76,6 +78,7 @@ class ExplorationModeView extends StatelessWidget {
           CombatSummary(
             characterState: characterState,
             onChanged: onCharacterStateChanged,
+            onDamageTaken: onDamageTaken,
           ),
           const SizedBox(height: 16),
           FilledButton.icon(

@@ -11,6 +11,10 @@ class ContentPack {
   final String version;
   final String author;
   final String description;
+  final Map<String, Object?>? classPackPayload;
+  final List<String> classNames;
+  bool get isClassPackPreview => classPackPayload != null;
+
   final List<Weapon> weapons;
   final List<Spell> spells;
   final List<CharacterResource> resources;
@@ -24,6 +28,8 @@ class ContentPack {
     required this.version,
     required this.author,
     required this.description,
+    this.classPackPayload,
+    this.classNames = const [],
     this.weapons = const [],
     this.spells = const [],
     this.resources = const [],
@@ -36,7 +42,8 @@ class ContentPack {
       spells.length +
       resources.length +
       features.length +
-      items.length;
+      items.length +
+      classNames.length;
 
   Map<String, Object> toJson() {
     return {
@@ -95,10 +102,51 @@ class ContentPack {
           )
           .toList(),
       'items': items.map((item) => item.toJson()).toList(),
+      'classPackPayload': ?classPackPayload,
     };
   }
 
+  factory ContentPack.fromClassPackJson(Map<String, Object?> json) {
+    String requiredText(Map<String, Object?> object, String key) {
+      final value = object[key];
+      if (value is! String || value.trim().isEmpty) {
+        throw FormatException('Class pack is missing a valid $key.');
+      }
+      return value;
+    }
+
+    final classes = json['classes'];
+    if (classes is! List || classes.isEmpty || classes.length > 20) {
+      throw const FormatException('Expected between 1 and 20 pack classes.');
+    }
+    final ids = <String>{};
+    final names = <String>[];
+    for (final entry in classes) {
+      if (entry is! Map<String, Object?> ||
+          !ids.add(requiredText(entry, 'id'))) {
+        throw const FormatException('Invalid or duplicate pack class.');
+      }
+      names.add(requiredText(entry, 'name'));
+    }
+
+    // Keep the full export while class rules are available for preview only.
+    return ContentPack(
+      id: requiredText(json, 'id'),
+      name: requiredText(json, 'name'),
+      gameSystem: requiredText(json, 'gameSystem'),
+      version: requiredText(json, 'version'),
+      author: requiredText(json, 'author'),
+      description: requiredText(json, 'description'),
+      classPackPayload: Map.unmodifiable(json),
+      classNames: List.unmodifiable(names),
+    );
+  }
+
   factory ContentPack.fromJson(Map<String, Object?> json) {
+    final classPackPayload = json['classPackPayload'];
+    if (classPackPayload is Map<String, Object?>) {
+      return ContentPack.fromClassPackJson(classPackPayload);
+    }
     return ContentPack(
       id: json['id'] as String,
       name: json['name'] as String,

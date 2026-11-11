@@ -76,10 +76,19 @@ class PortableCharacterDocument {
       throw const FormatException('The character identity is incomplete.');
     }
     final state = session.characterState;
+    final concentrationSlotLevel = state.concentrationSlotLevel;
+    final concentrationTurns = state.concentrationTurnsRemaining;
     if (state.maxHp < 1 ||
         state.currentHp < 0 ||
         state.currentHp > state.maxHp ||
         state.temporaryHp < 0 ||
+        state.hitDiceSpent < 0 ||
+        (concentrationTurns != null &&
+            (concentrationTurns < 1 || state.concentrationSpellId == null)) ||
+        (concentrationSlotLevel != null &&
+            (state.concentrationSpellId == null ||
+                concentrationSlotLevel < 1 ||
+                concentrationSlotLevel > 9)) ||
         state.deathSaveSuccesses < 0 ||
         state.deathSaveSuccesses > 3 ||
         state.deathSaveFailures < 0 ||

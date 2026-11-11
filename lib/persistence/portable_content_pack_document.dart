@@ -20,8 +20,8 @@ class PortableContentPackDocument {
   Map<String, Object> toJson() {
     return {
       'format': format,
-      'schemaVersion': currentSchemaVersion,
-      'pack': pack.toJson(),
+      'schemaVersion': pack.isClassPackPreview ? 3 : currentSchemaVersion,
+      'pack': pack.classPackPayload ?? pack.toJson(),
     };
   }
 
@@ -44,7 +44,7 @@ class PortableContentPackDocument {
       throw const FormatException('This is not a Whetstone content pack.');
     }
     final version = json['schemaVersion'];
-    if (version != currentSchemaVersion) {
+    if (version != currentSchemaVersion && version != 3) {
       throw UnsupportedPortableContentPackVersion(
         version is int ? version : -1,
       );
@@ -53,7 +53,9 @@ class PortableContentPackDocument {
     if (packJson is! Map<String, Object?>) {
       throw const FormatException('Content-pack data is missing.');
     }
-    final pack = ContentPack.fromJson(packJson);
+    final pack = version == 3
+        ? ContentPack.fromClassPackJson(packJson)
+        : ContentPack.fromJson(packJson);
     validate(pack);
     return PortableContentPackDocument(pack: pack);
   }

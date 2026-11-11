@@ -6,6 +6,8 @@ import '../models/check_roll.dart';
 class CombatActionCard extends StatelessWidget {
   final CharacterAction action;
   final bool isPinned;
+  final int? attackModifier;
+  final String? damageFormula;
   final VoidCallback onDetails;
   final VoidCallback? onAttack;
   final VoidCallback? onDamage;
@@ -18,6 +20,8 @@ class CombatActionCard extends StatelessWidget {
     required this.isPinned,
     required this.onDetails,
     required this.controlKeyPrefix,
+    this.attackModifier,
+    this.damageFormula,
     this.onAttack,
     this.onDamage,
     this.onLongPress,
@@ -31,12 +35,12 @@ class CombatActionCard extends StatelessWidget {
   };
 
   String get hitLabel {
-    final modifier = action.rollModifier!;
+    final modifier = (attackModifier ?? action.rollModifier)!;
     return modifier >= 0 ? 'Hit +$modifier' : 'Hit −${modifier.abs()}';
   }
 
   String get damageLabel {
-    final formula = action.damageFormula!.trim();
+    final formula = (damageFormula ?? action.damageFormula)!.trim();
     final expression = DiceExpression.tryParse(formula);
     return 'Dmg ${expression?.notation ?? formula}';
   }
@@ -50,7 +54,7 @@ class CombatActionCard extends StatelessWidget {
     ) {
       if (part.isEmpty) return false;
       final lower = part.toLowerCase();
-      if (action.rollModifier != null &&
+      if ((attackModifier ?? action.rollModifier) != null &&
           (lower.contains('to hit') ||
               lower.contains('attack roll') ||
               lower.contains('spell attack'))) {

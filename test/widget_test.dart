@@ -351,6 +351,31 @@ void main() {
     expect(find.text('Mistaken Quest'), findsNothing);
   });
 
+  testWidgets('the next roll menu applies advantage once', (tester) async {
+    await tester.pumpWidget(
+      WhetstoneApp(diceRoller: SequenceDiceRoller([4, 17, 8])),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Eldrin'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Next d20 roll: Normal'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Advantage'));
+    await tester.pumpAndSettle();
+
+    final perception = find.widgetWithText(SkillTile, 'Perception');
+    await tester.ensureVisible(perception);
+    await tester.tap(perception);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Advantage: 4, 17'), findsOneWidget);
+    expect(find.byTooltip('Next d20 roll: Normal'), findsOneWidget);
+
+    await tester.tap(perception);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('d20 8'), findsOneWidget);
+  });
+
   testWidgets('rolls skills, saves, weapons, and configured spell attacks', (
     tester,
   ) async {
@@ -459,6 +484,80 @@ void main() {
 
     await tester.pump(const Duration(milliseconds: 1100));
     expect(find.byKey(const ValueKey('latest-roll-notice')), findsNothing);
+  });
+
+  testWidgets('a natural 20 death save restores HP and explains the result', (
+    tester,
+  ) async {
+    await tester.pumpWidget(WhetstoneApp(diceRoller: SequenceDiceRoller([20])));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Eldrin'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Combat'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.check));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('❤️ HP'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '100');
+    await tester.tap(find.textContaining('Damage'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('roll-death-save')));
+    await tester.pumpAndSettle();
+    expect(find.text('Natural 20 · Recovered 1 HP'), findsOneWidget);
+    expect(find.textContaining(RegExp(r'^1 / \d+$')), findsOneWidget);
+    expect(find.byKey(const ValueKey('roll-death-save')), findsNothing);
+  });
+
+  testWidgets('a natural 20 doubles only the next matching damage roll', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      WhetstoneApp(diceRoller: SequenceDiceRoller([20, 5, 7, 4, 6, 3])),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Eldrin'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Combat'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.check));
+    await tester.pumpAndSettle();
+
+    final attack = find.byKey(
+      const ValueKey('attack-attacks-weapon:quarterstaff'),
+    );
+    final damage = find.byKey(
+      const ValueKey('damage-attacks-weapon:quarterstaff'),
+    );
+    await tester.ensureVisible(attack);
+    await tester.tap(attack);
+    await tester.pumpAndSettle();
+    final otherDamage = find.byKey(
+      const ValueKey('damage-attacks-spell:fire_bolt'),
+    );
+    await tester.ensureVisible(otherDamage);
+    await tester.tap(otherDamage);
+    await tester.pumpAndSettle();
+    expect(find.text('Fire Bolt Damage'), findsOneWidget);
+
+    await tester.ensureVisible(damage);
+    await tester.tap(damage);
+    await tester.pumpAndSettle();
+    expect(find.text('Quarterstaff Critical Damage'), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('latest-roll-total'))).data,
+      '9',
+    );
+
+    await tester.tap(damage);
+    await tester.pumpAndSettle();
+    expect(find.text('Quarterstaff Damage'), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('latest-roll-total'))).data,
+      '2',
+    );
   });
 
   testWidgets('rolls attacks and damage directly from combat cards', (
@@ -972,6 +1071,135 @@ void main() {
     expect(find.text('Magic Missile'), findsNWidgets(2));
   });
 
+  testWidgets(
+    'casting a damage-only spell rolls damage and tracks concentration',
+    (tester) async {
+      await tester.pumpWidget(
+        WhetstoneApp(diceRoller: SequenceDiceRoller([3])),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Eldrin'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Spellbook'));
+      await tester.pumpAndSettle();
+
+      final spell = find.text('Magic Missile');
+      await tester.ensureVisible(spell);
+      await tester.longPress(spell);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Edit Spell'));
+      await tester.pumpAndSettle();
+      final concentration = find.byKey(const ValueKey('spell-concentration'));
+      await tester.ensureVisible(concentration);
+      await tester.tap(concentration);
+      final details = find.text('Casting details');
+      await tester.ensureVisible(details);
+      await tester.tap(details);
+      await tester.pumpAndSettle();
+      final rollOnCast = find.byKey(
+        const ValueKey('spell-roll-effect-on-cast'),
+      );
+      await tester.ensureVisible(rollOnCast);
+      await tester.tap(rollOnCast);
+      await tester.tap(find.byKey(const ValueKey('save-spell')));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(spell);
+      await tester.tap(spell);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cast'));
+      await tester.pumpAndSettle();
+      expect(find.text('Magic Missile Damage'), findsOneWidget);
+      expect(find.byTooltip('Concentration: Magic Missile'), findsOneWidget);
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('latest-roll-total')))
+            .data,
+        '4',
+      );
+    },
+  );
+
+  testWidgets('damage prompts a concentration save at the calculated DC', (
+    tester,
+  ) async {
+    await tester.pumpWidget(WhetstoneApp(diceRoller: SequenceDiceRoller([1])));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Eldrin'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Spellbook'));
+    await tester.pumpAndSettle();
+    await tester.longPress(find.text('Fire Bolt'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Track Concentration'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Explore'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('34 / 42'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '22');
+    await tester.tap(find.textContaining('Damage'));
+    await tester.pumpAndSettle();
+    expect(find.text('Fire Bolt · DC 11 after 22 damage'), findsOneWidget);
+    await tester.tap(find.text('Roll Save'));
+    await tester.pumpAndSettle();
+    expect(find.text('DC 11 · Concentration ended'), findsOneWidget);
+  });
+
+  testWidgets(
+    'casting a marked spell starts concentration and a failed save ends it',
+    (tester) async {
+      final repository = InMemoryCharacterSessionRepository();
+      await tester.pumpWidget(
+        WhetstoneApp(
+          repository: repository,
+          diceRoller: SequenceDiceRoller([12, 1]),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Eldrin'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Spellbook'));
+      await tester.pumpAndSettle();
+      await tester.longPress(find.text('Fire Bolt'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Edit Spell'));
+      await tester.pumpAndSettle();
+      final concentration = find.byKey(const ValueKey('spell-concentration'));
+      await tester.ensureVisible(concentration);
+      await tester.tap(concentration);
+      await tester.tap(find.byKey(const ValueKey('save-spell')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Fire Bolt'));
+      await tester.pumpAndSettle();
+
+      final sessions = await repository.loadSessions();
+      expect(
+        sessions.values.any(
+          (session) =>
+              session.characterState.concentrationSpellId == 'fire_bolt',
+        ),
+        isTrue,
+      );
+      final indicator = find.byTooltip('Concentration: Fire Bolt');
+      await tester.tap(indicator);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Set Save DC'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(find.text('DC 10 · Concentration ended'), findsOneWidget);
+      expect(indicator, findsNothing);
+      final updated = await repository.loadSessions();
+      final entries = updated.values.expand((session) => session.timeline);
+      expect(
+        entries.map((event) => event.title),
+        containsAll(['Concentration started', 'Concentration ended']),
+      );
+    },
+  );
+
   testWidgets('edits and safely removes spells from the Spellbook', (
     tester,
   ) async {
@@ -1187,6 +1415,37 @@ void main() {
     expect(find.text('29 / 42'), findsOneWidget);
   });
 
+  testWidgets('short rest spends hit dice and persists the result', (
+    tester,
+  ) async {
+    final repository = InMemoryCharacterSessionRepository();
+    await tester.pumpWidget(
+      WhetstoneApp(repository: repository, diceRoller: SequenceDiceRoller([4])),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Eldrin'));
+    await tester.pumpAndSettle();
+
+    final shortRest = find.text('Short Rest');
+    await tester.ensureVisible(shortRest);
+    await tester.tap(shortRest);
+    await tester.pumpAndSettle();
+    final picker = find.byKey(const ValueKey('short-rest-hit-dice'));
+    await tester.tap(picker);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Take Short Rest'));
+    await tester.pumpAndSettle();
+
+    final sessions = await repository.loadSessions();
+    final recovered = sessions.values.singleWhere(
+      (session) => session.characterState.hitDiceSpent == 1,
+    );
+    expect(recovered.characterState.currentHp, greaterThan(34));
+    expect(recovered.characterState.currentHp, lessThanOrEqualTo(42));
+  });
+
   testWidgets('long rest restores health and saves the recovery', (
     tester,
   ) async {
@@ -1231,7 +1490,12 @@ void main() {
   ) async {
     final repository = InMemoryCharacterSessionRepository();
 
-    await tester.pumpWidget(WhetstoneApp(repository: repository));
+    await tester.pumpWidget(
+      WhetstoneApp(
+        repository: repository,
+        diceRoller: SequenceDiceRoller([12]),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Eldrin'));
     await tester.pumpAndSettle();
@@ -1239,6 +1503,21 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.check));
     await tester.pumpAndSettle();
+
+    await tester.tap(find.text('⚡ Init'));
+    await tester.pumpAndSettle();
+    final total = tester
+        .widget<Text>(find.byKey(const ValueKey('initiative-roll-total')))
+        .data;
+    await tester.tap(find.text('Record Initiative'));
+    await tester.pumpAndSettle();
+    expect(find.text('Initiative $total'), findsOneWidget);
+
+    final bonusAction = find.widgetWithText(FilterChip, 'Bonus Action');
+    await tester.ensureVisible(bonusAction);
+    await tester.tap(bonusAction);
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilterChip>(bonusAction).selected, isTrue);
 
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
@@ -1251,6 +1530,14 @@ void main() {
 
     expect(find.byType(CombatModeView), findsOneWidget);
     expect(find.text('End Combat'), findsOneWidget);
+    expect(find.text('Round 1'), findsOneWidget);
+    expect(find.text('Initiative $total'), findsOneWidget);
+    expect(tester.widget<FilterChip>(bonusAction).selected, isTrue);
+
+    await tester.tap(find.text('Next Turn'));
+    await tester.pumpAndSettle();
+    expect(find.text('Round 2'), findsOneWidget);
+    expect(tester.widget<FilterChip>(bonusAction).selected, isFalse);
   });
 
   testWidgets('creates, persists, and edits a character with naming last', (

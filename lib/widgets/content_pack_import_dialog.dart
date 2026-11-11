@@ -93,9 +93,8 @@ class _ContentPackImportDialogState extends State<ContentPackImportDialog> {
               minLines: null,
               maxLines: null,
               textAlignVertical: TextAlignVertical.top,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(fontFamily: 'monospace'),
               decoration: InputDecoration(
                 labelText: 'Content-pack package',
                 alignLabelWithHint: true,
@@ -141,6 +140,10 @@ class _ContentPackImportDialogState extends State<ContentPackImportDialog> {
         const SizedBox(height: 18),
         Text(pack.description, textAlign: TextAlign.center),
         const SizedBox(height: 18),
+        if (pack.isClassPackPreview)
+          Text(
+            'Class pack preview. Supported classes can be selected in the character editor.',
+          ),
         _PackCounts(document: preview!),
         const SizedBox(height: 20),
         FilledButton.icon(
@@ -168,6 +171,7 @@ class _PackCounts extends StatelessWidget {
       'Resources': pack.resources.length,
       'Features': pack.features.length,
       'Items': pack.items.length,
+      if (pack.isClassPackPreview) 'Classes': pack.classNames.length,
     };
     return Card(
       child: Column(

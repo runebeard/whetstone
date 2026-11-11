@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/ability.dart';
+import '../models/authored_class.dart';
 import '../models/character.dart';
 import '../models/character_resource.dart';
 import '../models/content_pack.dart';
@@ -55,8 +56,22 @@ class _CharacterEditorState extends State<CharacterEditor> {
   late final List<InventoryItem> inventory;
   late final List<Feature> features;
   int currentStep = 0;
+  AuthoredClass? authoredClass;
+  String? equipmentOptionId;
+  late final List<AuthoredClass> authoredClasses = [
+    for (final pack in widget.contentPacks)
+      if (pack.classPackPayload case final payload?)
+        for (final rules
+            in (payload['classes'] as List).cast<Map<String, Object?>>())
+          AuthoredClass(payload, rules),
+  ].where((entry) => entry.supportsFirstLevels).toList();
 
   bool get isEditing => widget.character != null;
+
+  bool get hasSavedAuthoredClass {
+    final character = widget.character;
+    return character != null && AuthoredClass.fromCharacter(character) != null;
+  }
 
   @override
   void initState() {
@@ -120,10 +135,33 @@ class _CharacterEditorState extends State<CharacterEditor> {
     final valid = switch (currentStep) {
       0 => identityFormKey.currentState!.validate(),
       1 => abilitiesFormKey.currentState!.validate(),
+      2 =>
+        authoredClass == null ||
+            authoredClass!.skills
+                    .where(skillProficiencies.containsKey)
+                    .length ==
+                authoredClass!.skillCount,
       _ => true,
     };
     if (!valid) {
+      if (currentStep == 2) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Choose ${authoredClass!.skillCount} class skills.'),
+          ),
+        );
+      }
       return;
+    }
+    if (currentStep == 1 && authoredClass != null) {
+      final constitution = int.parse(
+        abilityControllers[Ability.constitution]!.text,
+      );
+      final hp = max(
+        1,
+        authoredClass!.hitDie + ((constitution - 10) / 2).floor(),
+      );
+      maxHpController.text = '$hp';
     }
     setState(() => currentStep += 1);
   }
@@ -132,20 +170,82 @@ class _CharacterEditorState extends State<CharacterEditor> {
     if (!nameFormKey.currentState!.validate()) {
       return;
     }
-    final maximumHp = int.parse(maxHpController.text);
+    final authored = authoredClass;
+    if (authored != null &&
+        authored.equipmentOptions.length > 1 &&
+        equipmentOptionId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Choose starting equipment before saving.'),
+        ),
+      );
+      return;
+    }
     final abilityScores = {
       for (final entry in abilityControllers.entries)
         entry.key: int.parse(entry.value.text),
     };
+    final selectedSkills = skillProficiencies.entries
+        .where((entry) => entry.value != SkillProficiency.none)
+        .toList();
+    if (authored != null &&
+        (selectedSkills.length != authored.skillCount ||
+            selectedSkills.any(
+              (entry) =>
+                  !authored.skills.contains(entry.key) ||
+                  entry.value != SkillProficiency.proficient,
+            ))) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Choose exactly ${authored.skillCount} proficiencies: '
+            '${authored.skills.join(', ')}.',
+          ),
+        ),
+      );
+      return;
+    }
+    final constitution = ((abilityScores[Ability.constitution]! - 10) / 2)
+        .floor();
+    final maximumHp = authored == null
+        ? int.parse(maxHpController.text)
+        : max(1, authored.hitDie + constitution);
     final initiativeModifier = ((abilityScores[Ability.dexterity]! - 10) / 2)
         .floor();
+    final proficiency = authored == null
+        ? int.parse(proficiencyBonusController.text)
+        : 2;
+    final previous = widget.character;
+    final savedClass = previous == null
+        ? null
+        : AuthoredClass.fromCharacter(previous);
+    final updatedWeapons = savedClass == null
+        ? [
+            ...weapons,
+            ...?authored?.startingWeapons(
+              equipmentOptionId,
+              abilityScores,
+              proficiency,
+            ),
+          ]
+        : savedClass.refreshStartingWeapons(
+            previous!,
+            weapons,
+            abilityScores,
+            proficiency,
+          );
     final character = Character(
       id:
           widget.character?.id ??
           'character-${DateTime.now().microsecondsSinceEpoch}',
       name: nameController.text.trim(),
-      characterClass: classController.text.trim(),
-      level: int.parse(levelController.text),
+      characterClass: authored?.name ?? classController.text.trim(),
+      savedClassRules: authored?.snapshot ?? widget.character?.savedClassRules,
+      level: hasSavedAuthoredClass
+          ? widget.character!.level
+          : authored == null
+          ? int.parse(levelController.text)
+          : 1,
       currentHp: isEditing
           ? min(widget.character!.currentHp, maximumHp)
           : maximumHp,
@@ -154,15 +254,19 @@ class _CharacterEditorState extends State<CharacterEditor> {
       initiativeModifier: initiativeModifier,
       status: 'Exploring',
       abilityScores: abilityScores,
-      proficiencyBonus: int.parse(proficiencyBonusController.text),
+      proficiencyBonus: proficiency,
       skillProficiencies: {...skillProficiencies},
-      savingThrowProficiencies: {...savingThrowProficiencies},
-      weapons: [...weapons],
+      savingThrowProficiencies:
+          authored?.saves ?? {...savingThrowProficiencies},
+      weapons: updatedWeapons,
       spells: [...spells],
       initiallyPinnedActionKeys: {...pinnedActionKeys},
-      resources: [...resources],
-      initialInventory: [...inventory],
-      features: [...features],
+      resources: [...resources, ...?authored?.resourcesAt(1)],
+      initialInventory: [
+        ...inventory,
+        ...?authored?.startingEquipment(equipmentOptionId),
+      ],
+      features: [...features, ...?authored?.grants(1)],
       journalEntries: [...?widget.character?.journalEntries],
     );
     Navigator.pop(context, character);
@@ -276,9 +380,46 @@ class _CharacterEditorState extends State<CharacterEditor> {
       key: identityFormKey,
       child: Column(
         children: [
+          if (!isEditing && authoredClasses.isNotEmpty)
+            DropdownButtonFormField<AuthoredClass>(
+              decoration: const InputDecoration(labelText: 'Pack class'),
+              items: [
+                const DropdownMenuItem(child: Text('Manual class')),
+                for (final entry in authoredClasses)
+                  DropdownMenuItem(value: entry, child: Text(entry.name)),
+              ],
+              onChanged: (entry) => setState(() {
+                authoredClass = entry;
+                if (entry != null) skillProficiencies.clear();
+                equipmentOptionId = null;
+                classController.text = entry?.name ?? '';
+                if (entry != null) {
+                  levelController.text = '1';
+                  maxHpController.text = '${entry.hitDie}';
+                  proficiencyBonusController.text = '2';
+                }
+              }),
+            ),
+          if ((authoredClass?.equipmentOptions.length ?? 0) > 1)
+            DropdownButtonFormField<String>(
+              key: ObjectKey(authoredClass),
+              decoration: const InputDecoration(
+                labelText: 'Starting equipment',
+              ),
+              items: [
+                for (final option in authoredClass!.equipmentOptions)
+                  DropdownMenuItem(
+                    value: option['id'] as String,
+                    child: Text(option['label'] as String),
+                  ),
+              ],
+              validator: requiredText,
+              onChanged: (value) => setState(() => equipmentOptionId = value),
+            ),
           TextFormField(
             key: const ValueKey('character-class'),
             controller: classController,
+            readOnly: authoredClass != null || hasSavedAuthoredClass,
             textCapitalization: TextCapitalization.words,
             decoration: const InputDecoration(labelText: 'Class'),
             validator: requiredText,
@@ -289,6 +430,7 @@ class _CharacterEditorState extends State<CharacterEditor> {
               Expanded(
                 child: numberField(
                   key: 'character-level',
+                  readOnly: authoredClass != null || hasSavedAuthoredClass,
                   controller: levelController,
                   label: 'Level',
                   minimum: 1,
@@ -299,6 +441,7 @@ class _CharacterEditorState extends State<CharacterEditor> {
               Expanded(
                 child: numberField(
                   key: 'proficiency-bonus',
+                  readOnly: authoredClass != null,
                   controller: proficiencyBonusController,
                   label: 'Proficiency',
                   minimum: 0,
@@ -314,6 +457,7 @@ class _CharacterEditorState extends State<CharacterEditor> {
               Expanded(
                 child: numberField(
                   key: 'maximum-hp',
+                  readOnly: authoredClass != null,
                   controller: maxHpController,
                   label: 'Maximum HP',
                   minimum: 1,
@@ -366,6 +510,8 @@ class _CharacterEditorState extends State<CharacterEditor> {
   }
 
   Widget proficienciesStep() {
+    final authored = authoredClass;
+    if (authored != null) return authoredProficiencies(authored);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -431,6 +577,45 @@ class _CharacterEditorState extends State<CharacterEditor> {
               ),
             ],
           ),
+      ],
+    );
+  }
+
+  Widget authoredProficiencies(AuthoredClass authored) {
+    final selected = authored.skills
+        .where(skillProficiencies.containsKey)
+        .length;
+    final training = authored.initialTraining;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Saving throws: ${authored.saves.map((save) => save.label).join(', ')}',
+        ),
+        for (final entry in training.entries)
+          if (entry.value.isNotEmpty)
+            Text('${entry.key}: ${entry.value.join(', ')}'),
+        const SizedBox(height: 12),
+        Text('Choose ${authored.skillCount} class skills ($selected selected)'),
+        for (final skill in standardSkills)
+          if (authored.skills.contains(skill.id))
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(skill.name),
+              value: skillProficiencies.containsKey(skill.id),
+              onChanged:
+                  selected >= authored.skillCount &&
+                      !skillProficiencies.containsKey(skill.id)
+                  ? null
+                  : (checked) => setState(() {
+                      if (checked == true) {
+                        skillProficiencies[skill.id] =
+                            SkillProficiency.proficient;
+                      } else {
+                        skillProficiencies.remove(skill.id);
+                      }
+                    }),
+            ),
       ],
     );
   }
@@ -1076,10 +1261,12 @@ class _CharacterEditorState extends State<CharacterEditor> {
     required int minimum,
     required int maximum,
     String? prefix,
+    bool readOnly = false,
   }) {
     return TextFormField(
       key: ValueKey(key),
       controller: controller,
+      readOnly: readOnly,
       keyboardType: TextInputType.number,
       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
       decoration: InputDecoration(labelText: label, prefixText: prefix),

@@ -5,6 +5,7 @@ class DeathSaveBox extends StatelessWidget {
   final int successes;
   final int failures;
   final bool isActive;
+  final VoidCallback? onRoll;
   final VoidCallback onSuccessTap;
   final VoidCallback onFailureTap;
   final VoidCallback onSuccessLongPress;
@@ -15,6 +16,7 @@ class DeathSaveBox extends StatelessWidget {
     required this.successes,
     required this.failures,
     required this.isActive,
+    this.onRoll,
     required this.onSuccessTap,
     required this.onFailureTap,
     required this.onSuccessLongPress,
@@ -33,6 +35,18 @@ class DeathSaveBox extends StatelessWidget {
               '☠ Death Saves',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
+            if (isActive && (successes >= 3 || failures >= 3))
+              Text(failures >= 3 ? 'Dead' : 'Stable'),
+            if (onRoll != null)
+              TextButton(
+                key: const ValueKey('roll-death-save'),
+                onPressed: onRoll,
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text('Roll d20'),
+              ),
             const SizedBox(height: 6),
             Opacity(
               opacity: isActive ? 1.0 : 0.4,

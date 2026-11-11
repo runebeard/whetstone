@@ -4,12 +4,14 @@ import 'dialogue_action_button.dart';
 
 class StatEditDialog extends StatefulWidget {
   final int initialValue;
+  final String? title;
   final bool allowNegative;
   final bool allowZero;
 
   const StatEditDialog({
     super.key,
     required this.initialValue,
+    this.title,
     this.allowNegative = false,
     this.allowZero = false,
   });
@@ -54,6 +56,7 @@ class _StatEditDialogState extends State<StatEditDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      title: widget.title == null ? null : Text(widget.title!),
       content: SizedBox(
         width: 230,
         child: Column(

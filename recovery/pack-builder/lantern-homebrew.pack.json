@@ -1,0 +1,169 @@
+{
+  "format": "whetstone-content-pack",
+  "schemaVersion": 22,
+  "pack": {
+    "id": "lantern-homebrew",
+    "name": "Lantern Homebrew",
+    "author": "Example Author",
+    "version": "1.0.0",
+    "gameSystem": "D&D 2024",
+    "description": "Original practice content for learning the pack builder.",
+    "weapons": [
+      {
+        "id": "weapon-8d5de5f0d4242a19-sabre",
+        "name": "Lantern Sabre",
+        "attackModifier": 0,
+        "damage": "1d8 slashing",
+        "damageFormula": "1d8",
+        "damageDice": "1d8",
+        "damageType": "slashing",
+        "range": "Melee",
+        "attackAbility": "strength",
+        "finesse": true,
+        "addProficiencyBonus": true,
+        "addAbilityToDamage": true,
+        "equipmentBonus": 1,
+        "category": "martialMelee",
+        "properties": [
+          "finesse"
+        ]
+      }
+    ],
+    "spells": [
+      {
+        "id": "spell-8d5de5f0d4242a19-ember",
+        "name": "Lantern Ember",
+        "level": 0,
+        "prepared": false,
+        "summary": "Action · 60 feet · Instantaneous",
+        "description": "An original practice spell. Make a spell attack and roll fire damage on a hit.",
+        "castingAbility": null,
+        "classIds": [
+          "wizard",
+          "sorcerer"
+        ],
+        "castingTime": "Action",
+        "range": "60 feet",
+        "duration": "Instantaneous",
+        "school": null,
+        "concentration": false,
+        "ritual": false,
+        "components": [
+          "V",
+          "S"
+        ],
+        "material": null,
+        "requiresAttackRoll": true,
+        "savingThrowAbility": null,
+        "damageFormula": "1d8",
+        "damageType": "fire",
+        "addSpellcastingModifierToEffect": false,
+        "halfDamageOnSuccessfulSave": false,
+        "additionalDicePerSlotLevel": 0,
+        "additionalDicePerCantripTier": 1,
+        "repeatableEffect": false,
+        "rollEffectOnCast": true,
+        "cantripUpgradeDescription": null
+      }
+    ],
+    "features": [
+      {
+        "id": "action-8d5de5f0d4242a19-ward",
+        "name": "Lantern Ward",
+        "summary": "Track an active ward for three own turns. Other benefits are decided by the GM.",
+        "actionMenu": {
+          "title": "Lantern Ward",
+          "resourceId": "resource-8d5de5f0d4242a19-spark",
+          "options": [
+            {
+              "id": "action-8d5de5f0d4242a19-ward:use",
+              "label": "Lantern Ward",
+              "detail": "Track an active ward for three own turns. Other benefits are decided by the GM.",
+              "effect": "activateState",
+              "resourceCost": 1,
+              "actionCost": "bonusAction",
+              "stateId": "lantern-homebrew:action:ward:active",
+              "activeEffectDurationTurns": 3
+            }
+          ]
+        }
+      },
+      {
+        "id": "action-8d5de5f0d4242a19-mend",
+        "name": "Ward Mend",
+        "summary": "Restore your own HP once per activation of Lantern Ward.",
+        "actionMenu": {
+          "title": "Ward Mend",
+          "resourceId": null,
+          "options": [
+            {
+              "id": "action-8d5de5f0d4242a19-mend:use",
+              "label": "Ward Mend",
+              "detail": "Restore your own HP once per activation of Lantern Ward.",
+              "effect": "healingSelf",
+              "resourceCost": 0,
+              "actionCost": "action",
+              "rollFormula": "1d6 + 2",
+              "requiredStateId": "lantern-homebrew:action:ward:active",
+              "stateUseId": "lantern-homebrew:use:shared:Ward%20gift"
+            }
+          ]
+        }
+      },
+      {
+        "id": "action-8d5de5f0d4242a19-gift",
+        "name": "Ward Gift",
+        "summary": "Roll healing for an ally. The ally records their HP. Shares a use with Ward Mend.",
+        "actionMenu": {
+          "title": "Ward Gift",
+          "resourceId": null,
+          "options": [
+            {
+              "id": "action-8d5de5f0d4242a19-gift:use",
+              "label": "Ward Gift",
+              "detail": "Roll healing for an ally. The ally records their HP. Shares a use with Ward Mend.",
+              "effect": "healingOther",
+              "resourceCost": 0,
+              "actionCost": "action",
+              "rollFormula": "1d6 + 2",
+              "requiredStateId": "lantern-homebrew:action:ward:active",
+              "stateUseId": "lantern-homebrew:use:shared:Ward%20gift"
+            }
+          ]
+        }
+      },
+      {
+        "id": "action-8d5de5f0d4242a19-end",
+        "name": "Lower Ward",
+        "summary": "End Lantern Ward.",
+        "actionMenu": {
+          "title": "Lower Ward",
+          "resourceId": null,
+          "options": [
+            {
+              "id": "action-8d5de5f0d4242a19-end:use",
+              "label": "Lower Ward",
+              "detail": "End Lantern Ward.",
+              "effect": "endState",
+              "resourceCost": 0,
+              "actionCost": null,
+              "stateId": "lantern-homebrew:action:ward:active"
+            }
+          ]
+        }
+      }
+    ],
+    "resources": [
+      {
+        "id": "resource-8d5de5f0d4242a19-spark",
+        "name": "Lantern Sparks",
+        "maximum": 3,
+        "initialValue": 3,
+        "rechargePeriod": "shortRest"
+      }
+    ],
+    "items": [],
+    "feats": [],
+    "rulesets": []
+  }
+}

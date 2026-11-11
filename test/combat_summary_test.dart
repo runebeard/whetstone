@@ -4,8 +4,41 @@ import 'package:whetstone/models/character.dart';
 import 'package:whetstone/models/character_state.dart';
 import 'package:whetstone/widgets/combat_summary.dart';
 import 'package:whetstone/widgets/conditions_dialog.dart';
+import 'package:whetstone/widgets/initiative_roll_dialog.dart';
 
 void main() {
+  testWidgets('initiative modes choose the higher or lower d20', (
+    tester,
+  ) async {
+    final rolls = [10, 4, 17, 3, 15].iterator;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: InitiativeRollDialog(
+          initiativeModifier: 2,
+          rollD20: () {
+            rolls.moveNext();
+            return rolls.current;
+          },
+        ),
+      ),
+    );
+
+    final total = find.byKey(const ValueKey('initiative-roll-total'));
+    expect(tester.widget<Text>(total).data, '12');
+    await tester.tap(find.text('Normal'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Advantage').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Rolled 4 and 17'), findsOneWidget);
+    expect(tester.widget<Text>(total).data, '19');
+    await tester.tap(find.text('Advantage'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Disadvantage').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Rolled 3 and 15'), findsOneWidget);
+    expect(tester.widget<Text>(total).data, '5');
+  });
+
   testWidgets('edited max HP controls current HP and healing', (tester) async {
     final character = Character(
       name: 'Test Hero',

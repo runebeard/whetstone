@@ -12,6 +12,13 @@ class SequenceRoller extends DiceRoller {
 }
 
 void main() {
+  test('critical damage doubles dice and applies the modifier once', () {
+    final critical = DiceExpression.tryParse('2d6 + 3')!.withCriticalHitDice();
+    expect(critical.diceCount, 4);
+    expect(critical.dieSides, 6);
+    expect(critical.modifier, 3);
+  });
+
   test('parses and normalizes standard damage notation', () {
     expect(DiceExpression.tryParse('2d6 + 4')?.notation, '2d6 + 4');
     expect(DiceExpression.tryParse('1d6 − 1')?.notation, '1d6 − 1');

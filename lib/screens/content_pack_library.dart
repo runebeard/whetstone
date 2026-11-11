@@ -70,9 +70,8 @@ class _ContentPackLibraryState extends State<ContentPackLibrary> {
     }
 
     publish({...installedPacks, pack.id: pack});
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('${pack.name} installed')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('${pack.name} installed')));
   }
 
   Future<void> removePack(ContentPack pack) async {
@@ -99,9 +98,8 @@ class _ContentPackLibraryState extends State<ContentPackLibrary> {
     );
     if (!mounted || remove != true) return;
     publish({...installedPacks}..remove(pack.id));
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('${pack.name} removed')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('${pack.name} removed')));
   }
 
   @override
@@ -194,6 +192,7 @@ class _ContentPackCard extends StatelessWidget {
       'Resources': pack.resources.map((entry) => entry.name).toList(),
       'Features': pack.features.map((entry) => entry.name).toList(),
       'Items': pack.items.map((entry) => entry.name).toList(),
+      if (pack.isClassPackPreview) 'Classes': pack.classNames,
     };
 
     return Card(
@@ -240,6 +239,13 @@ class _ContentPackCard extends StatelessWidget {
               style: Theme.of(context).textTheme.labelMedium,
             ),
           ),
+          if (pack.isClassPackPreview)
+            const ListTile(
+              title: Text('Class pack preview'),
+              subtitle: Text(
+                'Supported classes can be selected in the character editor.',
+              ),
+            ),
           const SizedBox(height: 12),
           for (final category in categories.entries)
             if (category.value.isNotEmpty)

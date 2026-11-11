@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dialogue_action_button.dart';
 
-enum HpAdjustmentType { damage, healing, temporaryHp }
+enum HpAdjustmentType { damage, criticalDamage, healing, temporaryHp }
 
 class HpAdjustment {
   final HpAdjustmentType type;
@@ -11,7 +11,9 @@ class HpAdjustment {
 }
 
 class HpAdjustDialog extends StatefulWidget {
-  const HpAdjustDialog({super.key});
+  final bool showCriticalDamage;
+
+  const HpAdjustDialog({super.key, this.showCriticalDamage = false});
 
   @override
   State<HpAdjustDialog> createState() => _HpAdjustDialogState();
@@ -85,6 +87,13 @@ class _HpAdjustDialogState extends State<HpAdjustDialog> {
 
           const SizedBox(height: 10),
 
+          if (widget.showCriticalDamage) ...[
+            DialogueActionButton(
+              label: 'Critical hit',
+              onTap: () => _submitAdjustment(HpAdjustmentType.criticalDamage),
+            ),
+            const SizedBox(height: 10),
+          ],
           DialogueActionButton(
             label: '✨ Heal',
             onTap: () {

@@ -356,6 +356,11 @@ class _CharacterVaultState extends State<CharacterVault> {
         ),
     };
     final updatedState = state.copyWith(
+      clearConcentration:
+          updated.currentHp <= 0 ||
+          !updated.spells.any(
+            (spell) => spell.id == state.concentrationSpellId,
+          ),
       currentHp: updated.currentHp,
       maxHp: updated.maxHp,
       armourClass: updated.armourClass,
@@ -368,6 +373,9 @@ class _CharacterVaultState extends State<CharacterVault> {
       inventory: updated.initialInventory,
       archivedInventory: session.archivedInventory,
       isInCombat: session.isInCombat,
+      combatRound: session.combatRound,
+      combatInitiative: session.combatInitiative,
+      usedCombatActions: session.usedCombatActions,
       timeline: session.timeline,
     );
     setState(() {

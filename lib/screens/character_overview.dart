@@ -8,6 +8,8 @@ import '../modes/exploration_mode.dart';
 import '../modes/profile_mode.dart';
 import '../modes/spellbook_mode.dart';
 import '../models/ability.dart';
+import '../widgets/stat_edit_dialog.dart';
+import '../models/authored_class.dart';
 import '../models/character.dart';
 import '../models/character_action.dart';
 import '../models/check_roll.dart';
@@ -68,7 +70,12 @@ class CharacterOverview extends StatefulWidget {
 class _CharacterOverviewState extends State<CharacterOverview>
     with _InventoryActions {
   late CharacterMode currentMode;
+  late int combatRound;
+  int? combatInitiative;
+  late Set<CombatActionCost> usedCombatActions;
   late final DiceRoller diceRoller;
+  String? pendingCriticalActionKey;
+  D20Mode nextRollMode = D20Mode.normal;
   late Character character;
   late CharacterState characterState;
   @override
@@ -89,6 +96,15 @@ class _CharacterOverviewState extends State<CharacterOverview>
     character = widget.character;
     diceRoller = widget.diceRoller ?? RandomDiceRoller();
     characterState = widget.initialSession.characterState;
+    combatRound = widget.initialSession.isInCombat
+        ? widget.initialSession.combatRound
+        : 1;
+    if (widget.initialSession.isInCombat) {
+      combatInitiative = widget.initialSession.combatInitiative;
+    }
+    usedCombatActions = widget.initialSession.isInCombat
+        ? {...widget.initialSession.usedCombatActions}
+        : {};
     inventory = [...widget.initialSession.inventory];
     archivedInventory = [...widget.initialSession.archivedInventory];
     timeline = [...widget.initialSession.timeline];
@@ -114,6 +130,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
         inventory: [...inventory],
         archivedInventory: [...archivedInventory],
         isInCombat: currentMode == CharacterMode.combat,
+        combatRound: combatRound,
+        combatInitiative: combatInitiative,
+        usedCombatActions: {...usedCombatActions},
         timeline: [...timeline],
       ),
     );
@@ -126,6 +145,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void updateCharacterState(CharacterState updatedState) {
+    if (updatedState.concentrationSpellId != null &&
+        !updatedState.canConcentrate) {
+      updatedState = updatedState.copyWith(clearConcentration: true);
+    }
     final events = sessionEventRecorder.stateChanges(
       previous: characterState,
       updated: updatedState,
@@ -206,25 +229,61 @@ class _CharacterOverviewState extends State<CharacterOverview>
       initiallyPinnedActionKeys: characterState.pinnedActionKeys,
       initialInventory: inventory,
     );
-    final updated = await Navigator.push<Character>(
-      context,
-      MaterialPageRoute(
-        builder: (context) => CharacterAdvancement(
-          character: editableCharacter,
-          contentPacks: widget.contentPacks,
+    final authored = AuthoredClass.fromCharacter(editableCharacter);
+    if (authored != null && editableCharacter.level != 1) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('${authored.name} progression'),
+          content: SingleChildScrollView(
+            child: Text(_authoredProgressionPreview(authored).join('\n')),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
         ),
-      ),
-    );
+      );
+      return;
+    }
+    final updated = authored == null
+        ? await Navigator.push<Character>(
+            context,
+            MaterialPageRoute(
+              builder: (context) => CharacterAdvancement(
+                character: editableCharacter,
+                contentPacks: widget.contentPacks,
+              ),
+            ),
+          )
+        : await confirmAuthoredAdvancement(editableCharacter, authored);
     if (!mounted || updated == null) return;
 
-    final resourceValues = {
-      for (final resource in updated.resources)
-        resource.id: characterState.resourceValues.containsKey(resource.id)
-            ? (characterState.resourceValues[resource.id]! > resource.maximum
-                  ? resource.maximum
-                  : characterState.resourceValues[resource.id]!)
-            : resource.maximum,
+    final classResourceIds =
+        authored?.resourcesAt(2).map((resource) => resource.id).toSet() ??
+        const <String>{};
+    final previousResources = {
+      for (final resource in editableCharacter.resources) resource.id: resource,
     };
+    final resourceValues = <String, int>{};
+    for (final resource in updated.resources) {
+      final previous = previousResources[resource.id];
+      final remaining = characterState.resourceValues[resource.id];
+      if (classResourceIds.contains(resource.id)) {
+        final spent = previous == null
+            ? resource.maximum - resource.initialValue
+            : previous.maximum - (remaining ?? previous.initialValue);
+        resourceValues[resource.id] = (resource.maximum - spent)
+            .clamp(0, resource.maximum)
+            .toInt();
+      } else {
+        resourceValues[resource.id] = (remaining ?? resource.maximum)
+            .clamp(0, resource.maximum)
+            .toInt();
+      }
+    }
     final currentHp = characterState.currentHp > updated.maxHp
         ? updated.maxHp
         : characterState.currentHp;
@@ -245,6 +304,91 @@ class _CharacterOverviewState extends State<CharacterOverview>
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('${updated.name} updated')));
+  }
+
+  Iterable<String> _authoredProgressionPreview(AuthoredClass authored) sync* {
+    yield 'Levels 3–20 are preview only.';
+    var previousMaxima = <String, int>{};
+    for (var level = 2; level <= 20; level++) {
+      try {
+        final resources = authored.resourcesAt(level);
+        final names = authored.featureNamesAt(level);
+        final changes = [
+          ...names,
+          for (final resource in resources)
+            if (resource.maximum != previousMaxima[resource.id])
+              '${resource.name}: maximum ${resource.maximum}',
+        ];
+        previousMaxima = {
+          for (final resource in resources) resource.id: resource.maximum,
+        };
+        if (level > 2 && changes.isNotEmpty) {
+          yield 'Level $level: ${changes.join(', ')}';
+        }
+      } catch (_) {
+        yield 'Level $level: some authored data could not be read.';
+      }
+    }
+  }
+
+  Future<Character?> confirmAuthoredAdvancement(
+    Character current,
+    AuthoredClass authored,
+  ) async {
+    final grants = authored.grants(2);
+    final classResources = {
+      for (final resource in authored.resourcesAt(2)) resource.id: resource,
+    };
+    final constitution = ((current.scoreFor(Ability.constitution) - 10) / 2)
+        .floor();
+    final increase = (authored.hitDie ~/ 2 + 1 + constitution)
+        .clamp(1, 999)
+        .toInt();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Advance to level 2'),
+        content: SingleChildScrollView(
+          child: Text(
+            [
+              'Maximum HP increases by $increase.',
+              ...grants.map((feature) => feature.name),
+              ...classResources.values.map(
+                (resource) => '${resource.name}: maximum ${resource.maximum}',
+              ),
+              '',
+              ..._authoredProgressionPreview(authored),
+            ].join('\n'),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Advance'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return null;
+    final existingIds = current.features.map((feature) => feature.id).toSet();
+    return current.copyWith(
+      level: 2,
+      maxHp: current.maxHp + increase,
+      resources: [
+        for (final resource in current.resources)
+          if (!classResources.containsKey(resource.id)) resource,
+        ...classResources.values,
+      ],
+      features: [
+        ...current.features,
+        for (final feature in grants)
+          if (existingIds.add(feature.id)) feature,
+      ],
+    );
   }
 
   Future<void> addFeature() async {
@@ -333,10 +477,142 @@ class _CharacterOverviewState extends State<CharacterOverview>
     publishSession();
   }
 
+  Spell? get activeConcentrationSpell {
+    for (final spell in character.spells) {
+      if (spell.id == characterState.concentrationSpellId) return spell;
+    }
+    return null;
+  }
+
+  Future<void> showConcentration(Spell spell) async {
+    final action = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Concentration'),
+        content: Text(
+          [
+            spell.name,
+            if (characterState.concentrationSlotLevel case final level?)
+              'Slot level $level',
+            if (characterState.concentrationTurnsRemaining case final turns?)
+              'Turns remaining: $turns',
+          ].join('\n'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'end'),
+            child: const Text('End Concentration'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'duration'),
+            child: const Text('Set Turn Limit'),
+          ),
+          if (spell.repeatableEffect && spell.damageFormula != null)
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'repeat'),
+              child: const Text('Roll Repeat Effect'),
+            ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, 'save'),
+            child: const Text('Set Save DC'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        action == null ||
+        characterState.concentrationSpellId != spell.id) {
+      return;
+    }
+    if (action == 'duration') {
+      final turns = await showDialog<int>(
+        context: context,
+        builder: (context) => StatEditDialog(
+          title: 'Turns remaining (0 for no limit)',
+          initialValue: characterState.concentrationTurnsRemaining ?? 0,
+          allowZero: true,
+        ),
+      );
+      if (mounted &&
+          turns != null &&
+          characterState.concentrationSpellId == spell.id) {
+        updateCharacterState(
+          characterState.copyWith(concentrationTurnsRemaining: turns),
+        );
+      }
+      return;
+    }
+    if (action == 'repeat') {
+      await rollDamage(spell, repeatingEffect: true);
+      return;
+    }
+    if (action == 'end') {
+      updateCharacterState(characterState.copyWith(clearConcentration: true));
+      return;
+    }
+    final dc = await showDialog<int>(
+      context: context,
+      builder: (context) => const StatEditDialog(initialValue: 10),
+    );
+    if (!mounted ||
+        dc == null ||
+        characterState.concentrationSpellId != spell.id) {
+      return;
+    }
+    resolveConcentrationSave(dc);
+  }
+
+  Future<void> promptConcentrationAfterDamage(int damage) async {
+    final spell = activeConcentrationSpell;
+    if (spell == null) return;
+    final dc = (damage ~/ 2).clamp(10, 30);
+    final roll = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Concentration Save'),
+        content: Text('${spell.name} · DC $dc after $damage damage'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Skip'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Roll Save'),
+          ),
+        ],
+      ),
+    );
+    if (mounted &&
+        roll == true &&
+        characterState.concentrationSpellId == spell.id) {
+      resolveConcentrationSave(dc);
+    }
+  }
+
+  void resolveConcentrationSave(int dc) {
+    final save = character.savingThrowFor(Ability.constitution);
+    final roll = rollCheck(
+      'Concentration Save',
+      save.modifier,
+      describe: (roll) => roll.total >= dc
+          ? 'DC $dc · Concentration maintained'
+          : 'DC $dc · Concentration ended',
+    );
+    if (roll.total < dc) {
+      updateCharacterState(characterState.copyWith(clearConcentration: true));
+    }
+  }
+
   Future<void> manageSpell(Spell spell) async {
     HapticFeedback.mediumImpact();
     final isPinned = characterState.pinnedActionKeys.contains(spell.actionKey);
     final canPin = spell.isAvailableInCombat || isPinned;
+    final isConcentrating = characterState.concentrationSpellId == spell.id;
     final action = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
@@ -357,6 +633,15 @@ class _CharacterOverviewState extends State<CharacterOverview>
                   ? null
                   : const Text('Prepare this spell before pinning it'),
               onTap: canPin ? () => Navigator.pop(context, 'pin') : null,
+            ),
+            ListTile(
+              leading: const Icon(Icons.center_focus_strong),
+              title: Text(
+                isConcentrating ? 'End Concentration' : 'Track Concentration',
+              ),
+              onTap: isConcentrating || characterState.canConcentrate
+                  ? () => Navigator.pop(context, 'concentration')
+                  : null,
             ),
             ListTile(
               leading: const Icon(Icons.delete_outline),
@@ -380,6 +665,13 @@ class _CharacterOverviewState extends State<CharacterOverview>
         await editSpell(spell);
       case 'pin':
         togglePinnedAction(spell);
+      case 'concentration':
+        updateCharacterState(
+          characterState.copyWith(
+            concentrationSpellId: spell.id,
+            clearConcentration: isConcentrating,
+          ),
+        );
       case 'remove':
         await removeSpell(spell);
     }
@@ -444,14 +736,19 @@ class _CharacterOverviewState extends State<CharacterOverview>
       spells: spells,
       initiallyPinnedActionKeys: pinnedActionKeys,
     );
-    setState(() {
-      character = updatedCharacter;
-      characterState = characterState.copyWith(
-        pinnedActionKeys: pinnedActionKeys,
-      );
-    });
+    final updatedState = characterState.copyWith(
+      clearConcentration: !spells.any(
+        (spell) => spell.id == characterState.concentrationSpellId,
+      ),
+      pinnedActionKeys: pinnedActionKeys,
+    );
+    if (pendingCriticalActionKey?.startsWith('spell:') == true &&
+        !spells.any((spell) => spell.actionKey == pendingCriticalActionKey)) {
+      pendingCriticalActionKey = null;
+    }
+    character = updatedCharacter;
     widget.onCharacterChanged(updatedCharacter);
-    publishSession();
+    updateCharacterState(updatedState);
   }
 
   Future<void> manageFeature(Feature feature) async {
@@ -731,7 +1028,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   void handleActionTap(CharacterAction action) {
     HapticFeedback.selectionClick();
-    final modifier = action.rollModifier;
+    final modifier = character.attackModifierFor(action);
     if (modifier == null) {
       showActionDetails(action);
       return;
@@ -743,21 +1040,179 @@ class _CharacterOverviewState extends State<CharacterOverview>
     HapticFeedback.selectionClick();
     showDialog<void>(
       context: context,
-      builder: (context) => ActionDetailsDialog(action: action),
+      builder: (context) => ActionDetailsDialog(
+        action: action,
+        spellSaveDc: action is Spell ? character.spellSaveDc(action) : null,
+        spellDamageFormula: action is Spell
+            ? character.damageFormulaFor(action)
+            : null,
+        onRollDamage:
+            action is Spell &&
+                action.isAvailableInCombat &&
+                DiceExpression.tryParse(
+                      character.damageFormulaFor(action) ?? '',
+                    ) !=
+                    null
+            ? () {
+                Navigator.pop(context);
+                rollDamage(action);
+              }
+            : null,
+        onCast:
+            action is Spell &&
+                (action.concentration || action.rollEffectOnCast) &&
+                characterState.currentHp > 0
+            ? () {
+                Navigator.pop(context);
+                castSpell(action);
+              }
+            : null,
+      ),
+    );
+  }
+
+  void trackSpellAction(Spell spell) {
+    if (currentMode != CharacterMode.combat) return;
+    final cost = switch (spell.castingTime?.trim().toLowerCase()) {
+      'action' || '1 action' => CombatActionCost.action,
+      'bonus action' || '1 bonus action' => CombatActionCost.bonusAction,
+      'reaction' || '1 reaction' => CombatActionCost.reaction,
+      _ => null,
+    };
+    if (cost != null && !usedCombatActions.contains(cost)) {
+      setCombatActionUsed(cost, true);
+    }
+  }
+
+  void castSpell(Spell spell) {
+    if (characterState.currentHp <= 0) return;
+    if (character.attackModifierFor(spell) != null) {
+      rollAttack(spell);
+    } else if (spell.rollEffectOnCast && spell.damageFormula != null) {
+      rollDamage(spell, castingSpell: true);
+    } else if (spell.concentration) {
+      startSpellConcentration(spell);
+      trackSpellAction(spell);
+    }
+  }
+
+  void startSpellConcentration(Spell spell, {int? slotLevel}) {
+    if (!characterState.canConcentrate) return;
+    updateCharacterState(
+      characterState
+          .copyWith(clearConcentration: true)
+          .copyWith(
+            concentrationSpellId: spell.id,
+            concentrationSlotLevel: slotLevel,
+          ),
     );
   }
 
   void rollAttack(CharacterAction action) {
-    final modifier = action.rollModifier;
+    final modifier = character.attackModifierFor(action);
     if (modifier == null) return;
-    rollCheck('${action.name} Attack', modifier);
+    if (action is Spell && characterState.currentHp > 0) {
+      if (action.concentration) startSpellConcentration(action);
+      trackSpellAction(action);
+    }
+    final roll = rollCheck('${action.name} Attack', modifier);
+    pendingCriticalActionKey =
+        roll.isNaturalTwenty &&
+            DiceExpression.tryParse(character.damageFormulaFor(action) ?? '') !=
+                null
+        ? action.actionKey
+        : null;
   }
 
-  void rollDamage(CharacterAction action) {
-    final expression = DiceExpression.tryParse(action.damageFormula ?? '');
-    if (expression == null) return;
+  Future<void> rollDamage(
+    CharacterAction action, {
+    bool repeatingEffect = false,
+    bool castingSpell = false,
+  }) async {
+    int? slotLevel = repeatingEffect
+        ? characterState.concentrationSlotLevel
+        : null;
+    if (action case Spell(
+      additionalDicePerSlotLevel: > 0,
+      level: > 0 && < 9,
+    ) when !repeatingEffect) {
+      slotLevel = await showDialog<int>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: Text('${action.name} slot level'),
+          children: [
+            for (var level = action.level; level <= 9; level++)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, level),
+                child: Text(
+                  'Level $level · ${character.damageFormulaFor(action, slotLevel: level)}',
+                ),
+              ),
+          ],
+        ),
+      );
+      if (!mounted || slotLevel == null) return;
+    }
+    var halfDamage = false;
+    if (action case Spell(
+      halfDamageOnSave: true,
+      savingThrowAbility: final ability?,
+    )) {
+      final result = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(action.name),
+          content: Text('Did the target succeed on its ${ability.label} save?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Failed save'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Successful save'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || result == null) return;
+      halfDamage = result;
+    }
+    final baseExpression = DiceExpression.tryParse(
+      character.damageFormulaFor(action, slotLevel: slotLevel) ?? '',
+    );
+    if (baseExpression == null) return;
+    if (repeatingEffect && characterState.concentrationSpellId != action.id) {
+      return;
+    }
+    if (castingSpell && characterState.currentHp <= 0) return;
+    final critical =
+        !castingSpell &&
+        !repeatingEffect &&
+        pendingCriticalActionKey == action.actionKey;
+    if (castingSpell && action is Spell) {
+      trackSpellAction(action);
+      pendingCriticalActionKey = null;
+      if (action.concentration) {
+        startSpellConcentration(action, slotLevel: slotLevel);
+      }
+    } else if (!repeatingEffect &&
+        slotLevel != null &&
+        characterState.concentrationSpellId == action.id &&
+        action is Spell) {
+      updateCharacterState(
+        characterState.copyWith(concentrationSlotLevel: slotLevel),
+      );
+    }
+    if (critical) pendingCriticalActionKey = null;
+    final expression = critical
+        ? baseExpression.withCriticalHitDice()
+        : baseExpression;
     HapticFeedback.selectionClick();
     final roll = expression.roll(action.name, diceRoller);
+    final total = halfDamage
+        ? (roll.total < 0 ? 0 : roll.total ~/ 2)
+        : roll.total;
     final dice = roll.dice.join(' + ');
     final modifier = expression.modifier;
     final modifierText = modifier == 0
@@ -766,9 +1221,15 @@ class _CharacterOverviewState extends State<CharacterOverview>
         ? ' + $modifier'
         : ' - ${modifier.abs()}';
     addRollNotice(
-      title: '${action.name} Damage',
-      calculation: '${expression.notation}: $dice$modifierText = ${roll.total}',
-      total: roll.total,
+      title: repeatingEffect
+          ? '${action.name} Repeat Effect'
+          : critical
+          ? '${action.name} Critical Damage'
+          : '${action.name} Damage',
+      calculation:
+          '${expression.notation}: $dice$modifierText = ${roll.total}'
+          '${halfDamage ? ' → $total after save' : ''}',
+      total: total,
       detail: action.damageType == null
           ? 'Damage'
           : '${action.damageType} damage',
@@ -776,10 +1237,43 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
-  void rollCheck(String label, int modifier) {
+  void rollDeathSave() {
+    if (!characterState.canRollDeathSave) return;
+    final roll = rollCheck(
+      'Death Save',
+      0,
+      useSelectedMode: false,
+      describe: (roll) {
+        final updated = characterState.applyDeathSave(roll.naturalRoll);
+        return switch (roll.naturalRoll) {
+          20 => 'Natural 20 · Recovered 1 HP',
+          1 when updated.deathSaveFailures == 3 => 'Natural 1 · Dead',
+          1 => 'Natural 1 · Two failures',
+          _ when updated.deathSaveFailures == 3 => 'Dead',
+          _ when updated.deathSaveSuccesses == 3 => 'Stable',
+          >= 10 => 'Success · ${updated.deathSaveSuccesses} of 3',
+          _ => 'Failure · ${updated.deathSaveFailures} of 3',
+        };
+      },
+    );
+    updateCharacterState(characterState.applyDeathSave(roll.naturalRoll));
+  }
+
+  CheckRoll rollCheck(
+    String label,
+    int modifier, {
+    bool useSelectedMode = true,
+    String Function(CheckRoll)? describe,
+  }) {
+    final mode = useSelectedMode ? nextRollMode : D20Mode.normal;
+    if (mode != D20Mode.normal) {
+      setState(() => nextRollMode = D20Mode.normal);
+    }
+    final first = diceRoller.rollD20();
+    final second = mode == D20Mode.normal ? null : diceRoller.rollD20();
     final roll = CheckRoll(
       label: label,
-      naturalRoll: diceRoller.rollD20(),
+      naturalRoll: mode.select(first, second),
       modifier: modifier,
     );
     if (roll.isNaturalTwenty) {
@@ -792,20 +1286,25 @@ class _CharacterOverviewState extends State<CharacterOverview>
     final operator = modifier >= 0 ? '+' : '-';
     addRollNotice(
       title: label,
-      calculation:
-          'd20 ${roll.naturalRoll} $operator ${modifier.abs()} = ${roll.total}',
+      calculation: [
+        if (second != null) '${mode.label}: $first, $second →',
+        'd20 ${roll.naturalRoll} $operator ${modifier.abs()} = ${roll.total}',
+      ].join(' '),
       total: roll.total,
-      detail: roll.isNaturalTwenty
-          ? 'Natural 20'
-          : roll.isNaturalOne
-          ? 'Natural 1'
-          : null,
+      detail:
+          describe?.call(roll) ??
+          (roll.isNaturalTwenty
+              ? 'Natural 20'
+              : roll.isNaturalOne
+              ? 'Natural 1'
+              : null),
       tone: roll.isNaturalTwenty
           ? RollNoticeTone.criticalSuccess
           : roll.isNaturalOne
           ? RollNoticeTone.criticalFailure
           : RollNoticeTone.normal,
     );
+    return roll;
   }
 
   void addRollNotice({
@@ -933,20 +1432,32 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   Future<void> takeRest(RestType restType) async {
-    final plan = RestPlan.forCharacter(
+    final preview = RestPlan.forCharacter(
       type: restType,
       character: character,
       currentState: characterState,
     );
-    final confirmed = await showDialog<bool>(
+    final canSpend =
+        restType == RestType.shortRest &&
+        characterState.currentHp > 0 &&
+        characterState.currentHp < characterState.maxHp;
+    final count = await showDialog<int>(
       context: context,
-      builder: (context) => RestConfirmationDialog(plan: plan),
+      builder: (context) => RestConfirmationDialog(
+        plan: preview,
+        availableHitDice: canSpend
+            ? RestPlan.availableHitDice(character, characterState)
+            : 0,
+        hitDie: RestPlan.hitDieFor(character),
+      ),
     );
+    if (!mounted || count == null) return;
 
-    if (!mounted || confirmed != true) {
-      return;
-    }
-
+    final plan = RestPlan.forCharacter(
+      type: restType,
+      character: character,
+      currentState: characterState,
+    ).spendHitDice(character: character, count: count, roller: diceRoller);
     updateCharacterState(plan.updatedState);
     recordSessionEvent(
       SessionEventType.rest,
@@ -968,13 +1479,55 @@ class _CharacterOverviewState extends State<CharacterOverview>
   void beginCombat() {
     setState(() {
       currentMode = CharacterMode.combat;
+      combatRound = 1;
+      combatInitiative = null;
+      usedCombatActions.clear();
     });
     recordSessionEvent(SessionEventType.combat, 'Combat began');
   }
 
+  void recordCombatInitiative(int total) {
+    if (currentMode != CharacterMode.combat) return;
+    setState(() => combatInitiative = total);
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Initiative recorded',
+      detail: '$total',
+    );
+  }
+
+  void advanceCombatTurn() {
+    pendingCriticalActionKey = null;
+    setState(() {
+      nextRollMode = D20Mode.normal;
+      combatRound++;
+      usedCombatActions.clear();
+    });
+    final updated = characterState
+        .advanceConcentrationTurn()
+        .advanceConditionTurn();
+    if (!identical(updated, characterState)) updateCharacterState(updated);
+    recordSessionEvent(SessionEventType.combat, 'Round $combatRound began');
+  }
+
+  void setCombatActionUsed(CombatActionCost cost, bool used) {
+    setState(() {
+      if (used) {
+        usedCombatActions.add(cost);
+      } else {
+        usedCombatActions.remove(cost);
+      }
+    });
+    publishSession();
+  }
+
   void endCombat() {
+    pendingCriticalActionKey = null;
     setState(() {
       currentMode = CharacterMode.exploration;
+      combatRound = 1;
+      combatInitiative = null;
+      usedCombatActions.clear();
     });
     recordSessionEvent(SessionEventType.combat, 'Combat ended');
   }
@@ -1137,6 +1690,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       character: character,
       characterState: characterState,
       onCharacterStateChanged: updateCharacterState,
+      onDamageTaken: promptConcentrationAfterDamage,
       inventory: inventory,
       onBeginCombat: showBeginCombatPrompt,
       onAddItemFromLibrary: addInventoryItemFromLibrary,
@@ -1157,10 +1711,19 @@ class _CharacterOverviewState extends State<CharacterOverview>
       character: character,
       characterState: characterState,
       onCharacterStateChanged: updateCharacterState,
+      onDamageTaken: promptConcentrationAfterDamage,
       onActionTap: handleActionTap,
       onActionDetails: showActionDetails,
       onAttackRoll: rollAttack,
       onDamageRoll: rollDamage,
+      onDeathSaveRoll: rollDeathSave,
+      combatRound: combatRound,
+      usedCombatActions: usedCombatActions,
+      onCombatActionChanged: setCombatActionUsed,
+      onNextTurn: advanceCombatTurn,
+      combatInitiative: combatInitiative,
+      onInitiativeRecorded: recordCombatInitiative,
+      rollD20: diceRoller.rollD20,
       onTogglePinned: togglePinnedAction,
       onSavingThrowTap: handleSavingThrowTap,
       onResourceSpend: spendResource,
@@ -1217,6 +1780,26 @@ class _CharacterOverviewState extends State<CharacterOverview>
           }),
 
           actions: [
+            if (activeConcentrationSpell case final spell?)
+              IconButton(
+                tooltip: 'Concentration: ${spell.name}',
+                icon: const Icon(Icons.center_focus_strong),
+                onPressed: () => showConcentration(spell),
+              ),
+            PopupMenuButton<D20Mode>(
+              tooltip: 'Next d20 roll: ${nextRollMode.label}',
+              icon: Icon(
+                nextRollMode == D20Mode.normal
+                    ? Icons.casino_outlined
+                    : Icons.casino,
+              ),
+              initialValue: nextRollMode,
+              onSelected: (mode) => setState(() => nextRollMode = mode),
+              itemBuilder: (context) => [
+                for (final mode in D20Mode.values)
+                  PopupMenuItem(value: mode, child: Text(mode.label)),
+              ],
+            ),
             IconButton(
               key: const ValueKey('open-session-timeline'),
               tooltip: 'Session Timeline',

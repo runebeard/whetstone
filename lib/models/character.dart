@@ -1,4 +1,5 @@
 import 'ability.dart';
+import 'check_roll.dart';
 import 'character_action.dart';
 import 'character_resource.dart';
 import 'feature.dart';
@@ -12,6 +13,8 @@ class Character {
   final String id;
   final String name;
   final String characterClass;
+  // Keep recovered class rules intact until their format can be decoded.
+  final Object? savedClassRules;
   final int level;
   final int currentHp;
   final int maxHp;
@@ -35,6 +38,7 @@ class Character {
     this.id = 'test-character',
     required this.name,
     required this.characterClass,
+    this.savedClassRules,
     required this.level,
     required this.currentHp,
     required this.maxHp,
@@ -81,6 +85,7 @@ class Character {
       id: id ?? this.id,
       name: name ?? this.name,
       characterClass: characterClass ?? this.characterClass,
+      savedClassRules: savedClassRules,
       level: level ?? this.level,
       currentHp: currentHp ?? this.currentHp,
       maxHp: maxHp ?? this.maxHp,
@@ -109,6 +114,7 @@ class Character {
       'id': id,
       'name': name,
       'characterClass': characterClass,
+      'savedClassRules': ?savedClassRules,
       'level': level,
       'currentHp': currentHp,
       'maxHp': maxHp,
@@ -142,6 +148,23 @@ class Character {
               'name': spell.name,
               'level': spell.level,
               'prepared': spell.prepared,
+              if (spell.concentration) 'concentration': true,
+              if (spell.repeatableEffect) 'repeatableEffect': true,
+              if (spell.rollEffectOnCast) 'rollEffectOnCast': true,
+              if (spell.ritual) 'ritual': true,
+              'castingAbility': ?spell.castingAbility?.name,
+              if (spell.deriveAttackModifier) 'deriveAttackModifier': true,
+              'savingThrowAbility': ?spell.savingThrowAbility?.name,
+              if (spell.halfDamageOnSave) 'halfDamageOnSave': true,
+              if (spell.scaleCantripDamage) 'scaleCantripDamage': true,
+              if (spell.additionalDicePerSlotLevel > 0)
+                'additionalDicePerSlotLevel': spell.additionalDicePerSlotLevel,
+              if (spell.addCastingModifierToDamage)
+                'addCastingModifierToDamage': true,
+              'castingTime': ?spell.castingTime,
+              'range': ?spell.range,
+              'duration': ?spell.duration,
+              'components': ?spell.components,
               'summary': spell.summary,
               'rollModifier': spell.rollModifier,
               'damageFormula': spell.damageFormula,
@@ -188,6 +211,7 @@ class Character {
       id: json['id'] as String,
       name: json['name'] as String,
       characterClass: json['characterClass'] as String,
+      savedClassRules: json['savedClassRules'],
       level: json['level'] as int,
       currentHp: json['currentHp'] as int,
       maxHp: json['maxHp'] as int,
@@ -224,6 +248,23 @@ class Character {
           name: spell['name'] as String,
           level: spell['level'] as int,
           prepared: spell['prepared'] as bool,
+          concentration: spell['concentration'] as bool? ?? false,
+          repeatableEffect: spell['repeatableEffect'] as bool? ?? false,
+          rollEffectOnCast: spell['rollEffectOnCast'] as bool? ?? false,
+          ritual: spell['ritual'] as bool? ?? false,
+          castingAbility: _optionalAbility(spell['castingAbility']),
+          deriveAttackModifier: spell['deriveAttackModifier'] as bool? ?? false,
+          savingThrowAbility: _optionalAbility(spell['savingThrowAbility']),
+          halfDamageOnSave: spell['halfDamageOnSave'] as bool? ?? false,
+          scaleCantripDamage: spell['scaleCantripDamage'] as bool? ?? false,
+          additionalDicePerSlotLevel:
+              spell['additionalDicePerSlotLevel'] as int? ?? 0,
+          addCastingModifierToDamage:
+              spell['addCastingModifierToDamage'] as bool? ?? false,
+          castingTime: spell['castingTime'] as String?,
+          range: spell['range'] as String?,
+          duration: spell['duration'] as String?,
+          components: spell['components'] as String?,
           summary: spell['summary'] as String,
           rollModifier: spell['rollModifier'] as int?,
           damageFormula: spell['damageFormula'] as String?,
@@ -271,6 +312,60 @@ class Character {
 
   SkillProficiency proficiencyFor(Skill skill) {
     return skillProficiencies[skill.id] ?? SkillProficiency.none;
+  }
+
+  static Ability? _optionalAbility(Object? name) =>
+      name == null ? null : Ability.values.byName(name as String);
+
+  int? attackModifierFor(CharacterAction action) {
+    if (action case Spell(
+      deriveAttackModifier: true,
+      castingAbility: final ability?,
+    )) {
+      return proficiencyBonus + abilityModifierFor(ability);
+    }
+    return action.rollModifier;
+  }
+
+  String? damageFormulaFor(CharacterAction action, {int? slotLevel}) {
+    final formula = action.damageFormula;
+    if (action is! Spell || formula == null) return formula;
+
+    final scales = action.isCantrip && action.scaleCantripDamage;
+    final castingAbility = action.castingAbility;
+    final bonus = action.addCastingModifierToDamage && castingAbility != null
+        ? abilityModifierFor(castingAbility)
+        : 0;
+    final higherLevels = action.level <= 0 || action.level >= 9
+        ? 0
+        : ((slotLevel ?? action.level) - action.level).clamp(
+            0,
+            9 - action.level,
+          );
+    final slotDice =
+        higherLevels * action.additionalDicePerSlotLevel.clamp(0, 9);
+    if (!scales && bonus == 0 && slotDice == 0) return formula;
+    final base = DiceExpression.tryParse(formula);
+    if (base == null) return formula;
+    final extra = scales
+        ? switch (level) {
+            >= 17 => 3,
+            >= 11 => 2,
+            >= 5 => 1,
+            _ => 0,
+          }
+        : 0;
+    return DiceExpression(
+      diceCount: (base.diceCount + extra + slotDice).clamp(1, 20),
+      dieSides: base.dieSides,
+      modifier: base.modifier + bonus,
+    ).notation;
+  }
+
+  int? spellSaveDc(Spell spell) {
+    final ability = spell.castingAbility;
+    if (ability == null || spell.savingThrowAbility == null) return null;
+    return 8 + proficiencyBonus + abilityModifierFor(ability);
   }
 
   int scoreFor(Ability ability) {
