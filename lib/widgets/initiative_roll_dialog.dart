@@ -7,12 +7,14 @@ class InitiativeRollDialog extends StatefulWidget {
   final int initiativeModifier;
   final int Function() rollD20;
   final bool canRecord;
+  final D20Mode initialMode;
 
   const InitiativeRollDialog({
     super.key,
     required this.initiativeModifier,
     required this.rollD20,
     this.canRecord = false,
+    this.initialMode = D20Mode.normal,
   });
 
   @override
@@ -22,7 +24,7 @@ class InitiativeRollDialog extends StatefulWidget {
 class _InitiativeRollDialogState extends State<InitiativeRollDialog> {
   late int firstDie;
   int? secondDie;
-  D20Mode mode = D20Mode.normal;
+  late D20Mode mode;
 
   int get dieResult => mode.select(firstDie, secondDie);
 
@@ -35,6 +37,7 @@ class _InitiativeRollDialogState extends State<InitiativeRollDialog> {
   @override
   void initState() {
     super.initState();
+    mode = widget.initialMode;
     rollDice();
   }
 

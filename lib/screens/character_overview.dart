@@ -3,11 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../content/circle_spells.dart';
+import '../content/wild_shape_forms.dart';
 import '../modes/combat_mode.dart';
 import '../modes/exploration_mode.dart';
 import '../modes/profile_mode.dart';
 import '../modes/spellbook_mode.dart';
 import '../models/ability.dart';
+import '../models/built_in_class.dart';
 import '../widgets/stat_edit_dialog.dart';
 import '../models/authored_class.dart';
 import '../models/character.dart';
@@ -26,6 +29,8 @@ import '../models/rest.dart';
 import '../models/roll_notice.dart';
 import '../models/skill.dart';
 import '../models/spell.dart';
+import '../models/spell_slots.dart';
+import '../models/weapon.dart';
 import '../models/session_event.dart';
 import '../services/session_event_recorder.dart';
 
@@ -72,9 +77,18 @@ class _CharacterOverviewState extends State<CharacterOverview>
   late CharacterMode currentMode;
   late int combatRound;
   int? combatInitiative;
+  String? readiedAction;
+  String? readiedEffect;
   late Set<CombatActionCost> usedCombatActions;
+  ActionSurgeState? actionSurge;
+  bool wildResurgenceUsedThisTurn = false;
+  bool primalStrikeUsedThisTurn = false;
+  bool cleaveUsedThisTurn = false;
+  bool nickUsedThisTurn = false;
+  CheckRoll? tacticalMindCheck;
   late final DiceRoller diceRoller;
   String? pendingCriticalActionKey;
+  (String, int)? pendingAttackSlot;
   D20Mode nextRollMode = D20Mode.normal;
   late Character character;
   late CharacterState characterState;
@@ -101,6 +115,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
         : 1;
     if (widget.initialSession.isInCombat) {
       combatInitiative = widget.initialSession.combatInitiative;
+      readiedAction = widget.initialSession.readiedAction;
+      readiedEffect = widget.initialSession.readiedEffect;
+      actionSurge = widget.initialSession.actionSurge;
+      wildResurgenceUsedThisTurn =
+          widget.initialSession.wildResurgenceUsedThisTurn;
+      primalStrikeUsedThisTurn = widget.initialSession.primalStrikeUsedThisTurn;
+      cleaveUsedThisTurn = widget.initialSession.cleaveUsedThisTurn;
+      nickUsedThisTurn = widget.initialSession.nickUsedThisTurn;
     }
     usedCombatActions = widget.initialSession.isInCombat
         ? {...widget.initialSession.usedCombatActions}
@@ -111,6 +133,30 @@ class _CharacterOverviewState extends State<CharacterOverview>
     currentMode = widget.initialSession.isInCombat
         ? CharacterMode.combat
         : CharacterMode.exploration;
+    final circleSpells = withCircleSpells(character, characterState.druidLand);
+    if (circleSpells.length != character.spells.length ||
+        circleSpells.any(
+          (spell) => !character.spells.any(
+            (old) =>
+                old.id == spell.id &&
+                (!spell.isCircleGrant ||
+                    (old.summary == spell.summary &&
+                        old.damageFormula == spell.damageFormula &&
+                        old.duration == spell.duration)),
+          ),
+        )) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          saveSpellChanges(circleSpells, characterState.pinnedActionKeys);
+        }
+      });
+    }
+    if (!characterState.canConcentrate ||
+        characterState.activeConditions.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) updateCharacterState(characterState);
+      });
+    }
   }
 
   @override
@@ -132,7 +178,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
         isInCombat: currentMode == CharacterMode.combat,
         combatRound: combatRound,
         combatInitiative: combatInitiative,
+        readiedAction: readiedAction,
+        readiedEffect: readiedEffect,
         usedCombatActions: {...usedCombatActions},
+        actionSurge: actionSurge,
+        wildResurgenceUsedThisTurn: wildResurgenceUsedThisTurn,
+        primalStrikeUsedThisTurn: primalStrikeUsedThisTurn,
+        cleaveUsedThisTurn: cleaveUsedThisTurn,
+        nickUsedThisTurn: nickUsedThisTurn,
         timeline: [...timeline],
       ),
     );
@@ -145,6 +198,53 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void updateCharacterState(CharacterState updatedState) {
+    if (!updatedState.canConcentrate &&
+        updatedState.activeConditions.contains(naturesSanctuaryCondition)) {
+      updatedState = updatedState.copyWith(
+        activeConditions: {...updatedState.activeConditions}
+          ..remove(naturesSanctuaryCondition),
+      );
+    }
+    if (landDruidLevel >= 10 &&
+        updatedState.activeConditions.contains('Poisoned')) {
+      updatedState = updatedState.copyWith(
+        activeConditions: {...updatedState.activeConditions}
+          ..remove('Poisoned'),
+      );
+    }
+    if (updatedState.wildShapeForm != null && !updatedState.canConcentrate) {
+      updatedState = updatedState.copyWith(clearWildShape: true);
+    }
+    if (updatedState.isRaging &&
+        character.subclasses['Barbarian'] == 'Path of the Berserker' &&
+        character.levelInClass('Barbarian') >= 6 &&
+        updatedState.activeConditions.any(
+          const {'Charmed', 'Frightened'}.contains,
+        )) {
+      updatedState = updatedState.copyWith(
+        activeConditions: {...updatedState.activeConditions}
+          ..removeAll(const {'Charmed', 'Frightened'}),
+      );
+    }
+    if ((!updatedState.canConcentrate ||
+            updatedState.activeConditions.contains('Grappled') ||
+            updatedState.activeConditions.contains('Restrained')) &&
+        updatedState.activeConditions.contains(dodgingCondition)) {
+      updatedState = updatedState.copyWith(
+        activeConditions: {...updatedState.activeConditions}
+          ..remove(dodgingCondition),
+      );
+    }
+    final rageEnds = hasPersistentRage
+        ? updatedState.currentHp <= 0 ||
+              updatedState.activeConditions.contains('Unconscious')
+        : !updatedState.canConcentrate;
+    if (rageEnds) {
+      updatedState = updatedState.endRage();
+    }
+    if (updatedState.isRaging) {
+      updatedState = updatedState.copyWith(clearConcentration: true);
+    }
     if (updatedState.concentrationSpellId != null &&
         !updatedState.canConcentrate) {
       updatedState = updatedState.copyWith(clearConcentration: true);
@@ -186,7 +286,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void handleSkillTap(SkillCheck check) {
-    rollCheck(check.skill.name, check.modifier);
+    tacticalMindCheck = rollCheck(
+      check.skill.name,
+      check.modifier,
+      hasAdvantage:
+          (characterState.isRaging &&
+              check.skill.ability == Ability.strength) ||
+          (character.championLevel >= 3 && check.skill.id == 'athletics'),
+    );
   }
 
   Future<void> handleAbilityLongPress(Ability ability) async {
@@ -248,7 +355,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       );
       return;
     }
-    final updated = authored == null
+    final result = authored == null
         ? await Navigator.push<Character>(
             context,
             MaterialPageRoute(
@@ -259,7 +366,20 @@ class _CharacterOverviewState extends State<CharacterOverview>
             ),
           )
         : await confirmAuthoredAdvancement(editableCharacter, authored);
-    if (!mounted || updated == null) return;
+    if (!mounted || result == null) return;
+    final circleSpells = withCircleSpells(result, characterState.druidLand);
+    final removedCircleKeys = {
+      for (final spell in result.spells)
+        if (spell.isCircleGrant &&
+            !circleSpells.any((entry) => entry.id == spell.id))
+          spell.actionKey,
+    };
+    final updated = result.copyWith(
+      spells: circleSpells,
+      initiallyPinnedActionKeys: result.initiallyPinnedActionKeys.difference(
+        removedCircleKeys,
+      ),
+    );
 
     final classResourceIds =
         authored?.resourcesAt(2).map((resource) => resource.id).toSet() ??
@@ -268,10 +388,29 @@ class _CharacterOverviewState extends State<CharacterOverview>
       for (final resource in editableCharacter.resources) resource.id: resource,
     };
     final resourceValues = <String, int>{};
+    final bonusSlot = characterState.resourceValues[wildResurgenceSlot.id];
+    if (bonusSlot != null && updated.levelInClass('Druid') >= 5) {
+      resourceValues[wildResurgenceSlot.id] = bonusSlot;
+    }
+    if (updated.levelInClass('Druid') >= 20) {
+      for (final slot in natureMagicianSlots) {
+        if (characterState.resourceValues[slot.id] case final remaining?) {
+          resourceValues[slot.id] = remaining;
+        }
+      }
+    }
     for (final resource in updated.resources) {
       final previous = previousResources[resource.id];
       final remaining = characterState.resourceValues[resource.id];
-      if (classResourceIds.contains(resource.id)) {
+      if (spellSlotLevel(resource) != null) {
+        resourceValues[resource.id] = remainingSpellSlots(
+          resource,
+          previousResources.values,
+          characterState.resourceValues,
+        );
+      } else if (classResourceIds.contains(resource.id) ||
+          (authored == null &&
+              progressingClassResourceIds.contains(resource.id))) {
         final spent = previous == null
             ? resource.maximum - resource.initialValue
             : previous.maximum - (remaining ?? previous.initialValue);
@@ -289,7 +428,16 @@ class _CharacterOverviewState extends State<CharacterOverview>
         : characterState.currentHp;
     final updatedState = characterState.copyWith(
       currentHp: currentHp,
+      clearConcentration: !updated.spells.any(
+        (spell) => spell.id == characterState.concentrationSpellId,
+      ),
+      spellSummons: {
+        for (final spell in updated.spells)
+          spell.id: ?characterState.spellSummons[spell.id],
+      },
       maxHp: updated.maxHp,
+      clearWildShape: updated.levelInClass('Druid') < 2,
+      clearWildCompanion: updated.levelInClass('Druid') < 2,
       initiativeModifier: updated.initiativeModifier,
       pinnedActionKeys: updated.initiallyPinnedActionKeys,
       resourceValues: resourceValues,
@@ -447,6 +595,13 @@ class _CharacterOverviewState extends State<CharacterOverview>
       selection.content as Spell,
       character.spells,
     );
+    if (landDruidLevel >= 3 && characterState.druidLand != null) {
+      saveSpellChanges([
+        ...character.spells,
+        spell,
+      ], characterState.pinnedActionKeys);
+      return;
+    }
     final updatedCharacter = character.copyWith(
       spells: [...character.spells, spell],
     );
@@ -463,6 +618,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
     final pinnedActionKeys = {...characterState.pinnedActionKeys};
     if (result.pinned) pinnedActionKeys.add(result.spell.actionKey);
+    if (landDruidLevel >= 3 && characterState.druidLand != null) {
+      saveSpellChanges([...character.spells, result.spell], pinnedActionKeys);
+      return;
+    }
     final updatedCharacter = character.copyWith(
       spells: [...character.spells, result.spell],
       initiallyPinnedActionKeys: pinnedActionKeys,
@@ -492,6 +651,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
         content: Text(
           [
             spell.name,
+            if (characterState.concentrationTarget case final target?)
+              'Target: $target',
             if (characterState.concentrationSlotLevel case final level?)
               'Slot level $level',
             if (characterState.concentrationTurnsRemaining case final turns?)
@@ -511,10 +672,27 @@ class _CharacterOverviewState extends State<CharacterOverview>
             onPressed: () => Navigator.pop(context, 'duration'),
             child: const Text('Set Turn Limit'),
           ),
+          if (characterState.concentrationTarget == null ||
+              spell.canMoveConcentrationTarget)
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'target'),
+              child: Text(
+                characterState.concentrationTarget == null
+                    ? 'Set Target'
+                    : 'Move Target',
+              ),
+            ),
           if (spell.repeatableEffect && spell.damageFormula != null)
             TextButton(
               onPressed: () => Navigator.pop(context, 'repeat'),
               child: const Text('Roll Repeat Effect'),
+            ),
+          if (spell.isCircleGrant &&
+              spell.savingThrowAbility != null &&
+              spell.damageFormula == null)
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'target-save'),
+              child: const Text('Resolve Target Save'),
             ),
           FilledButton(
             onPressed: () => Navigator.pop(context, 'save'),
@@ -526,6 +704,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
     if (!mounted ||
         action == null ||
         characterState.concentrationSpellId != spell.id) {
+      return;
+    }
+    if (action == 'target') {
+      await setConcentrationTarget(spell);
+      return;
+    }
+    if (action == 'target-save') {
+      await resolveCircleControlSave(spell, character.spellSaveDc(spell));
       return;
     }
     if (action == 'duration') {
@@ -566,6 +752,62 @@ class _CharacterOverviewState extends State<CharacterOverview>
     resolveConcentrationSave(dc);
   }
 
+  Future<void> setConcentrationTarget(Spell spell) async {
+    final previousTarget = characterState.concentrationTarget;
+    final moving = previousTarget != null;
+    if (moving && !spell.canMoveConcentrationTarget) return;
+    final costsBonusAction = moving && currentMode == CharacterMode.combat;
+    if (costsBonusAction &&
+        usedCombatActions.contains(CombatActionCost.bonusAction)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Bonus Action already used this turn.')),
+      );
+      return;
+    }
+    var target = previousTarget ?? '';
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          moving ? 'Move concentration target' : 'Concentration target',
+        ),
+        contentTextStyle: Theme.of(context).textTheme.bodyMedium,
+        content: TextFormField(
+          initialValue: target,
+          maxLength: 100,
+          decoration: const InputDecoration(labelText: 'Target name'),
+          onChanged: (value) => target = value,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (target.trim().isNotEmpty) {
+                Navigator.pop(context, target.trim());
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (mounted &&
+        selected != null &&
+        selected != previousTarget &&
+        characterState.concentrationSpellId == spell.id &&
+        characterState.concentrationTarget == previousTarget &&
+        (!costsBonusAction ||
+            !usedCombatActions.contains(CombatActionCost.bonusAction))) {
+      if (costsBonusAction) usedCombatActions.add(CombatActionCost.bonusAction);
+      updateCharacterState(
+        characterState.copyWith(concentrationTarget: selected),
+      );
+    }
+  }
+
   Future<void> promptConcentrationAfterDamage(int damage) async {
     final spell = activeConcentrationSpell;
     if (spell == null) return;
@@ -595,7 +837,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void resolveConcentrationSave(int dc) {
-    final save = character.savingThrowFor(Ability.constitution);
+    final save = characterForPhysicalChecks.savingThrowFor(
+      Ability.constitution,
+    );
     final roll = rollCheck(
       'Concentration Save',
       save.modifier,
@@ -613,48 +857,113 @@ class _CharacterOverviewState extends State<CharacterOverview>
     final isPinned = characterState.pinnedActionKeys.contains(spell.actionKey);
     final canPin = spell.isAvailableInCombat || isPinned;
     final isConcentrating = characterState.concentrationSpellId == spell.id;
+    final freeCast = freeCastResource(spell);
+    final scrolls = inventory.where((item) {
+      final name = item.name.trim().toLowerCase();
+      final spellName = spell.name.trim().toLowerCase();
+      return item.quantity > 0 &&
+          (name == 'spell scroll: $spellName' ||
+              name == 'spell scroll ($spellName)' ||
+              name == '$spellName spell scroll' ||
+              name == 'spell scroll (${spell.levelLabel.toLowerCase()})');
+    }).toList();
     final action = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
       builder: (context) => SafeArea(
-        child: Wrap(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('Edit Spell'),
-              onTap: () => Navigator.pop(context, 'edit'),
-            ),
-            ListTile(
-              leading: Icon(
-                isPinned ? Icons.push_pin_outlined : Icons.push_pin,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!spell.isCircleGrant)
+                ListTile(
+                  leading: const Icon(Icons.edit_outlined),
+                  title: const Text('Edit Spell'),
+                  onTap: () => Navigator.pop(context, 'edit'),
+                ),
+              ListTile(
+                leading: Icon(
+                  isPinned ? Icons.push_pin_outlined : Icons.push_pin,
+                ),
+                title: Text(isPinned ? 'Unpin from Combat' : 'Pin to Combat'),
+                subtitle: canPin
+                    ? null
+                    : const Text('Prepare this spell before pinning it'),
+                onTap: canPin ? () => Navigator.pop(context, 'pin') : null,
               ),
-              title: Text(isPinned ? 'Unpin from Combat' : 'Pin to Combat'),
-              subtitle: canPin
-                  ? null
-                  : const Text('Prepare this spell before pinning it'),
-              onTap: canPin ? () => Navigator.pop(context, 'pin') : null,
-            ),
-            ListTile(
-              leading: const Icon(Icons.center_focus_strong),
-              title: Text(
-                isConcentrating ? 'End Concentration' : 'Track Concentration',
+              ListTile(
+                leading: const Icon(Icons.center_focus_strong),
+                title: Text(
+                  isConcentrating ? 'End Concentration' : 'Track Concentration',
+                ),
+                onTap: isConcentrating || characterState.canConcentrate
+                    ? () => Navigator.pop(context, 'concentration')
+                    : null,
               ),
-              onTap: isConcentrating || characterState.canConcentrate
-                  ? () => Navigator.pop(context, 'concentration')
-                  : null,
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline),
-              title: const Text('Remove Spell'),
-              onTap: () => Navigator.pop(context, 'remove'),
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.close),
-              title: const Text('Cancel'),
-              onTap: () => Navigator.pop(context),
-            ),
-          ],
+              if (!spell.isCantrip && freeCast == null)
+                ListTile(
+                  leading: const Icon(Icons.add_circle_outline),
+                  title: const Text('Track One Free Cast per Long Rest'),
+                  onTap: () => Navigator.pop(context, 'add-free-cast'),
+                ),
+              if (freeCast != null)
+                ListTile(
+                  leading: const Icon(Icons.auto_awesome),
+                  title: const Text('Use Free Cast'),
+                  subtitle: Text('${remainingUses(freeCast)} remaining'),
+                  onTap:
+                      remainingUses(freeCast) > 0 &&
+                          characterState.canConcentrate
+                      ? () => Navigator.pop(context, 'free-cast')
+                      : null,
+                ),
+              if (scrolls.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.description_outlined),
+                  title: const Text('Cast from Scroll'),
+                  subtitle: Text(
+                    scrolls.length == 1
+                        ? scrolls.single.name
+                        : 'Choose a scroll from inventory',
+                  ),
+                  onTap: () => Navigator.pop(context, 'scroll'),
+                ),
+              if (characterState.spellSummons[spell.id] case final summon?)
+                ListTile(
+                  title: const Text('Dismiss Summon'),
+                  subtitle: Text(summon),
+                  onTap: () => Navigator.pop(context, 'dismiss-summon'),
+                )
+              else if (!spell.concentration || isConcentrating)
+                ListTile(
+                  title: const Text('Track Summon'),
+                  onTap: () => Navigator.pop(context, 'track-summon'),
+                ),
+              if (spell.isCantrip &&
+                  !spell.isCircleGrant &&
+                  character.levelInClass('Druid') > 0)
+                ListTile(
+                  title: Text(
+                    character.druidCantripIds.contains(spell.id)
+                        ? 'Unmark as Druid Cantrip'
+                        : 'Mark as Druid Cantrip',
+                  ),
+                  onTap: () => Navigator.pop(context, 'druid-cantrip'),
+                ),
+              if (!spell.isCircleGrant)
+                ListTile(
+                  leading: const Icon(Icons.delete_outline),
+                  title: const Text('Remove Spell'),
+                  onTap: () => Navigator.pop(context, 'remove'),
+                ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.close),
+                title: const Text('Cancel'),
+                onTap: () => Navigator.pop(context),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -665,6 +974,44 @@ class _CharacterOverviewState extends State<CharacterOverview>
         await editSpell(spell);
       case 'pin':
         togglePinnedAction(spell);
+      case 'add-free-cast':
+        addFreeCast(spell);
+      case 'free-cast':
+        await castSpell(spell, useFreeCast: true);
+      case 'druid-cantrip':
+        final ids = {...character.druidCantripIds};
+        if (!ids.remove(spell.id)) ids.add(spell.id);
+        final updated = character.copyWith(druidCantripIds: ids);
+        setState(() => character = updated);
+        widget.onCharacterChanged(updated);
+      case 'scroll':
+        final scrollName = scrolls.length == 1
+            ? scrolls.single.name
+            : await showDialog<String>(
+                context: context,
+                builder: (context) => SimpleDialog(
+                  title: const Text('Choose a Spell Scroll'),
+                  children: [
+                    for (final item in scrolls)
+                      SimpleDialogOption(
+                        onPressed: () => Navigator.pop(context, item.name),
+                        child: Text(item.name),
+                      ),
+                  ],
+                ),
+              );
+        if (mounted && scrollName != null) {
+          await castFromScroll(spell, scrollName);
+        }
+      case 'track-summon':
+        await trackSpellSummon(spell);
+      case 'dismiss-summon':
+        final summons = {...characterState.spellSummons}..remove(spell.id);
+        updateCharacterState(characterState.copyWith(spellSummons: summons));
+        recordSessionEvent(
+          SessionEventType.combat,
+          '${spell.name} summon dismissed',
+        );
       case 'concentration':
         updateCharacterState(
           characterState.copyWith(
@@ -675,6 +1022,140 @@ class _CharacterOverviewState extends State<CharacterOverview>
       case 'remove':
         await removeSpell(spell);
     }
+  }
+
+  Future<void> castFromScroll(Spell spell, String scrollName) async {
+    if (!canSpendSpellAction(spell, fromScroll: true)) return;
+    final checkDc = 10 + spell.level;
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Cast ${spell.name} from a scroll?'),
+        content: Text(
+          'Confirm that this scroll contains ${spell.name} and that the spell '
+          'is on your class list. If it is above the level you can normally '
+          'cast, make a DC $checkDc spellcasting ability check. '
+          'Scroll save DC ${spell.scrollSaveDc}, attack bonus +${spell.scrollAttackBonus}.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'failed'),
+            child: const Text('Failed check'),
+          ),
+          if (!spell.isCantrip)
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'roll'),
+              child: const Text('Roll Ability Check'),
+            ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, 'cast'),
+            child: const Text('Cast from Scroll'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        result == null ||
+        !canSpendSpellAction(spell, fromScroll: true)) {
+      return;
+    }
+    var canCast = result == 'cast';
+    if (result == 'roll') {
+      final ability =
+          spell.castingAbility ??
+          await showDialog<Ability>(
+            context: context,
+            builder: (context) => SimpleDialog(
+              title: const Text('Spellcasting ability'),
+              children: [
+                for (final ability in [
+                  Ability.intelligence,
+                  Ability.wisdom,
+                  Ability.charisma,
+                ])
+                  SimpleDialogOption(
+                    onPressed: () => Navigator.pop(context, ability),
+                    child: Text(ability.label),
+                  ),
+              ],
+            ),
+          );
+      if (!mounted ||
+          ability == null ||
+          !canSpendSpellAction(spell, fromScroll: true)) {
+        return;
+      }
+      canCast =
+          rollCheck(
+            '${spell.name} Scroll Check',
+            character.abilityModifierFor(ability),
+            describe: (roll) =>
+                'DC $checkDc · ${roll.total >= checkDc ? 'Success' : 'Failure'}',
+          ).total >=
+          checkDc;
+    }
+    if (canCast) {
+      await castSpell(spell, scrollName: scrollName);
+    } else if (spendInventoryItem(scrollName)) {
+      trackSpellAction(spell);
+      recordSessionEvent(
+        SessionEventType.combat,
+        'Spell scroll failed',
+        detail: spell.name,
+      );
+    }
+  }
+
+  Future<void> trackSpellSummon(Spell spell) async {
+    var name = '';
+    final summon = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Track summon for ${spell.name}'),
+        content: TextField(
+          decoration: const InputDecoration(
+            labelText: 'Creature or group name',
+          ),
+          maxLength: 80,
+          onChanged: (value) => name = value.trim(),
+          onSubmitted: (_) {
+            if (name.isNotEmpty) Navigator.pop(context, name);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (name.isNotEmpty) Navigator.pop(context, name);
+            },
+            child: const Text('Track'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        summon == null ||
+        (spell.concentration &&
+            characterState.concentrationSpellId != spell.id)) {
+      return;
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        spellSummons: {...characterState.spellSummons, spell.id: summon},
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.combat,
+      '${spell.name} summon tracked',
+      detail: summon,
+    );
   }
 
   Future<void> editSpell(Spell spell) async {
@@ -731,15 +1212,51 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
-  void saveSpellChanges(List<Spell> spells, Set<String> pinnedActionKeys) {
+  void saveSpellChanges(
+    List<Spell> requested,
+    Set<String> requestedPins, {
+    DruidLand? land,
+  }) {
+    final spells = withCircleSpells(
+      character.copyWith(spells: requested),
+      land ?? characterState.druidLand,
+    );
+    final removedKeys = {
+      for (final spell in character.spells)
+        if (!spells.any((entry) => entry.id == spell.id)) spell.actionKey,
+    };
+    final pinnedActionKeys = requestedPins.difference(removedKeys);
+    final removedFreeCastIds = {
+      for (final spell in character.spells)
+        if (!spells.any((remaining) => remaining.id == spell.id))
+          freeCastId(spell),
+    };
     final updatedCharacter = character.copyWith(
+      resources: [
+        for (final resource in character.resources)
+          if (!removedFreeCastIds.contains(resource.id)) resource,
+      ],
       spells: spells,
+      druidCantripIds: {
+        for (final spell in spells)
+          if (spell.isCantrip && character.druidCantripIds.contains(spell.id))
+            spell.id,
+      },
       initiallyPinnedActionKeys: pinnedActionKeys,
     );
     final updatedState = characterState.copyWith(
+      druidLand: land,
       clearConcentration: !spells.any(
         (spell) => spell.id == characterState.concentrationSpellId,
       ),
+      spellSummons: {
+        for (final spell in spells)
+          spell.id: ?characterState.spellSummons[spell.id],
+      },
+      resourceValues: {
+        for (final entry in characterState.resourceValues.entries)
+          if (!removedFreeCastIds.contains(entry.key)) entry.key: entry.value,
+      },
       pinnedActionKeys: pinnedActionKeys,
     );
     if (pendingCriticalActionKey?.startsWith('spell:') == true &&
@@ -1022,14 +1539,60 @@ class _CharacterOverviewState extends State<CharacterOverview>
     widget.onCharacterChanged(updatedCharacter);
   }
 
-  void handleSavingThrowTap(SavingThrowCheck check) {
-    rollCheck('${check.ability.label} Save', check.modifier);
+  Future<void> handleSavingThrowTap(SavingThrowCheck check) async {
+    final hasDangerSense =
+        check.ability == Ability.dexterity &&
+        character.levelInClass('Barbarian') >= 2 &&
+        characterState.canConcentrate;
+    final label = '${check.ability.label} Save';
+    final hasAdvantage =
+        hasDangerSense ||
+        (check.ability == Ability.dexterity &&
+            characterState.activeConditions.contains(dodgingCondition)) ||
+        (characterState.isRaging && check.ability == Ability.strength);
+    final originalMode = hasAdvantage
+        ? nextRollMode.withAdvantage()
+        : nextRollMode;
+    final roll = rollCheck(label, check.modifier, hasAdvantage: hasAdvantage);
+    final fighterLevel = character.levelInClass('Fighter');
+    final resource = character.resources
+        .where((resource) => resource.id == indomitableResourceId)
+        .firstOrNull;
+    if (fighterLevel < 9 || resource == null || remainingUses(resource) <= 0) {
+      return;
+    }
+    final reroll = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Indomitable'),
+        content: Text(
+          '$label total ${roll.total}. If the save failed, you can spend one '
+          'use to reroll with a +$fighterLevel bonus and take the new result.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep Result'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Reroll Failed Save'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || reroll != true || !spendCastResource(resource.id)) return;
+    rollCheck(
+      '$label · Indomitable',
+      check.modifier + fighterLevel,
+      modeOverride: originalMode,
+    );
   }
 
   void handleActionTap(CharacterAction action) {
     HapticFeedback.selectionClick();
     final modifier = character.attackModifierFor(action);
-    if (modifier == null) {
+    if (modifier == null || (action is Spell && !action.isAvailableInCombat)) {
       showActionDetails(action);
       return;
     }
@@ -1043,6 +1606,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       builder: (context) => ActionDetailsDialog(
         action: action,
         spellSaveDc: action is Spell ? character.spellSaveDc(action) : null,
+        spellRange: action is Spell ? character.rangeForSpell(action) : null,
         spellDamageFormula: action is Spell
             ? character.damageFormulaFor(action)
             : null,
@@ -1058,9 +1622,19 @@ class _CharacterOverviewState extends State<CharacterOverview>
                 rollDamage(action);
               }
             : null,
+        onCastRitual:
+            action is Spell &&
+                action.ritual &&
+                currentMode != CharacterMode.combat &&
+                characterState.canConcentrate
+            ? () {
+                Navigator.pop(context);
+                castSpell(action, asRitual: true);
+              }
+            : null,
         onCast:
             action is Spell &&
-                (action.concentration || action.rollEffectOnCast) &&
+                action.isAvailableInCombat &&
                 characterState.currentHp > 0
             ? () {
                 Navigator.pop(context);
@@ -1071,71 +1645,868 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
-  void trackSpellAction(Spell spell) {
-    if (currentMode != CharacterMode.combat) return;
-    final cost = switch (spell.castingTime?.trim().toLowerCase()) {
+  CombatActionCost? spellActionCost(Spell spell) {
+    if (currentMode != CharacterMode.combat) return null;
+    return switch (spell.castingTime?.trim().toLowerCase()) {
       'action' || '1 action' => CombatActionCost.action,
       'bonus action' || '1 bonus action' => CombatActionCost.bonusAction,
       'reaction' || '1 reaction' => CombatActionCost.reaction,
       _ => null,
     };
-    if (cost != null && !usedCombatActions.contains(cost)) {
-      setCombatActionUsed(cost, true);
+  }
+
+  bool canSpendSpellAction(Spell spell, {bool fromScroll = false}) {
+    final transformed = characterState.wildShapeForm != null;
+    final canCastInForm = character.levelInClass('Druid') >= 18;
+    if (transformed &&
+        (!canCastInForm ||
+            (!fromScroll && spell.hasCostlyOrConsumedMaterial))) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            canCastInForm
+                ? 'Beast Spells cannot use costly or consumed material components.'
+                : 'You cannot cast spells while in Wild Shape.',
+          ),
+        ),
+      );
+      return false;
+    }
+    if (characterState.isRaging) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You cannot cast spells while raging.')),
+      );
+      return false;
+    }
+    if (!characterState.canConcentrate) return false;
+    final cost = spellActionCost(spell);
+    if (cost == null || !usedCombatActions.contains(cost)) return true;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${cost.label} already used this turn.')),
+    );
+    return false;
+  }
+
+  void trackSpellAction(Spell spell) {
+    final cost = spellActionCost(spell);
+    if (cost != null) setCombatActionUsed(cost, true);
+  }
+
+  String freeCastId(Spell spell) => 'whetstone:free-cast:${spell.id}';
+
+  static const circleFreeCast = CharacterResource(
+    id: 'whetstone:class:natural-recovery-cast',
+    name: 'Natural Recovery',
+    maximum: 1,
+    initialValue: 1,
+    rechargePeriod: RechargePeriod.longRest,
+  );
+
+  CharacterResource? freeCastResource(Spell spell) {
+    CharacterResource? personal;
+    for (final resource in character.resources) {
+      if (resource.id != freeCastId(spell)) continue;
+      if (remainingUses(resource) > 0) return resource;
+      personal = resource;
+    }
+    final eligible =
+        landDruidLevel >= 6 &&
+        !spell.isCantrip &&
+        spell.prepared &&
+        (characterState.druidLand
+                ?.spellsAt(landDruidLevel)
+                .any(
+                  (name) =>
+                      name.toLowerCase() == spell.name.trim().toLowerCase(),
+                ) ??
+            false);
+    return eligible ? circleFreeCast : personal;
+  }
+
+  void addFreeCast(Spell spell) {
+    if (freeCastResource(spell) != null) return;
+    final updated = character.copyWith(
+      resources: [
+        ...character.resources,
+        CharacterResource(
+          id: freeCastId(spell),
+          name: '${spell.name} Free Cast',
+          maximum: 1,
+          initialValue: 1,
+          rechargePeriod: RechargePeriod.longRest,
+        ),
+      ],
+    );
+    setState(() => character = updated);
+    widget.onCharacterChanged(updated);
+    publishSession();
+  }
+
+  bool spendFreeCast(Spell spell) {
+    final resource = freeCastResource(spell);
+    if (resource == null || remainingUses(resource) <= 0) return false;
+    if (resource.id == circleFreeCast.id) {
+      updateCharacterState(
+        characterState.copyWith(naturalRecoveryCastUsed: true),
+      );
+      return true;
+    }
+    return spendCastResource(resource.id);
+  }
+
+  bool tracksSlotsFor(Spell spell) =>
+      !spell.isCantrip &&
+      spell.prepared &&
+      castingResources.any((resource) => spellSlotLevel(resource) != null);
+
+  Iterable<CharacterResource> get castingResources sync* {
+    yield* character.resources;
+    if (character.levelInClass('Druid') >= 5 &&
+        characterState.resourceValues.containsKey(wildResurgenceSlot.id)) {
+      yield wildResurgenceSlot;
+    }
+    if (character.levelInClass('Druid') >= 20) {
+      yield* natureMagicianSlots.where(
+        (slot) => characterState.resourceValues.containsKey(slot.id),
+      );
     }
   }
 
-  void castSpell(Spell spell) {
-    if (characterState.currentHp <= 0) return;
-    if (character.attackModifierFor(spell) != null) {
-      rollAttack(spell);
-    } else if (spell.rollEffectOnCast && spell.damageFormula != null) {
-      rollDamage(spell, castingSpell: true);
-    } else if (spell.concentration) {
-      startSpellConcentration(spell);
-      trackSpellAction(spell);
+  int remainingUses(CharacterResource resource) =>
+      resource.id == circleFreeCast.id
+      ? (characterState.naturalRecoveryCastUsed ? 0 : 1)
+      : characterState.resourceValues[resource.id] ?? resource.initialValue;
+
+  Future<(int, String)?> chooseTrackedSlot(Spell spell) =>
+      chooseAvailableSlot(spell.level, '${spell.name} slot level');
+
+  Future<(int, String)?> chooseAvailableSlot(int minimumLevel, String title) {
+    final slots = [
+      for (final resource in castingResources)
+        if (spellSlotLevel(resource) case final level?
+            when level >= minimumLevel && remainingUses(resource) > 0)
+          (level, resource),
+    ]..sort((a, b) => a.$1.compareTo(b.$1));
+    if (slots.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No eligible spell slots remain.')),
+      );
+      return Future.value();
     }
+    return showDialog<(int, String)>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text(title),
+        children: [
+          for (final (level, resource) in slots)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, (level, resource.id)),
+              child: Text(
+                'Level $level${resource.id == wildResurgenceSlot.id
+                    ? ' Wild Resurgence'
+                    : natureMagicianSlots.contains(resource)
+                    ? ' Nature Magician'
+                    : resource.rechargePeriod == RechargePeriod.shortRest
+                    ? ' Pact Magic'
+                    : ''}'
+                ' · ${remainingUses(resource)} remaining',
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  bool spendCastResource(String id) {
+    for (final resource in castingResources) {
+      if (resource.id != id) continue;
+      final remaining = remainingUses(resource);
+      if (remaining <= 0) return false;
+      updateCharacterState(
+        characterState.copyWith(
+          resourceValues: {
+            ...characterState.resourceValues,
+            resource.id: remaining - 1,
+          },
+        ),
+      );
+      return true;
+    }
+    return false;
+  }
+
+  Future<void> castSpell(
+    Spell spell, {
+    bool asRitual = false,
+    bool useFreeCast = false,
+    String? scrollName,
+  }) async {
+    if (asRitual && (!spell.ritual || currentMode == CharacterMode.combat)) {
+      return;
+    }
+    if (!canSpendSpellAction(spell, fromScroll: scrollName != null)) return;
+    bool? freedomTarget;
+    if (spell.isCircleGrant && spell.name == 'Freedom of Movement') {
+      freedomTarget = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Freedom of Movement target'),
+          content: const Text(
+            'Choose the willing creature you touch. The protection lasts one hour.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Another creature'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Yourself'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted ||
+          freedomTarget == null ||
+          !canSpendSpellAction(spell, fromScroll: scrollName != null)) {
+        return;
+      }
+    }
+    if (character.attackModifierFor(spell) != null) {
+      await rollAttack(
+        spell,
+        asRitual: asRitual,
+        useFreeCast: useFreeCast,
+        scrollName: scrollName,
+      );
+    } else if (spell.rollEffectOnCast && spell.damageFormula != null) {
+      await rollDamage(
+        spell,
+        castingSpell: true,
+        asRitual: asRitual,
+        useFreeCast: useFreeCast,
+        scrollName: scrollName,
+      );
+    } else {
+      int? slotLevel;
+      if (scrollName != null && !spendInventoryItem(scrollName)) return;
+      if (useFreeCast && !spendFreeCast(spell)) return;
+      if (scrollName == null &&
+          !useFreeCast &&
+          !asRitual &&
+          tracksSlotsFor(spell)) {
+        final slot = await chooseTrackedSlot(spell);
+        slotLevel = slot?.$1;
+        if (!mounted ||
+            slot == null ||
+            !canSpendSpellAction(spell, fromScroll: scrollName != null) ||
+            !spendCastResource(slot.$2)) {
+          return;
+        }
+      }
+      if (spell.concentration) {
+        startSpellConcentration(spell, slotLevel: slotLevel);
+      }
+      trackSpellAction(spell);
+      if (freedomTarget == true) {
+        updateCharacterState(
+          characterState.copyWith(
+            activeConditions: {
+              ...characterState.activeConditions,
+              freedomOfMovementCondition,
+            },
+            conditionTurns: {
+              ...characterState.conditionTurns,
+              freedomOfMovementCondition: 600,
+            },
+          ),
+        );
+      }
+      if (spell.isCircleGrant && spell.savingThrowAbility != null) {
+        await resolveCircleControlSave(
+          spell,
+          scrollName == null
+              ? character.spellSaveDc(spell)
+              : spell.scrollSaveDc,
+        );
+      } else if (spell.isCircleGrant) {
+        recordSessionEvent(
+          SessionEventType.combat,
+          '${spell.name} cast',
+          detail: spell.summary,
+        );
+      }
+    }
+  }
+
+  Future<void> resolveCircleControlSave(Spell spell, int? dc) async {
+    final ability = spell.savingThrowAbility;
+    if (ability == null) return;
+    final outcome = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${spell.name} target save'),
+        content: Text(
+          '${dc == null ? '' : 'DC $dc '}${ability.label} saving throw.\n\n'
+          '${spell.summary}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Resolve at Table'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Failed save'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Successful save'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    recordSessionEvent(
+      SessionEventType.combat,
+      '${spell.name} target save',
+      detail:
+          '${outcome == null
+              ? 'Resolve at table'
+              : outcome
+              ? 'Successful save'
+              : 'Failed save'}'
+          '${dc == null ? '' : ' · DC $dc'} ${ability.label}. ${spell.summary}',
+    );
   }
 
   void startSpellConcentration(Spell spell, {int? slotLevel}) {
-    if (!characterState.canConcentrate) return;
+    if (!characterState.canConcentrate || characterState.isRaging) return;
+    final turns = spell.isCircleGrant
+        ? switch (spell.name) {
+            'Blur' ||
+            'Hold Person' ||
+            'Sleep' ||
+            'Sleet Storm' ||
+            'Stinking Cloud' ||
+            'Tree Stride' => 10,
+            'Fog Cloud' || 'Web' || 'Polymorph' => 600,
+            'Insect Plague' || 'Wall of Stone' => 100,
+            _ => null,
+          }
+        : null;
     updateCharacterState(
       characterState
           .copyWith(clearConcentration: true)
           .copyWith(
             concentrationSpellId: spell.id,
-            concentrationSlotLevel: slotLevel,
+            concentrationSlotLevel: slotLevel == 0 ? null : slotLevel,
+            concentrationTurnsRemaining: turns,
           ),
     );
   }
 
-  void rollAttack(CharacterAction action) {
-    final modifier = character.attackModifierFor(action);
+  bool matchesAmmunition(InventoryItem item, String name) =>
+      item.name.trim().toLowerCase() == name.trim().toLowerCase();
+
+  String? ammunitionLabel(CharacterAction action) {
+    if (action is! Weapon || action.ammunitionName == null) return null;
+    final name = action.ammunitionName!;
+    final total = inventory
+        .where((item) => matchesAmmunition(item, name))
+        .fold(0, (sum, item) => sum + item.quantity);
+    return '$name: $total';
+  }
+
+  bool spendInventoryItem(String name) {
+    final index = inventory.indexWhere(
+      (item) => matchesAmmunition(item, name) && item.quantity > 0,
+    );
+    if (index < 0) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('No $name remaining.')));
+      return false;
+    }
+    final item = inventory[index];
+    setState(
+      () => inventory[index] = item.copyWith(quantity: item.quantity - 1),
+    );
+    recordSessionEvent(
+      SessionEventType.inventory,
+      '${item.name} used',
+      detail: '${item.quantity - 1} left in stack',
+    );
+    return true;
+  }
+
+  Future<bool?> choosePackTactics() => showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Pack Tactics'),
+      content: const Text(
+        'Is an ally within 5 feet of the target and able to act?',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('No'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Yes'),
+        ),
+      ],
+    ),
+  );
+
+  Future<void> rollAttack(
+    CharacterAction action, {
+    bool asRitual = false,
+    bool useFreeCast = false,
+    String? scrollName,
+    bool asReaction = false,
+    bool? packTacticsChoice,
+  }) async {
+    final modifier = scrollName != null && action is Spell
+        ? action.scrollAttackBonus
+        : character.attackModifierFor(action);
     if (modifier == null) return;
-    if (action is Spell && characterState.currentHp > 0) {
-      if (action.concentration) startSpellConcentration(action);
+    final beastAttack = action.id.startsWith('wild-shape-');
+    bool canUseBeastAttack() =>
+        !beastAttack ||
+        (activeWildShape?.combatAttack.id == action.id &&
+            characterState.canConcentrate &&
+            (currentMode != CharacterMode.combat ||
+                asReaction ||
+                canUseNonMagicAction));
+    if (!canUseBeastAttack()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'This Beast attack is unavailable or your Action is already spent.',
+          ),
+        ),
+      );
+      return;
+    }
+    var packTactics = packTacticsChoice ?? false;
+    if (packTacticsChoice == null &&
+        action.id == 'wild-shape-wolf' &&
+        activeWildShape?.name == 'Wolf') {
+      final advantage = await choosePackTactics();
+      if (!mounted || advantage == null || activeWildShape?.name != 'Wolf') {
+        return;
+      }
+      packTactics = advantage;
+    }
+    if (!canUseBeastAttack()) return;
+    if (beastAttack && !asReaction && currentMode == CharacterMode.combat) {
+      setState(() {
+        if (actionSurge == ActionSurgeState.available) {
+          actionSurge = ActionSurgeState.spent;
+        } else {
+          usedCombatActions.add(CombatActionCost.action);
+        }
+      });
+      publishSession();
+    }
+    int? slotLevel;
+    if (action is Spell) {
+      if (!canSpendSpellAction(action, fromScroll: scrollName != null)) return;
+      if (scrollName != null) {
+        if (!spendInventoryItem(scrollName)) return;
+        slotLevel = action.level;
+      }
+      if (useFreeCast && !spendFreeCast(action)) return;
+      if (scrollName == null &&
+          !useFreeCast &&
+          !asRitual &&
+          tracksSlotsFor(action)) {
+        final slot = await chooseTrackedSlot(action);
+        slotLevel = slot?.$1;
+        if (!mounted ||
+            slot == null ||
+            !canSpendSpellAction(action, fromScroll: scrollName != null) ||
+            !spendCastResource(slot.$2)) {
+          return;
+        }
+      }
+      if (action.concentration) {
+        startSpellConcentration(action, slotLevel: slotLevel);
+      }
       trackSpellAction(action);
     }
-    final roll = rollCheck('${action.name} Attack', modifier);
+    pendingAttackSlot = slotLevel == null
+        ? null
+        : (action.actionKey, slotLevel);
+    if (action case Weapon(ammunitionName: final name?)) {
+      if (!spendInventoryItem(name)) return;
+    }
+    if (action is Weapon && characterState.isRaging && !asReaction) {
+      extendRage();
+    }
+    final threshold = action is Weapon ? character.weaponCriticalThreshold : 20;
+    final roll = rollCheck(
+      '${action.name} Attack',
+      modifier,
+      criticalThreshold: threshold,
+      hasAdvantage: packTactics,
+    );
+    final critical = roll.naturalRoll >= threshold;
     pendingCriticalActionKey =
-        roll.isNaturalTwenty &&
+        critical &&
             DiceExpression.tryParse(character.damageFormulaFor(action) ?? '') !=
                 null
         ? action.actionKey
         : null;
+    if (critical && character.championLevel >= 3) {
+      recordSessionEvent(
+        SessionEventType.combat,
+        'Remarkable Athlete',
+        detail:
+            'You can move up to half your Speed without provoking opportunity attacks.',
+      );
+    }
+    if (action case Weapon(mastery: final mastery?)) {
+      await resolveWeaponMastery(action, mastery, roll);
+    }
+    if (action is Weapon && !asReaction) await resolveNick(action);
+    if (action.id == 'wild-shape-wolf' && !roll.isNaturalOne) {
+      recordSessionEvent(
+        SessionEventType.combat,
+        'Wolf Bite effect',
+        detail: 'On a hit, a Medium or smaller target falls Prone.',
+      );
+    }
+  }
+
+  Future<void> resolveWeaponMastery(
+    Weapon weapon,
+    WeaponMastery mastery,
+    CheckRoll roll,
+  ) async {
+    if (mastery == WeaponMastery.cleave) {
+      await resolveCleave(weapon, roll);
+      return;
+    }
+    final ability = weapon.usesStrength ? Ability.strength : Ability.dexterity;
+    final modifier = character.abilityModifierFor(ability);
+    final grazeDamage = modifier > 0 ? modifier : 0;
+    final toppleDc = 8 + modifier + character.proficiencyBonus;
+    final effect = switch (mastery) {
+      WeaponMastery.graze when grazeDamage > 0 =>
+        'The target takes $grazeDamage ${weapon.damageType ?? 'weapon'} damage.',
+      WeaponMastery.push =>
+        'You can push a Large or smaller target up to 10 feet directly away.',
+      WeaponMastery.sap =>
+        'The target has Disadvantage on its next attack before your next turn.',
+      WeaponMastery.slow =>
+        'Reduce the target’s Speed by 10 feet until your next turn. Slow does not stack.',
+      WeaponMastery.topple =>
+        'The target falls Prone if it fails a DC $toppleDc Constitution save.',
+      WeaponMastery.vex =>
+        'Your next attack against this target has Advantage before the end of your next turn.',
+      _ => null,
+    };
+    if (effect == null) return;
+    final onMiss = mastery == WeaponMastery.graze;
+    if (onMiss
+        ? roll.naturalRoll >= character.weaponCriticalThreshold
+        : roll.isNaturalOne) {
+      return;
+    }
+    final requiresDamage =
+        mastery == WeaponMastery.slow || mastery == WeaponMastery.vex;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${weapon.name} · ${mastery.label}'),
+        content: Text('Attack total ${roll.total}\n\n$effect'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Skip'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              onMiss
+                  ? 'Attack missed'
+                  : mastery == WeaponMastery.topple
+                  ? 'Hit and force save'
+                  : requiresDamage
+                  ? 'Hit and dealt damage'
+                  : 'Attack hit',
+            ),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true) return;
+    if (mastery == WeaponMastery.graze) {
+      addRollNotice(
+        title: '${weapon.name} Graze Damage',
+        calculation: '$grazeDamage damage from your attack ability modifier',
+        total: grazeDamage,
+        tone: RollNoticeTone.damage,
+        detail: weapon.damageType,
+      );
+      return;
+    }
+    recordSessionEvent(
+      SessionEventType.combat,
+      '${weapon.name} · ${mastery.label}',
+      detail: effect,
+    );
+    if (mastery == WeaponMastery.topple) {
+      final failed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Topple saving throw'),
+          content: Text(
+            'The target makes a DC $toppleDc Constitution save. '
+            'Resolve its roll and any immunities at the table.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Resolve later'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Save succeeded'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Save failed · Prone'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || failed == null) return;
+      recordSessionEvent(
+        SessionEventType.combat,
+        '${weapon.name} · Topple ${failed ? 'failed save' : 'successful save'}',
+        detail: failed
+            ? 'The target falls Prone (DC $toppleDc Constitution save).'
+            : 'The target stays standing (DC $toppleDc Constitution save).',
+      );
+    }
+  }
+
+  Future<void> resolveNick(Weapon original) async {
+    if (!mounted ||
+        currentMode != CharacterMode.combat ||
+        nickUsedThisTurn ||
+        !original.isLight ||
+        !characterState.canConcentrate) {
+      return;
+    }
+    final eligible = character.weapons
+        .where(
+          (weapon) =>
+              weapon.id != original.id &&
+              weapon.isLight &&
+              weapon.mastery == WeaponMastery.nick &&
+              weapon.ammunitionName == null,
+        )
+        .toList();
+    if (eligible.isEmpty) return;
+    final selected = await showDialog<Weapon>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Nick extra attack'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'If this was an Attack action on your turn, choose a different Light '
+              'weapon for the Light property extra attack. Confirm you have not '
+              'already used that extra attack this turn. Nick uses no Bonus Action.',
+            ),
+          ),
+          for (final weapon in eligible)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, weapon),
+              child: Text('Nick · ${weapon.name}'),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Skip'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        selected == null ||
+        nickUsedThisTurn ||
+        currentMode != CharacterMode.combat ||
+        !characterState.canConcentrate) {
+      return;
+    }
+    nickUsedThisTurn = true;
+    await rollMasteryExtraAttack(selected, 'Nick');
+  }
+
+  Future<void> resolveCleave(Weapon weapon, CheckRoll original) async {
+    if (currentMode != CharacterMode.combat ||
+        cleaveUsedThisTurn ||
+        original.isNaturalOne ||
+        !characterState.canConcentrate) {
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${weapon.name} · Cleave'),
+        content: Text(
+          'Attack total ${original.total}. If this melee attack hit, '
+          'you can attack a second creature within 5 feet of the first '
+          'and within your reach.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Skip'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Hit · Make Cleave Attack'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        confirmed != true ||
+        cleaveUsedThisTurn ||
+        currentMode != CharacterMode.combat ||
+        !characterState.canConcentrate) {
+      return;
+    }
+    cleaveUsedThisTurn = true;
+    await rollMasteryExtraAttack(weapon, 'Cleave');
+  }
+
+  Future<void> rollMasteryExtraAttack(Weapon weapon, String mastery) async {
+    final attack = rollCheck(
+      '${weapon.name} $mastery Attack',
+      weapon.attackModifier,
+      criticalThreshold: character.weaponCriticalThreshold,
+    );
+    publishSession();
+    if (attack.isNaturalOne) return;
+    final hit = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('$mastery result'),
+        content: Text(
+          'Attack total ${attack.total}. Did the second attack hit?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Miss'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Hit · Roll $mastery Damage'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || hit != true) return;
+    final formula = character.damageFormulaFor(
+      weapon,
+      raging: characterState.isRaging,
+    );
+    var expression = DiceExpression.tryParse(formula ?? '');
+    if (expression == null) return;
+    final ability = weapon.usesStrength ? Ability.strength : Ability.dexterity;
+    final modifier = character.abilityModifierFor(ability);
+    if (modifier > 0) expression = expression.withModifierBonus(-modifier);
+    if (attack.naturalRoll >= character.weaponCriticalThreshold) {
+      expression = expression.withCriticalHitDice();
+    }
+    final damage = expression.roll(mastery, diceRoller);
+    addRollNotice(
+      title: '${weapon.name} $mastery Damage',
+      calculation:
+          '${expression.notation} · ${damage.dice.join(' + ')} = ${damage.total}',
+      total: damage.total,
+      tone: RollNoticeTone.damage,
+      detail: weapon.damageType,
+    );
   }
 
   Future<void> rollDamage(
     CharacterAction action, {
     bool repeatingEffect = false,
     bool castingSpell = false,
+    bool asRitual = false,
+    bool useFreeCast = false,
+    String? scrollName,
   }) async {
+    final formAttack = activeWildShape;
+    if (formAttack?.fixedDamage != null &&
+        action.id == formAttack!.combatAttack.id) {
+      pendingCriticalActionKey = null;
+      addRollNotice(
+        title: '${action.name} Damage',
+        calculation: '${formAttack.fixedDamage} ${action.damageType} damage',
+        total: formAttack.fixedDamage!,
+        tone: RollNoticeTone.damage,
+        detail: '${action.damageType} damage',
+      );
+      return;
+    }
+    if (action.id == 'wild-shape-spider' && activeWildShape?.name == 'Spider') {
+      final critical = pendingCriticalActionKey == action.actionKey;
+      pendingCriticalActionKey = null;
+      final expression = DiceExpression(
+        diceCount: critical ? 2 : 1,
+        dieSides: 4,
+      );
+      final poison = expression.roll('Spider Bite poison', diceRoller);
+      addRollNotice(
+        title: critical ? 'Spider Bite Critical Damage' : 'Spider Bite Damage',
+        calculation: '1 piercing + ${poison.total} poison',
+        total: 1 + poison.total,
+        tone: RollNoticeTone.damage,
+        detail: 'Apply piercing and poison resistance separately.',
+      );
+      return;
+    }
     int? slotLevel = repeatingEffect
         ? characterState.concentrationSlotLevel
         : null;
-    if (action case Spell(
-      additionalDicePerSlotLevel: > 0,
-      level: > 0 && < 9,
-    ) when !repeatingEffect) {
+    final attackSlot = pendingAttackSlot;
+    final useAttackSlot =
+        !castingSpell && !repeatingEffect && attackSlot?.$1 == action.actionKey;
+    if (useAttackSlot) slotLevel = attackSlot?.$2;
+    final spendSlot =
+        castingSpell &&
+        scrollName == null &&
+        !asRitual &&
+        !useFreeCast &&
+        action is Spell &&
+        tracksSlotsFor(action);
+    String? chosenSlotId;
+    if (spendSlot) {
+      final slot = await chooseTrackedSlot(action);
+      if (!mounted || slot == null) return;
+      (slotLevel, chosenSlotId) = slot;
+    } else if (action
+        case Spell(additionalDicePerSlotLevel: > 0, level: > 0 && < 9)
+        when scrollName == null &&
+            !repeatingEffect &&
+            !useAttackSlot &&
+            !asRitual &&
+            !useFreeCast) {
       slotLevel = await showDialog<int>(
         context: context,
         builder: (context) => SimpleDialog(
@@ -1154,15 +2525,23 @@ class _CharacterOverviewState extends State<CharacterOverview>
       if (!mounted || slotLevel == null) return;
     }
     var halfDamage = false;
+    var noDamage = false;
     if (action case Spell(
-      halfDamageOnSave: true,
       savingThrowAbility: final ability?,
-    )) {
+      damageFormula: final formula?,
+    ) when formula.isNotEmpty && character.attackModifierFor(action) == null) {
+      final dc = scrollName == null
+          ? (action.isCircleGrant ? character.spellSaveDc(action) : null)
+          : action.scrollSaveDc;
       final result = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: Text(action.name),
-          content: Text('Did the target succeed on its ${ability.label} save?'),
+          content: Text(
+            dc == null
+                ? 'Did the target succeed on its ${ability.label} save?'
+                : 'Did the target succeed on its DC $dc ${ability.label} save?',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -1176,22 +2555,61 @@ class _CharacterOverviewState extends State<CharacterOverview>
         ),
       );
       if (!mounted || result == null) return;
-      halfDamage = result;
+      halfDamage = result && action.halfDamageOnSave;
+      noDamage = result && !action.halfDamageOnSave;
     }
-    final baseExpression = DiceExpression.tryParse(
-      character.damageFormulaFor(action, slotLevel: slotLevel) ?? '',
+    var formula = character.damageFormulaFor(
+      action,
+      slotLevel: slotLevel,
+      raging: characterState.isRaging,
+      applyPotentSpellcasting: scrollName == null,
     );
+    final twoHanded = action is Weapon
+        ? character.damageFormulaFor(
+            action,
+            raging: characterState.isRaging,
+            twoHanded: true,
+          )
+        : null;
+    if (twoHanded != null && formula != null) {
+      formula = await showDialog<String>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: Text('${action.name} damage'),
+          children: [
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, formula),
+              child: Text('One-handed · $formula'),
+            ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, twoHanded),
+              child: Text('Two-handed · $twoHanded'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || formula == null) return;
+    }
+    final baseExpression = DiceExpression.tryParse(formula ?? '');
     if (baseExpression == null) return;
     if (repeatingEffect && characterState.concentrationSpellId != action.id) {
       return;
     }
-    if (castingSpell && characterState.currentHp <= 0) return;
+    if (castingSpell &&
+        action is Spell &&
+        !canSpendSpellAction(action, fromScroll: scrollName != null)) {
+      return;
+    }
     final critical =
         !castingSpell &&
         !repeatingEffect &&
         pendingCriticalActionKey == action.actionKey;
     if (castingSpell && action is Spell) {
+      if (scrollName != null && !spendInventoryItem(scrollName)) return;
+      if (useFreeCast && !spendFreeCast(action)) return;
+      if (chosenSlotId != null && !spendCastResource(chosenSlotId)) return;
       trackSpellAction(action);
+      pendingAttackSlot = null;
       pendingCriticalActionKey = null;
       if (action.concentration) {
         startSpellConcentration(action, slotLevel: slotLevel);
@@ -1204,12 +2622,43 @@ class _CharacterOverviewState extends State<CharacterOverview>
         characterState.copyWith(concentrationSlotLevel: slotLevel),
       );
     }
+    if (useAttackSlot) pendingAttackSlot = null;
     if (critical) pendingCriticalActionKey = null;
+    if (noDamage) {
+      addRollNotice(
+        title: repeatingEffect
+            ? '${action.name} Repeat Effect'
+            : '${action.name} Damage',
+        calculation: 'Successful save · No damage',
+        total: 0,
+        tone: RollNoticeTone.damage,
+        detail: action.damageType == null
+            ? null
+            : '${action.damageType} damage',
+      );
+      return;
+    }
     final expression = critical
         ? baseExpression.withCriticalHitDice()
         : baseExpression;
     HapticFeedback.selectionClick();
     final roll = expression.roll(action.name, diceRoller);
+    if (action is Spell && action.isCircleGrant && action.name == 'Ice Storm') {
+      final cold = const DiceExpression(
+        diceCount: 4,
+        dieSides: 6,
+      ).roll('Ice Storm cold', diceRoller);
+      final bludgeoningDamage = halfDamage ? roll.total ~/ 2 : roll.total;
+      final coldDamage = halfDamage ? cold.total ~/ 2 : cold.total;
+      addRollNotice(
+        title: 'Ice Storm Damage',
+        calculation: '$bludgeoningDamage bludgeoning + $coldDamage cold',
+        total: bludgeoningDamage + coldDamage,
+        detail: 'Apply each damage type’s resistance separately.',
+        tone: RollNoticeTone.damage,
+      );
+      return;
+    }
     final total = halfDamage
         ? (roll.total < 0 ? 0 : roll.total ~/ 2)
         : roll.total;
@@ -1239,14 +2688,19 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   void rollDeathSave() {
     if (!characterState.canRollDeathSave) return;
+    final defyDeath = character.championLevel >= 18;
+    int result(CheckRoll roll) =>
+        defyDeath && roll.naturalRoll >= 18 ? 20 : roll.naturalRoll;
     final roll = rollCheck(
       'Death Save',
       0,
       useSelectedMode: false,
+      hasAdvantage: defyDeath,
+      criticalThreshold: defyDeath ? 18 : 20,
       describe: (roll) {
-        final updated = characterState.applyDeathSave(roll.naturalRoll);
-        return switch (roll.naturalRoll) {
-          20 => 'Natural 20 · Recovered 1 HP',
+        final updated = characterState.applyDeathSave(result(roll));
+        return switch (result(roll)) {
+          20 => 'Natural ${roll.naturalRoll} · Recovered 1 HP',
           1 when updated.deathSaveFailures == 3 => 'Natural 1 · Dead',
           1 => 'Natural 1 · Two failures',
           _ when updated.deathSaveFailures == 3 => 'Dead',
@@ -1256,17 +2710,24 @@ class _CharacterOverviewState extends State<CharacterOverview>
         };
       },
     );
-    updateCharacterState(characterState.applyDeathSave(roll.naturalRoll));
+    updateCharacterState(characterState.applyDeathSave(result(roll)));
   }
 
   CheckRoll rollCheck(
     String label,
     int modifier, {
     bool useSelectedMode = true,
+    bool hasAdvantage = false,
+    D20Mode? modeOverride,
+    int criticalThreshold = 20,
     String Function(CheckRoll)? describe,
   }) {
-    final mode = useSelectedMode ? nextRollMode : D20Mode.normal;
-    if (mode != D20Mode.normal) {
+    tacticalMindCheck = null;
+    final selectedMode = useSelectedMode ? nextRollMode : D20Mode.normal;
+    final mode =
+        modeOverride ??
+        (hasAdvantage ? selectedMode.withAdvantage() : selectedMode);
+    if (selectedMode != D20Mode.normal) {
       setState(() => nextRollMode = D20Mode.normal);
     }
     final first = diceRoller.rollD20();
@@ -1276,7 +2737,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       naturalRoll: mode.select(first, second),
       modifier: modifier,
     );
-    if (roll.isNaturalTwenty) {
+    final critical = roll.naturalRoll >= criticalThreshold;
+    if (critical) {
       HapticFeedback.heavyImpact();
     } else if (roll.isNaturalOne) {
       HapticFeedback.mediumImpact();
@@ -1293,12 +2755,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
       total: roll.total,
       detail:
           describe?.call(roll) ??
-          (roll.isNaturalTwenty
-              ? 'Natural 20'
+          (critical
+              ? roll.isNaturalTwenty
+                    ? 'Natural 20'
+                    : 'Critical hit · Natural ${roll.naturalRoll}'
               : roll.isNaturalOne
               ? 'Natural 1'
               : null),
-      tone: roll.isNaturalTwenty
+      tone: critical
           ? RollNoticeTone.criticalSuccess
           : roll.isNaturalOne
           ? RollNoticeTone.criticalFailure
@@ -1386,11 +2850,68 @@ class _CharacterOverviewState extends State<CharacterOverview>
         characterState.resourceValues[resource.id] ?? resource.initialValue;
     final adjustment = await showDialog<ResourceAdjustment>(
       context: context,
-      builder: (context) =>
-          ResourceAdjustDialog(resource: resource, currentValue: currentValue),
+      builder: (context) => ResourceAdjustDialog(
+        resource: resource,
+        currentValue: currentValue,
+        canConvertSlot: canRefillWithSlot(resource),
+        canCreateWildResurgenceSlot: canCreateWildResurgenceSlot(resource),
+        canUseTacticalMind:
+            resource.id == secondWindResourceId &&
+            character.levelInClass('Fighter') >= 2 &&
+            tacticalMindCheck != null &&
+            currentValue > 0,
+      ),
     );
 
     if (!mounted || adjustment == null) {
+      return;
+    }
+    if (adjustment == ResourceAdjustment.tacticalMind) {
+      await useTacticalMind(resource);
+      return;
+    }
+    if (adjustment == ResourceAdjustment.createWildResurgenceSlot) {
+      if (!canCreateWildResurgenceSlot(resource)) return;
+      updateCharacterState(
+        characterState.copyWith(
+          resourceValues: {
+            ...characterState.resourceValues,
+            resource.id: remainingUses(resource) - 1,
+            wildResurgenceSlot.id: 1,
+          },
+        ),
+      );
+      recordSessionEvent(
+        SessionEventType.resource,
+        'Wild Resurgence · Level 1 spell slot created',
+      );
+      return;
+    }
+    if (adjustment == ResourceAdjustment.convertSlot) {
+      final wildResurgence = resource.id == wildShapeResourceId;
+      final slot = await chooseAvailableSlot(
+        1,
+        wildResurgence ? 'Wild Resurgence' : 'Font of Inspiration',
+      );
+      if (!mounted || slot == null || !canRefillWithSlot(resource)) {
+        return;
+      }
+      final pool = castingResources
+          .where((entry) => entry.id == slot.$2)
+          .firstOrNull;
+      if (pool == null || remainingUses(pool) <= 0) return;
+      if (wildResurgence && currentMode == CharacterMode.combat) {
+        wildResurgenceUsedThisTurn = true;
+      }
+      updateCharacterState(
+        characterState.copyWith(
+          resourceValues: {
+            ...characterState.resourceValues,
+            pool.id: remainingUses(pool) - 1,
+            resource.id: remainingUses(resource) + 1,
+          },
+        ),
+      );
       return;
     }
 
@@ -1399,6 +2920,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
       ResourceAdjustment.restore =>
         currentValue < resource.maximum ? currentValue + 1 : resource.maximum,
       ResourceAdjustment.refill => resource.maximum,
+      ResourceAdjustment.convertSlot => currentValue,
+      ResourceAdjustment.tacticalMind => currentValue,
+      ResourceAdjustment.createWildResurgenceSlot => currentValue,
     };
     final resourceValues = {...characterState.resourceValues};
     resourceValues[resource.id] = updatedValue;
@@ -1409,7 +2933,55 @@ class _CharacterOverviewState extends State<CharacterOverview>
     HapticFeedback.selectionClick();
   }
 
-  void spendResource(CharacterResource resource) {
+  bool canRefillWithSlot(CharacterResource resource) => switch (resource.id) {
+    bardicInspirationResourceId =>
+      character.levelInClass('Bard') >= 5 &&
+          remainingUses(resource) < resource.maximum,
+    wildShapeResourceId =>
+      character.levelInClass('Druid') >= 5 &&
+          remainingUses(resource) == 0 &&
+          !wildResurgenceUsedThisTurn,
+    _ => false,
+  };
+
+  bool canCreateWildResurgenceSlot(CharacterResource resource) =>
+      resource.id == wildShapeResourceId &&
+      character.levelInClass('Druid') >= 5 &&
+      remainingUses(resource) > 0 &&
+      !characterState.resourceValues.containsKey(wildResurgenceSlot.id);
+
+  Future<void> useTacticalMind(CharacterResource resource) async {
+    final check = tacticalMindCheck;
+    if (check == null || !characterState.canConcentrate) return;
+    final dc = await showDialog<int>(
+      context: context,
+      builder: (context) => StatEditDialog(
+        title: '${check.label} ${check.total} · Enter the failed check DC',
+        initialValue: check.total >= 0 ? check.total + 1 : 1,
+      ),
+    );
+    if (!mounted ||
+        dc == null ||
+        dc <= check.total ||
+        !identical(check, tacticalMindCheck) ||
+        remainingUses(resource) <= 0) {
+      return;
+    }
+    tacticalMindCheck = null;
+    final bonus = diceRoller.rollDie(10);
+    final total = check.total + bonus;
+    final success = total >= dc;
+    if (success) spendCastResource(resource.id);
+    addRollNotice(
+      title: 'Tactical Mind · ${check.label}',
+      calculation: '${check.total} + d10 $bonus = $total',
+      total: total,
+      detail: success ? 'DC $dc · Success' : 'DC $dc · Failed, use retained',
+      tone: RollNoticeTone.normal,
+    );
+  }
+
+  Future<void> spendResource(CharacterResource resource) async {
     final currentValue =
         characterState.resourceValues[resource.id] ?? resource.initialValue;
     if (currentValue <= 0) {
@@ -1423,15 +2995,921 @@ class _CharacterOverviewState extends State<CharacterOverview>
       return;
     }
 
-    final resourceValues = {...characterState.resourceValues};
-    resourceValues[resource.id] = currentValue - 1;
-    updateCharacterState(
-      characterState.copyWith(resourceValues: resourceValues),
-    );
+    final resourceValues = {
+      ...characterState.resourceValues,
+      resource.id: currentValue - 1,
+    };
+    if (resource.id == rageResourceId) {
+      startRage(resourceValues);
+    } else if (resource.id == secondWindResourceId) {
+      applySecondWind(resourceValues);
+    } else if (resource.id == layOnHandsResourceId) {
+      await useLayOnHands(resource);
+    } else if (resource.id == wildShapeResourceId) {
+      await useWildShape(resource);
+    } else if (resource.id == actionSurgeResourceId) {
+      if (currentMode != CharacterMode.combat ||
+          !characterState.canConcentrate ||
+          character.levelInClass('Fighter') < 2 ||
+          actionSurge != null) {
+        return;
+      }
+      actionSurge = ActionSurgeState.available;
+      updateCharacterState(
+        characterState.copyWith(resourceValues: resourceValues),
+      );
+      recordSessionEvent(
+        SessionEventType.combat,
+        'Action Surge used',
+        detail: 'One additional action, except the Magic action, this turn.',
+      );
+    } else {
+      updateCharacterState(
+        characterState.copyWith(resourceValues: resourceValues),
+      );
+    }
     HapticFeedback.selectionClick();
   }
 
+  bool get canUseWildShape =>
+      character.levelInClass('Druid') >= 2 &&
+      characterState.canConcentrate &&
+      (currentMode != CharacterMode.combat ||
+          !usedCombatActions.contains(CombatActionCost.bonusAction));
+
+  int get landDruidLevel =>
+      character.subclasses['Druid'] == 'Circle of the Land'
+      ? character.levelInClass('Druid')
+      : 0;
+
+  bool get canUsePrimalStrike =>
+      currentMode == CharacterMode.combat &&
+      characterState.canConcentrate &&
+      !primalStrikeUsedThisTurn &&
+      character.levelInClass('Druid') >= 7 &&
+      character.elementalFury == ElementalFury.primalStrike;
+
+  Future<void> usePrimalStrike() async {
+    if (!canUsePrimalStrike) return;
+    var critical = false;
+    final type = await showDialog<String>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => SimpleDialog(
+          title: const Text('Primal Strike'),
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 0, 24, 8),
+              child: Text(
+                'After a weapon or Beast attack hits on your turn, choose the extra damage type.',
+              ),
+            ),
+            CheckboxListTile(
+              title: const Text('Critical hit'),
+              value: critical,
+              onChanged: (value) =>
+                  setDialogState(() => critical = value ?? false),
+            ),
+            for (final type in ['Cold', 'Fire', 'Lightning', 'Thunder'])
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, type),
+                child: Text(type),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || type == null || !canUsePrimalStrike) return;
+    final dice = character.levelInClass('Druid') >= 15 ? 2 : 1;
+    final expression = DiceExpression(
+      diceCount: critical ? dice * 2 : dice,
+      dieSides: 8,
+    );
+    final roll = expression.roll('Primal Strike', diceRoller);
+    primalStrikeUsedThisTurn = true;
+    addRollNotice(
+      title: 'Primal Strike',
+      calculation:
+          '${expression.notation} · ${roll.dice.join(' + ')} = ${roll.total}',
+      total: roll.total,
+      tone: RollNoticeTone.damage,
+      detail: '$type damage',
+    );
+  }
+
+  bool get canUseNatureMagician {
+    final pool = wildShapePool;
+    return character.levelInClass('Druid') >= 20 &&
+        pool != null &&
+        remainingUses(pool) > 0 &&
+        !natureMagicianSlots.any(
+          (slot) => characterState.resourceValues.containsKey(slot.id),
+        );
+  }
+
+  Future<void> useNatureMagician() async {
+    final pool = wildShapePool;
+    if (pool == null || !canUseNatureMagician) return;
+    final payment = await showDialog<int>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Nature Magician'),
+        children: [
+          for (var uses = 1; uses <= remainingUses(pool).clamp(0, 4); uses++)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, uses),
+              child: Text('Spend $uses · Create level ${uses * 2} slot'),
+            ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        payment == null ||
+        !canUseNatureMagician ||
+        remainingUses(pool) < payment) {
+      return;
+    }
+    final slot = natureMagicianSlots[payment - 1];
+    updateCharacterState(
+      characterState.copyWith(
+        resourceValues: {
+          ...characterState.resourceValues,
+          pool.id: remainingUses(pool) - payment,
+          slot.id: 1,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.resource,
+      'Nature Magician',
+      detail: 'Created a level ${payment * 2} spell slot.',
+    );
+  }
+
+  Future<void> chooseDruidLand() async {
+    if (landDruidLevel < 3) return;
+    final land = await showDialog<DruidLand>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Circle of the Land terrain'),
+        children: [
+          for (final land in DruidLand.values)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, land),
+              child: Text(land.label),
+            ),
+        ],
+      ),
+    );
+    if (!mounted || land == null || land == characterState.druidLand) return;
+    saveSpellChanges(
+      character.spells,
+      characterState.pinnedActionKeys,
+      land: land,
+    );
+    recordSessionEvent(
+      SessionEventType.resource,
+      'Circle of the Land · ${land.label}',
+    );
+  }
+
+  Future<void> useNaturesSanctuary() async {
+    final resistance = characterState.landResistanceFor(character);
+    final pool = wildShapePool;
+    bool canUse() =>
+        landDruidLevel >= 14 &&
+        pool != null &&
+        remainingUses(pool) > 0 &&
+        characterState.canConcentrate &&
+        (currentMode != CharacterMode.combat ||
+            !usedCombatActions.contains(CombatActionCost.action));
+    if (!canUse() || resistance == null) return;
+    final detail =
+        'Place a 15-foot cube on the ground within 120 feet. '
+        'You and allies have half cover inside. Allies inside gain ${resistance.label} resistance. '
+        'The sanctuary lasts one minute or until you are incapacitated.';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Nature’s Sanctuary'),
+        content: Text(detail),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Create Sanctuary'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true || !canUse()) return;
+    if (currentMode == CharacterMode.combat) {
+      usedCombatActions.add(CombatActionCost.action);
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        activeConditions: {
+          ...characterState.activeConditions,
+          naturesSanctuaryCondition,
+        },
+        conditionTurns: {
+          ...characterState.conditionTurns,
+          naturesSanctuaryCondition: 10,
+        },
+        resourceValues: {
+          ...characterState.resourceValues,
+          pool!.id: remainingUses(pool) - 1,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Nature’s Sanctuary',
+      detail: detail,
+    );
+  }
+
+  bool get canMoveNaturesSanctuary =>
+      landDruidLevel >= 14 &&
+      characterState.canConcentrate &&
+      characterState.activeConditions.contains(naturesSanctuaryCondition) &&
+      (currentMode != CharacterMode.combat ||
+          !usedCombatActions.contains(CombatActionCost.bonusAction));
+
+  Future<void> moveNaturesSanctuary() async {
+    if (!canMoveNaturesSanctuary) return;
+    final move = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Move Nature’s Sanctuary'),
+        content: const Text(
+          'Move the cube up to 60 feet to ground within 120 feet of you.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Move Sanctuary'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || move != true || !canMoveNaturesSanctuary) return;
+    if (currentMode == CharacterMode.combat) {
+      setCombatActionUsed(CombatActionCost.bonusAction, true);
+    }
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Nature’s Sanctuary moved',
+      detail:
+          'Up to 60 feet, to ground within 120 feet. Resolve placement at the table.',
+    );
+  }
+
+  CharacterResource? get wildShapePool => character.resources
+      .where((resource) => resource.id == wildShapeResourceId)
+      .firstOrNull;
+
+  static const wildCompanionSpell = Spell(
+    id: 'whetstone:wild-companion',
+    name: 'Wild Companion',
+    level: 1,
+    prepared: true,
+    castingTime: 'Action',
+    summary: 'Summon a Fey familiar that disappears after a long rest.',
+  );
+
+  Future<void> summonWildCompanion() async {
+    if (character.levelInClass('Druid') < 2 ||
+        !canSpendSpellAction(wildCompanionSpell)) {
+      return;
+    }
+    final pool = wildShapePool;
+    var form = '';
+    final selection = await showDialog<(String, bool)>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Wild Companion'),
+        content: TextField(
+          decoration: const InputDecoration(labelText: 'Fey familiar form'),
+          maxLength: 60,
+          onChanged: (text) => form = text.trim(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          if (pool != null && remainingUses(pool) > 0)
+            TextButton(
+              onPressed: () {
+                if (form.isNotEmpty) Navigator.pop(context, (form, false));
+              },
+              child: const Text('Spend Wild Shape'),
+            ),
+          FilledButton(
+            onPressed: () {
+              if (form.isNotEmpty) Navigator.pop(context, (form, true));
+            },
+            child: const Text('Choose Spell Slot'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        selection == null ||
+        !canSpendSpellAction(wildCompanionSpell)) {
+      return;
+    }
+    final (familiar, useSlot) = selection;
+    final slot = useSlot
+        ? await chooseAvailableSlot(1, 'Wild Companion spell slot')
+        : null;
+    if (!mounted || !canSpendSpellAction(wildCompanionSpell)) return;
+    final resource = useSlot
+        ? castingResources.where((entry) => entry.id == slot?.$2).firstOrNull
+        : wildShapePool;
+    if (resource == null || remainingUses(resource) <= 0) return;
+    if (currentMode == CharacterMode.combat) {
+      usedCombatActions.add(CombatActionCost.action);
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        wildCompanion: familiar,
+        resourceValues: {
+          ...characterState.resourceValues,
+          resource.id: remainingUses(resource) - 1,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Wild Companion · $familiar',
+      detail: 'Fey familiar. Disappears after a long rest.',
+    );
+  }
+
+  Future<void> useLandsAid() async {
+    final pool = wildShapePool;
+    bool canUse() =>
+        landDruidLevel >= 3 &&
+        pool != null &&
+        remainingUses(pool) > 0 &&
+        characterState.canConcentrate &&
+        (currentMode != CharacterMode.combat ||
+            !usedCombatActions.contains(CombatActionCost.action));
+    if (!canUse()) return;
+    final dc =
+        8 +
+        character.proficiencyBonus +
+        character.abilityModifierFor(Ability.wisdom);
+    final self = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Land’s Aid'),
+        content: Text(
+          'Choose a point within 60 feet. Selected creatures in its 10-foot sphere make a DC $dc Constitution save for half damage. Choose one creature in the area to heal.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Heal a creature'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Heal yourself'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || self == null || !canUse()) return;
+    final count = landDruidLevel >= 14
+        ? 4
+        : landDruidLevel >= 10
+        ? 3
+        : 2;
+    int rollDice() => List.generate(
+      count,
+      (_) => diceRoller.rollDie(6),
+    ).fold(0, (total, die) => total + die);
+    final damage = rollDice();
+    final healing = rollDice();
+    final restored = healing.clamp(
+      0,
+      characterState.maxHp - characterState.currentHp,
+    );
+    if (currentMode == CharacterMode.combat) {
+      usedCombatActions.add(CombatActionCost.action);
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        currentHp: self ? characterState.currentHp + restored : null,
+        resourceValues: {
+          ...characterState.resourceValues,
+          pool!.id: remainingUses(pool) - 1,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Land’s Aid',
+      detail:
+          'DC $dc Constitution save · $damage Necrotic damage (${damage ~/ 2} on success) · '
+          '${self ? '$restored HP recovered' : '$healing HP healing for the chosen creature'}',
+    );
+  }
+
+  Future<void> useWildShape(CharacterResource resource) async {
+    if (!canUseWildShape || remainingUses(resource) <= 0) return;
+    final level = character.levelInClass('Druid');
+    final maxCr = level >= 8
+        ? '1'
+        : level >= 4
+        ? '½'
+        : '¼';
+    var otherForm = '';
+    final form = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Choose a Wild Shape form'),
+        children: [
+          for (final form in suggestedWildShapeForms)
+            if (!form.flies || level >= 8)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, form.name),
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(form.name),
+                  subtitle: Text('AC ${form.armourClass} · ${form.speed}'),
+                ),
+              ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: TextField(
+              decoration: InputDecoration(
+                labelText: 'Another known Beast',
+                helperText:
+                    'CR $maxCr or lower${level < 8 ? ', no Fly Speed' : ''}',
+              ),
+              maxLength: 60,
+              onChanged: (name) => otherForm = name.trim(),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () {
+              if (otherForm.isNotEmpty) Navigator.pop(context, otherForm);
+            },
+            child: const Text('Use another known form'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        form == null ||
+        !canUseWildShape ||
+        remainingUses(resource) <= 0) {
+      return;
+    }
+    final selectedForm = wildShapeFormNamed(form);
+    if (selectedForm?.flies == true && character.levelInClass('Druid') < 8) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Flying Wild Shape forms require Druid level 8.'),
+        ),
+      );
+      return;
+    }
+    if (currentMode == CharacterMode.combat) {
+      usedCombatActions.add(CombatActionCost.bonusAction);
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        wildShapeForm: form,
+        wildShapeTurnsRemaining: (level ~/ 2) * 600,
+        temporaryHp: characterState.temporaryHp < level
+            ? level
+            : characterState.temporaryHp,
+        resourceValues: {
+          ...characterState.resourceValues,
+          resource.id: remainingUses(resource) - 1,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Wild Shape · $form',
+      detail:
+          'Up to ${level ~/ 2} hours. Apply the Beast’s statistics at the table.',
+    );
+  }
+
+  void revertWildShape() {
+    if (!canUseWildShape || characterState.wildShapeForm == null) return;
+    if (currentMode == CharacterMode.combat) {
+      usedCombatActions.add(CombatActionCost.bonusAction);
+    }
+    updateCharacterState(characterState.copyWith(clearWildShape: true));
+    recordSessionEvent(SessionEventType.combat, 'Wild Shape ended');
+  }
+
+  void showWildShapeForm() {
+    final name = characterState.wildShapeForm;
+    if (name == null) return;
+    final form = wildShapeFormNamed(name);
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(name),
+        content: form == null
+            ? Text(
+                'Use the chosen Beast’s statistics at the table.\n'
+                '${characterState.wildShapeTurnsRemaining ?? 0} combat turns remaining.',
+              )
+            : Text(
+                'AC ${form.armourClass} · Speed ${form.speed}\n'
+                'STR ${form.strength} · DEX ${form.dexterity} · CON ${form.constitution}\n\n'
+                '${form.senses.isEmpty ? '' : '${form.senses}\n\n'}'
+                '${form.attack}${form.trait == null ? '' : '\n\n${form.trait}'}\n\n'
+                '${characterState.wildShapeTurnsRemaining ?? 0} combat turns remaining. '
+                'Track elapsed time outside combat at the table.',
+              ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> advanceWildShapeTime() async {
+    final form = characterState.wildShapeForm;
+    if (form == null) return;
+    final minutes = await showDialog<int>(
+      context: context,
+      builder: (context) => const StatEditDialog(
+        title: 'Minutes elapsed in Wild Shape',
+        initialValue: 10,
+      ),
+    );
+    if (!mounted || minutes == null || characterState.wildShapeForm != form) {
+      return;
+    }
+    final remaining =
+        characterState.wildShapeTurnsRemaining ??
+        (character.levelInClass('Druid') ~/ 2) * 600;
+    final next = remaining - minutes * 10;
+    updateCharacterState(
+      next <= 0
+          ? characterState.copyWith(clearWildShape: true)
+          : characterState.copyWith(wildShapeTurnsRemaining: next),
+    );
+    recordSessionEvent(
+      SessionEventType.combat,
+      next <= 0 ? 'Wild Shape expired' : 'Wild Shape time advanced',
+      detail: '$minutes minutes elapsed in $form.',
+    );
+  }
+
+  Future<void> escapeWithFreedomOfMovement() async {
+    if (!characterState.activeConditions.contains(freedomOfMovementCondition)) {
+      return;
+    }
+    final conditions = characterState.activeConditions
+        .where(const {'Grappled', 'Restrained'}.contains)
+        .toList();
+    if (conditions.isEmpty) return;
+    final condition = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Escape nonmagical restraints'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              'Spend 5 feet of movement. Confirm the restraint is nonmagical before removing it.',
+            ),
+          ),
+          for (final condition in conditions)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, condition),
+              child: Text('Escape $condition'),
+            ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        condition == null ||
+        !characterState.activeConditions.contains(freedomOfMovementCondition)) {
+      return;
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        activeConditions: {...characterState.activeConditions}
+          ..remove(condition),
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.condition,
+      'Freedom of Movement escape',
+      detail: 'Removed $condition · Spend 5 feet of movement.',
+    );
+  }
+
+  Future<void> useLayOnHands(CharacterResource resource) async {
+    bool canUse() =>
+        characterState.canConcentrate &&
+        (currentMode != CharacterMode.combat ||
+            !usedCombatActions.contains(CombatActionCost.bonusAction));
+    if (!canUse()) return;
+    final available = remainingUses(resource);
+    final missingHp = characterState.maxHp - characterState.currentHp;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Lay on Hands'),
+        children: [
+          if (missingHp > 0)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, 'self'),
+              child: const Text('Heal yourself'),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 'ally'),
+            child: const Text('Heal an ally'),
+          ),
+          if (available >= 5 &&
+              characterState.activeConditions.contains('Poisoned'))
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, 'self-cleanse'),
+              child: const Text('Remove your Poisoned condition (5 points)'),
+            ),
+          if (available >= 5)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, 'cleanse'),
+              child: const Text(
+                'Remove an ally’s Poisoned condition (5 points)',
+              ),
+            ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null || !canUse()) return;
+    final self = choice == 'self';
+    final selfCleansing = choice == 'self-cleanse';
+    final cleansing = selfCleansing || choice == 'cleanse';
+    final amount = cleansing
+        ? 5
+        : await showDialog<int>(
+            context: context,
+            builder: (context) => StatEditDialog(
+              title: 'Healing points to spend',
+              initialValue: self ? missingHp.clamp(1, available) : available,
+            ),
+          );
+    if (!mounted || amount == null || !canUse()) return;
+    if (amount > remainingUses(resource) ||
+        (selfCleansing &&
+            !characterState.activeConditions.contains('Poisoned')) ||
+        (self && amount > characterState.maxHp - characterState.currentHp)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Choose an amount within the pool and missing HP.'),
+        ),
+      );
+      return;
+    }
+    if (currentMode == CharacterMode.combat) {
+      usedCombatActions.add(CombatActionCost.bonusAction);
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        currentHp: self ? characterState.currentHp + amount : null,
+        activeConditions: selfCleansing
+            ? ({...characterState.activeConditions}..remove('Poisoned'))
+            : null,
+        resourceValues: {
+          ...characterState.resourceValues,
+          resource.id: remainingUses(resource) - amount,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Lay on Hands used',
+      detail: selfCleansing
+          ? 'Spent 5 points and removed Poisoned.'
+          : cleansing
+          ? 'Spent 5 points. Apply the removal of Poisoned at the table.'
+          : self
+          ? 'Recovered $amount HP.'
+          : 'Apply $amount healing to the ally.',
+    );
+  }
+
+  bool get hasPersistentRage => character.levelInClass('Barbarian') >= 15;
+
+  CharacterState resolveRelentlessRage(CharacterState damaged, int damage) {
+    final barbarianLevel = character.levelInClass('Barbarian');
+    if (!characterState.isRaging ||
+        characterState.currentHp <= 0 ||
+        damaged.currentHp != 0 ||
+        barbarianLevel < 11 ||
+        damage >=
+            characterState.temporaryHp +
+                characterState.currentHp +
+                characterState.maxHp) {
+      return damaged;
+    }
+    final attempts = characterState.relentlessRageAttempts;
+    final dc = 10 + 5 * attempts;
+    final hp = (2 * barbarianLevel).clamp(1, damaged.maxHp);
+    final roll = rollCheck(
+      'Relentless Rage',
+      character.savingThrowFor(Ability.constitution).modifier,
+      describe: (roll) => roll.total >= dc
+          ? 'DC $dc · Remain conscious at $hp HP'
+          : 'DC $dc · Failed save',
+    );
+    return damaged.copyWith(
+      relentlessRageAttempts: attempts + 1,
+      currentHp: roll.total >= dc ? hp : 0,
+    );
+  }
+
+  void startRage(Map<String, int> resourceValues) {
+    if (!characterState.canConcentrate ||
+        characterState.isRaging ||
+        currentMode != CharacterMode.combat) {
+      return;
+    }
+    if (usedCombatActions.contains(CombatActionCost.bonusAction)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Bonus Action already used this turn.')),
+      );
+      return;
+    }
+    usedCombatActions.add(CombatActionCost.bonusAction);
+    updateCharacterState(
+      characterState.copyWith(
+        resourceValues: resourceValues,
+        activeConditions: {...characterState.activeConditions, ragingCondition},
+        conditionTurns: {
+          ...characterState.conditionTurns,
+          ragingCondition: hasPersistentRage ? 100 : 2,
+        },
+        clearConcentration: true,
+      ),
+    );
+  }
+
+  void extendRageWithBonusAction() {
+    if (hasPersistentRage ||
+        !characterState.isRaging ||
+        currentMode != CharacterMode.combat ||
+        usedCombatActions.contains(CombatActionCost.bonusAction)) {
+      return;
+    }
+    usedCombatActions.add(CombatActionCost.bonusAction);
+    updateCharacterState(
+      characterState.copyWith(
+        conditionTurns: {...characterState.conditionTurns, ragingCondition: 2},
+      ),
+    );
+  }
+
+  void extendRage() {
+    if (hasPersistentRage ||
+        characterState.conditionTurns[ragingCondition] == 2) {
+      return;
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        conditionTurns: {...characterState.conditionTurns, ragingCondition: 2},
+      ),
+    );
+  }
+
+  void applySecondWind(Map<String, int> resourceValues) {
+    if (!characterState.canConcentrate) return;
+    final inCombat = currentMode == CharacterMode.combat;
+    if (inCombat && usedCombatActions.contains(CombatActionCost.bonusAction)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Bonus Action already used this turn.')),
+      );
+      return;
+    }
+    final roll = diceRoller.rollDie(10);
+    final fighterLevel = character.levelInClass('Fighter');
+    final bonus = fighterLevel > 0 ? fighterLevel : character.level;
+    final hp = (characterState.currentHp + roll + bonus).clamp(
+      0,
+      characterState.maxHp,
+    );
+    final recovered = hp - characterState.currentHp;
+    if (inCombat) usedCombatActions.add(CombatActionCost.bonusAction);
+    updateCharacterState(
+      characterState.copyWith(currentHp: hp, resourceValues: resourceValues),
+    );
+    addRollNotice(
+      title: 'Second Wind',
+      calculation: '1d10 ($roll) + $bonus = ${roll + bonus}',
+      total: recovered,
+      detail: fighterLevel >= 5 && inCombat
+          ? 'HP recovered · Tactical Shift lets you move up to half your Speed without provoking opportunity attacks.'
+          : 'HP recovered',
+      tone: RollNoticeTone.normal,
+    );
+  }
+
+  Map<String, Weapon> masteryWeapons({required bool selected}) {
+    final builtIn = BuiltInClass.named(character.characterClass);
+    if (builtIn == null || !builtIn.hasWeaponMastery) return {};
+    final known = {
+      for (final weapon in character.weapons)
+        if (weapon.mastery != null) WeaponMastery.weaponType(weapon.name),
+    };
+    return {
+      for (final weapon in character.weapons)
+        if (known.contains(WeaponMastery.weaponType(weapon.name)) == selected &&
+            (selected || builtIn.allowsMastery(weapon.name)))
+          WeaponMastery.weaponType(weapon.name): weapon,
+    };
+  }
+
+  Future<void> changeMasteryAfterRest() async {
+    final known = masteryWeapons(selected: true);
+    final choices = masteryWeapons(selected: false);
+    final previous = await chooseMasteryWeapon(
+      'Replace a Weapon Mastery',
+      known,
+    );
+    if (!mounted || previous == null) return;
+    final next = await chooseMasteryWeapon('Choose a Weapon Mastery', choices);
+    if (!mounted || next == null) return;
+    final updated = character.copyWith(
+      weapons: [
+        for (final weapon in character.weapons)
+          switch (WeaponMastery.weaponType(weapon.name)) {
+            final name when name == previous => weapon.withMastery(null),
+            final name when name == next => weapon.withMastery(
+              WeaponMastery.forWeapon(name),
+            ),
+            _ => weapon,
+          },
+      ],
+    );
+    setState(() => character = updated);
+    widget.onCharacterChanged(updated);
+    recordSessionEvent(
+      SessionEventType.rest,
+      'Weapon Mastery changed',
+      detail: '${known[previous]!.name} → ${choices[next]!.name}',
+    );
+  }
+
+  Future<String?> chooseMasteryWeapon(
+    String title,
+    Map<String, Weapon> weapons,
+  ) => showDialog<String>(
+    context: context,
+    builder: (context) => SimpleDialog(
+      title: Text(title),
+      children: [
+        for (final entry in weapons.entries)
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, entry.key),
+            child: Text(entry.value.name),
+          ),
+        SimpleDialogOption(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Keep current choices'),
+        ),
+      ],
+    ),
+  );
+
   Future<void> takeRest(RestType restType) async {
+    final canRecoverSlots =
+        restType == RestType.shortRest &&
+        landDruidLevel >= 6 &&
+        !characterState.naturalRecoveryUsed &&
+        naturalRecoverySlots.isNotEmpty;
+    final canChangeMastery =
+        restType == RestType.longRest &&
+        masteryWeapons(selected: true).isNotEmpty &&
+        masteryWeapons(selected: false).isNotEmpty;
     final preview = RestPlan.forCharacter(
       type: restType,
       character: character,
@@ -1441,23 +3919,31 @@ class _CharacterOverviewState extends State<CharacterOverview>
         restType == RestType.shortRest &&
         characterState.currentHp > 0 &&
         characterState.currentHp < characterState.maxHp;
-    final count = await showDialog<int>(
+    final counts = await showDialog<Map<int, int>>(
       context: context,
       builder: (context) => RestConfirmationDialog(
         plan: preview,
+        canChangeMastery: canChangeMastery,
+        canChooseDruidLand:
+            restType == RestType.longRest && landDruidLevel >= 3,
+        canUseNaturalRecovery: canRecoverSlots,
         availableHitDice: canSpend
-            ? RestPlan.availableHitDice(character, characterState)
-            : 0,
-        hitDie: RestPlan.hitDieFor(character),
+            ? RestPlan.availableHitDiceBySize(character, characterState)
+            : const {},
       ),
     );
-    if (!mounted || count == null) return;
+    if (!mounted || counts == null) return;
 
-    final plan = RestPlan.forCharacter(
-      type: restType,
-      character: character,
-      currentState: characterState,
-    ).spendHitDice(character: character, count: count, roller: diceRoller);
+    final plan =
+        RestPlan.forCharacter(
+          type: restType,
+          character: character,
+          currentState: characterState,
+        ).spendHitDice(
+          character: character,
+          countsBySize: counts,
+          roller: diceRoller,
+        );
     updateCharacterState(plan.updatedState);
     recordSessionEvent(
       SessionEventType.rest,
@@ -1470,6 +3956,78 @@ class _CharacterOverviewState extends State<CharacterOverview>
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('${restType.label} complete')));
+    if (canChangeMastery) await changeMasteryAfterRest();
+    if (restType == RestType.longRest && mounted && landDruidLevel >= 3) {
+      await chooseDruidLand();
+    }
+    if (canRecoverSlots && mounted) await useNaturalRecovery();
+  }
+
+  List<(int, CharacterResource)> get naturalRecoverySlots => [
+    for (final resource in character.resources)
+      if (spellSlotLevel(resource) case final level?
+          when level <= 5 &&
+              resource.rechargePeriod == RechargePeriod.longRest &&
+              remainingUses(resource) < resource.maximum)
+        (level, resource),
+  ];
+
+  Future<void> useNaturalRecovery() async {
+    if (landDruidLevel < 6 || characterState.naturalRecoveryUsed) return;
+    var budget = (landDruidLevel + 1) ~/ 2;
+    final recovered = <String, int>{};
+    while (mounted) {
+      final available = [
+        for (final (level, resource) in naturalRecoverySlots)
+          if (level <= budget &&
+              remainingUses(resource) + (recovered[resource.id] ?? 0) <
+                  resource.maximum)
+            (level, resource),
+      ];
+      if (available.isEmpty) break;
+      final choice = await showDialog<(int, String)>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: const Text('Natural Recovery'),
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+              child: Text('$budget slot levels remaining'),
+            ),
+            for (final (level, resource) in available)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, (level, resource.id)),
+                child: Text('Recover a level $level slot'),
+              ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, (0, '')),
+              child: Text(recovered.isEmpty ? 'Skip' : 'Finish Recovery'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || choice == null || characterState.naturalRecoveryUsed) {
+        return;
+      }
+      if (choice.$1 == 0) break;
+      budget -= choice.$1;
+      recovered.update(choice.$2, (count) => count + 1, ifAbsent: () => 1);
+    }
+    if (!mounted || recovered.isEmpty || characterState.naturalRecoveryUsed) {
+      return;
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        naturalRecoveryUsed: true,
+        resourceValues: {
+          ...characterState.resourceValues,
+          for (final resource in character.resources)
+            if (recovered.containsKey(resource.id))
+              resource.id: (remainingUses(resource) + recovered[resource.id]!)
+                  .clamp(0, resource.maximum),
+        },
+      ),
+    );
   }
 
   // ------------------------------------------------------------
@@ -1482,30 +4040,465 @@ class _CharacterOverviewState extends State<CharacterOverview>
       combatRound = 1;
       combatInitiative = null;
       usedCombatActions.clear();
+      actionSurge = null;
+      wildResurgenceUsedThisTurn = false;
+      primalStrikeUsedThisTurn = false;
+      cleaveUsedThisTurn = false;
+      nickUsedThisTurn = false;
+      readiedAction = null;
+      readiedEffect = null;
     });
     recordSessionEvent(SessionEventType.combat, 'Combat began');
   }
 
-  void recordCombatInitiative(int total) {
+  Future<void> recordCombatInitiative(int total) async {
     if (currentMode != CharacterMode.combat) return;
+    final firstInitiative = combatInitiative == null;
     setState(() => combatInitiative = total);
     recordSessionEvent(
       SessionEventType.combat,
       'Initiative recorded',
       detail: '$total',
     );
+    final inspiration = character.resources
+        .where((resource) => resource.id == bardicInspirationResourceId)
+        .firstOrNull;
+    if (firstInitiative &&
+        character.levelInClass('Bard') >= 18 &&
+        inspiration != null) {
+      final target = inspiration.maximum.clamp(0, 2);
+      if (remainingUses(inspiration) < target) {
+        updateCharacterState(
+          characterState.copyWith(
+            resourceValues: {
+              ...characterState.resourceValues,
+              inspiration.id: target,
+            },
+          ),
+        );
+      }
+    }
+    final wildShape = character.resources
+        .where((resource) => resource.id == wildShapeResourceId)
+        .firstOrNull;
+    if (firstInitiative &&
+        character.levelInClass('Druid') >= 20 &&
+        wildShape != null &&
+        remainingUses(wildShape) == 0) {
+      updateCharacterState(
+        characterState.copyWith(
+          resourceValues: {...characterState.resourceValues, wildShape.id: 1},
+        ),
+      );
+    }
+    final rage = character.resources
+        .where((resource) => resource.id == rageResourceId)
+        .firstOrNull;
+    if (!hasPersistentRage ||
+        characterState.persistentRageRecoveryUsed ||
+        rage == null ||
+        remainingUses(rage) >= rage.maximum) {
+      return;
+    }
+    final recover = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Persistent Rage'),
+        content: const Text(
+          'Recover all expended Rage uses? You can do this once per long rest.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Skip'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Recover Rage'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        recover != true ||
+        currentMode != CharacterMode.combat ||
+        characterState.persistentRageRecoveryUsed) {
+      return;
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        persistentRageRecoveryUsed: true,
+        resourceValues: {
+          ...characterState.resourceValues,
+          rage.id: rage.maximum,
+        },
+      ),
+    );
+  }
+
+  bool get canUseNonMagicAction =>
+      !usedCombatActions.contains(CombatActionCost.action) ||
+      actionSurge == ActionSurgeState.available;
+
+  Future<void> chooseCombatAction() async {
+    if (!characterState.canConcentrate || !canUseNonMagicAction) {
+      return;
+    }
+    const actions = {
+      'Dash': 'Gain extra movement this turn.',
+      'Disengage': 'Your movement avoids opportunity attacks this turn.',
+      'Dodge': 'Gain defensive benefits until your next turn.',
+      'Help': 'Describe who you help and how.',
+      'Hide': 'Roll a Dexterity (Stealth) check.',
+      'Search': 'Choose a Wisdom skill to check.',
+      'Study': 'Choose an Intelligence skill to check.',
+      'Influence': 'Choose a social skill if the GM calls for a check.',
+      'Utilize': 'Choose an inventory item to use.',
+      'Ready': 'Describe the trigger and what you will do when it occurs.',
+    };
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Use an Action'),
+        children: [
+          for (final action in actions.entries)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, action.key),
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(action.key),
+                subtitle: Text(action.value),
+              ),
+            ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null || currentMode != CharacterMode.combat) {
+      return;
+    }
+    String? plan;
+    String? readyEffect;
+    String? actionDetail;
+    Skill? actionSkill;
+    final applicableSkills = switch (choice) {
+      'Hide' => const {'stealth'},
+      'Search' => const {'insight', 'medicine', 'perception', 'survival'},
+      'Study' => const {
+        'arcana',
+        'history',
+        'investigation',
+        'nature',
+        'religion',
+      },
+      'Influence' => const {
+        'animal_handling',
+        'deception',
+        'intimidation',
+        'performance',
+        'persuasion',
+      },
+      _ => const <String>{},
+    };
+    if (applicableSkills.isNotEmpty) {
+      final skills = standardSkills
+          .where((skill) => applicableSkills.contains(skill.id))
+          .toList();
+      if (skills.length == 1) {
+        actionSkill = skills.single;
+      } else {
+        final skillId = await showDialog<String>(
+          context: context,
+          builder: (context) => SimpleDialog(
+            title: Text('$choice check'),
+            children: [
+              for (final skill in skills)
+                SimpleDialogOption(
+                  onPressed: () => Navigator.pop(context, skill.id),
+                  child: Text(skill.name),
+                ),
+              if (choice == 'Influence')
+                SimpleDialogOption(
+                  onPressed: () => Navigator.pop(context, ''),
+                  child: const Text('No check required'),
+                ),
+            ],
+          ),
+        );
+        if (!mounted || skillId == null) return;
+        actionSkill = skills.where((skill) => skill.id == skillId).firstOrNull;
+      }
+    }
+    if (choice == 'Utilize') {
+      final items = inventory.where((item) => item.quantity > 0).toList();
+      actionDetail = await showDialog<String>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: const Text('Use an item'),
+          children: [
+            for (final item in items)
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, item.name),
+                child: Text(item.name),
+              ),
+            SimpleDialogOption(
+              onPressed: () =>
+                  Navigator.pop(context, 'Object used at the table'),
+              child: const Text('Use another object'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || actionDetail == null) return;
+    }
+    if (choice == 'Help') {
+      actionDetail = await showDialog<String>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: const Text('How are you helping?'),
+          children: [
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(
+                context,
+                'Choose one of your skill or tool proficiencies and a nearby '
+                'ally you can assist. They gain Advantage on their next check '
+                'with it before the start of your next turn.',
+              ),
+              child: const Text('Assist an ability check'),
+            ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(
+                context,
+                'An ally has Advantage on their next attack against the '
+                'enemy you distract within 5 feet, before your next turn.',
+              ),
+              child: const Text('Distract an enemy'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || actionDetail == null) return;
+    }
+    if (choice == 'Ready') {
+      var text = '';
+      var effect = '';
+      final ready = await showDialog<(String, String)>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Ready an Action'),
+          scrollable: true,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                decoration: const InputDecoration(
+                  labelText: 'Trigger and action',
+                ),
+                maxLength: 200,
+                onChanged: (value) => text = value,
+              ),
+              DropdownButtonFormField<String>(
+                decoration: const InputDecoration(labelText: 'Readied effect'),
+                initialValue: '',
+                isExpanded: true,
+                items: [
+                  const DropdownMenuItem(
+                    value: '',
+                    child: Text('Resolve at the table'),
+                  ),
+                  const DropdownMenuItem(
+                    value: 'move',
+                    child: Text('Move up to your Speed'),
+                  ),
+                  for (final weapon in characterInCombat.weapons)
+                    DropdownMenuItem(
+                      value: weapon.actionKey,
+                      child: Text('Attack with ${weapon.name}'),
+                    ),
+                ],
+                onChanged: (value) => effect = value ?? '',
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (text.trim().isNotEmpty) {
+                  Navigator.pop(context, (text.trim(), effect));
+                }
+              },
+              child: const Text('Ready'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || ready == null) return;
+      (plan, readyEffect) = ready;
+    }
+    if (currentMode != CharacterMode.combat ||
+        !characterState.canConcentrate ||
+        !canUseNonMagicAction) {
+      return;
+    }
+    setState(() {
+      if (actionSurge == ActionSurgeState.available) {
+        actionSurge = ActionSurgeState.spent;
+      } else {
+        usedCombatActions.add(CombatActionCost.action);
+      }
+      if (plan != null) {
+        readiedAction = plan;
+        readiedEffect = readyEffect;
+      }
+    });
+    final turnEffect = switch (choice) {
+      'Dash' => dashingCondition,
+      'Disengage' => disengagingCondition,
+      'Dodge' => dodgingCondition,
+      _ => null,
+    };
+    if (choice == 'Dash') {
+      actionDetail =
+          'Gain extra movement equal to your current Speed this turn.';
+    } else if (choice == 'Disengage') {
+      actionDetail =
+          'Your movement does not provoke opportunity attacks this turn.';
+    } else if (choice == 'Dodge') {
+      actionDetail =
+          'Attacks from creatures you can see have Disadvantage. '
+          'Dexterity saves have Advantage. These benefits end at the start '
+          'of your next turn, if you are Incapacitated, or if your Speed drops to 0.';
+    }
+    if (turnEffect != null) {
+      updateCharacterState(
+        characterState.copyWith(
+          activeConditions: {...characterState.activeConditions, turnEffect},
+          conditionTurns: {...characterState.conditionTurns, turnEffect: 1},
+        ),
+      );
+    }
+    recordSessionEvent(
+      SessionEventType.combat,
+      '$choice used',
+      detail: plan ?? actionDetail,
+    );
+    if (actionSkill != null) {
+      final check = characterForPhysicalChecks.checkFor(actionSkill);
+      tacticalMindCheck = rollCheck(
+        '$choice · ${actionSkill.name}',
+        check.modifier,
+        describe: choice == 'Hide'
+            ? (roll) => roll.total >= 15
+                  ? 'Meets DC 15 · Confirm hiding conditions with the GM'
+                  : 'DC 15 · Failed check'
+            : null,
+      );
+    }
+  }
+
+  Future<void> triggerReadiedAction() async {
+    final plan = readiedAction;
+    if (plan == null ||
+        !characterState.canConcentrate ||
+        usedCombatActions.contains(CombatActionCost.reaction)) {
+      return;
+    }
+    final effect = readiedEffect;
+    final weapon = characterInCombat.weapons
+        .where((weapon) => weapon.actionKey == effect)
+        .firstOrNull;
+    if (effect?.startsWith('weapon:') == true && weapon == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('The readied attack is no longer available.'),
+        ),
+      );
+      return;
+    }
+    bool? packTactics;
+    if (weapon?.id == 'wild-shape-wolf') {
+      packTactics = await choosePackTactics();
+      if (!mounted ||
+          packTactics == null ||
+          activeWildShape?.combatAttack.id != weapon!.id ||
+          !characterState.canConcentrate ||
+          usedCombatActions.contains(CombatActionCost.reaction)) {
+        return;
+      }
+    }
+    if (weapon case Weapon(ammunitionName: final name?)) {
+      if (!inventory.any(
+        (item) => item.quantity > 0 && matchesAmmunition(item, name),
+      )) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('No $name remaining.')));
+        return;
+      }
+    }
+    setState(() {
+      usedCombatActions.add(CombatActionCost.reaction);
+      readiedAction = null;
+      readiedEffect = null;
+    });
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Readied action triggered',
+      detail: effect == 'move' ? '$plan · Move up to your Speed' : plan,
+    );
+    if (weapon != null) {
+      await rollAttack(
+        weapon,
+        asReaction: true,
+        packTacticsChoice: packTactics,
+      );
+    }
   }
 
   void advanceCombatTurn() {
+    tacticalMindCheck = null;
+    pendingAttackSlot = null;
     pendingCriticalActionKey = null;
     setState(() {
       nextRollMode = D20Mode.normal;
       combatRound++;
       usedCombatActions.clear();
+      actionSurge = null;
+      wildResurgenceUsedThisTurn = false;
+      primalStrikeUsedThisTurn = false;
+      cleaveUsedThisTurn = false;
+      nickUsedThisTurn = false;
+      readiedAction = null;
+      readiedEffect = null;
     });
-    final updated = characterState
+    var updated = characterState
         .advanceConcentrationTurn()
         .advanceConditionTurn();
+    final formTurns = updated.wildShapeTurnsRemaining;
+    if (updated.wildShapeForm != null && formTurns != null) {
+      updated = formTurns <= 1
+          ? updated.copyWith(clearWildShape: true)
+          : updated.copyWith(wildShapeTurnsRemaining: formTurns - 1);
+    }
+    final canRally =
+        character.championLevel >= 18 &&
+        updated.currentHp > 0 &&
+        updated.currentHp * 2 <= updated.maxHp;
+    if (canRally) {
+      final healing = (5 + character.abilityModifierFor(Ability.constitution))
+          .clamp(0, updated.maxHp - updated.currentHp);
+      if (healing > 0) {
+        updated = updated.copyWith(currentHp: updated.currentHp + healing);
+        recordSessionEvent(
+          SessionEventType.health,
+          'Heroic Rally',
+          detail: 'Recovered $healing HP',
+        );
+      }
+    }
     if (!identical(updated, characterState)) updateCharacterState(updated);
     recordSessionEvent(SessionEventType.combat, 'Round $combatRound began');
   }
@@ -1522,12 +4515,33 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void endCombat() {
+    var ended = characterState.endRage();
+    const turnEffects = {
+      dodgingCondition,
+      dashingCondition,
+      disengagingCondition,
+      naturesSanctuaryCondition,
+    };
+    if (ended.activeConditions.any(turnEffects.contains)) {
+      ended = ended.copyWith(
+        activeConditions: {...ended.activeConditions}..removeAll(turnEffects),
+      );
+    }
+    if (!identical(ended, characterState)) updateCharacterState(ended);
+    pendingAttackSlot = null;
     pendingCriticalActionKey = null;
     setState(() {
       currentMode = CharacterMode.exploration;
       combatRound = 1;
       combatInitiative = null;
       usedCombatActions.clear();
+      actionSurge = null;
+      wildResurgenceUsedThisTurn = false;
+      primalStrikeUsedThisTurn = false;
+      cleaveUsedThisTurn = false;
+      nickUsedThisTurn = false;
+      readiedAction = null;
+      readiedEffect = null;
     });
     recordSessionEvent(SessionEventType.combat, 'Combat ended');
   }
@@ -1685,10 +4699,37 @@ class _CharacterOverviewState extends State<CharacterOverview>
   // MODE VIEWS
   // ------------------------------------------------------------
 
+  WildShapeForm? get activeWildShape =>
+      wildShapeFormNamed(characterState.wildShapeForm ?? '');
+
+  Character get characterForPhysicalChecks {
+    final form = activeWildShape;
+    if (form == null) return character;
+    return character.copyWith(
+      skillModifierMinimums: form.skillModifiers,
+      saveModifierMinimums: form.saveModifiers,
+      abilityScores: {
+        ...character.abilityScores,
+        Ability.strength: form.strength,
+        Ability.dexterity: form.dexterity,
+        Ability.constitution: form.constitution,
+      },
+    );
+  }
+
+  Character get characterInCombat {
+    final form = activeWildShape;
+    final physical = characterForPhysicalChecks;
+    return form == null
+        ? physical
+        : physical.copyWith(weapons: [form.combatAttack]);
+  }
+
   Widget buildExplorationMode() {
     return ExplorationModeView(
-      character: character,
+      character: characterForPhysicalChecks,
       characterState: characterState,
+      formArmourClass: activeWildShape?.armourClass,
       onCharacterStateChanged: updateCharacterState,
       onDamageTaken: promptConcentrationAfterDamage,
       inventory: inventory,
@@ -1708,19 +4749,36 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   Widget buildCombatMode() {
     return CombatModeView(
-      character: character,
+      character: characterInCombat,
       characterState: characterState,
+      formArmourClass: activeWildShape?.armourClass,
       onCharacterStateChanged: updateCharacterState,
       onDamageTaken: promptConcentrationAfterDamage,
+      resolveDamage: resolveRelentlessRage,
       onActionTap: handleActionTap,
       onActionDetails: showActionDetails,
       onAttackRoll: rollAttack,
+      ammunitionLabel: ammunitionLabel,
       onDamageRoll: rollDamage,
       onDeathSaveRoll: rollDeathSave,
       combatRound: combatRound,
       usedCombatActions: usedCombatActions,
+      actionSurge: actionSurge,
+      onActionSurgeSpent: () {
+        setState(() => actionSurge = ActionSurgeState.spent);
+        publishSession();
+      },
       onCombatActionChanged: setCombatActionUsed,
       onNextTurn: advanceCombatTurn,
+      onExtendRage: characterState.isRaging && !hasPersistentRage
+          ? extendRageWithBonusAction
+          : null,
+      onEndRage: characterState.isRaging
+          ? () => updateCharacterState(characterState.endRage())
+          : null,
+      readiedAction: readiedAction,
+      onChooseCombatAction: chooseCombatAction,
+      onTriggerReadiedAction: triggerReadiedAction,
       combatInitiative: combatInitiative,
       onInitiativeRecorded: recordCombatInitiative,
       rollD20: diceRoller.rollD20,
@@ -1780,6 +4838,125 @@ class _CharacterOverviewState extends State<CharacterOverview>
           }),
 
           actions: [
+            if (character.levelInClass('Druid') >= 2)
+              PopupMenuButton<String>(
+                tooltip: 'Druid features',
+                icon: const Icon(Icons.eco_outlined),
+                onSelected: (choice) {
+                  switch (choice) {
+                    case 'companion':
+                      summonWildCompanion();
+                    case 'dismiss':
+                      updateCharacterState(
+                        characterState.copyWith(clearWildCompanion: true),
+                      );
+                    case 'lands-aid':
+                      useLandsAid();
+                    case 'land':
+                      chooseDruidLand();
+                    case 'sanctuary':
+                      useNaturesSanctuary();
+                    case 'move-sanctuary':
+                      moveNaturesSanctuary();
+                    case 'shape-pool':
+                      if (wildShapePool case final pool?) adjustResource(pool);
+                    case 'shape-form':
+                      showWildShapeForm();
+                    case 'shape-time':
+                      advanceWildShapeTime();
+                    case 'freedom-escape':
+                      escapeWithFreedomOfMovement();
+                    case 'nature-magician':
+                      useNatureMagician();
+                    case 'primal-strike':
+                      usePrimalStrike();
+                  }
+                },
+                itemBuilder: (context) => [
+                  if (characterState.activeConditions.contains(
+                        freedomOfMovementCondition,
+                      ) &&
+                      characterState.activeConditions.any(
+                        const {'Grappled', 'Restrained'}.contains,
+                      ))
+                    const PopupMenuItem(
+                      value: 'freedom-escape',
+                      child: Text('Escape nonmagical restraints'),
+                    ),
+                  if (characterState.activeConditions.contains(
+                    naturesSanctuaryCondition,
+                  ))
+                    PopupMenuItem(
+                      value: 'move-sanctuary',
+                      enabled: canMoveNaturesSanctuary,
+                      child: const Text('Move Nature’s Sanctuary'),
+                    ),
+                  const PopupMenuItem(
+                    value: 'companion',
+                    child: Text('Wild Companion'),
+                  ),
+                  if (characterState.wildCompanion case final familiar?)
+                    PopupMenuItem(
+                      value: 'dismiss',
+                      child: Text('Dismiss $familiar'),
+                    ),
+                  if (landDruidLevel >= 3)
+                    const PopupMenuItem(
+                      value: 'lands-aid',
+                      child: Text('Land’s Aid'),
+                    ),
+                  if (landDruidLevel >= 3 && characterState.druidLand == null)
+                    const PopupMenuItem(
+                      value: 'land',
+                      child: Text('Choose terrain'),
+                    ),
+                  if (landDruidLevel >= 14 && characterState.druidLand != null)
+                    const PopupMenuItem(
+                      value: 'sanctuary',
+                      child: Text('Nature’s Sanctuary'),
+                    ),
+                  if (wildShapePool != null)
+                    const PopupMenuItem(
+                      value: 'shape-pool',
+                      child: Text('Manage Wild Shape'),
+                    ),
+                  if (characterState.wildShapeForm != null)
+                    const PopupMenuItem(
+                      value: 'shape-form',
+                      child: Text('View Wild Shape form'),
+                    ),
+                  if (characterState.wildShapeForm != null)
+                    const PopupMenuItem(
+                      value: 'shape-time',
+                      child: Text('Advance Wild Shape time'),
+                    ),
+                  if (canUseNatureMagician)
+                    const PopupMenuItem(
+                      value: 'nature-magician',
+                      child: Text('Nature Magician'),
+                    ),
+                  if (canUsePrimalStrike)
+                    const PopupMenuItem(
+                      value: 'primal-strike',
+                      child: Text('Primal Strike'),
+                    ),
+                ],
+              ),
+            if (characterState.wildShapeForm case final form?)
+              IconButton(
+                tooltip: 'Wild Shape: $form · Revert',
+                icon: const Icon(Icons.pets),
+                onPressed: revertWildShape,
+              )
+            else if (character.resources
+                    .where((resource) => resource.id == wildShapeResourceId)
+                    .firstOrNull
+                case final wildShape?)
+              IconButton(
+                tooltip: 'Wild Shape',
+                icon: const Icon(Icons.pets_outlined),
+                onPressed: () => spendResource(wildShape),
+              ),
             if (activeConcentrationSpell case final spell?)
               IconButton(
                 tooltip: 'Concentration: ${spell.name}',

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../models/character_state.dart';
 import 'dialogue_action_button.dart';
 
 enum HpAdjustmentType { damage, criticalDamage, healing, temporaryHp }
@@ -7,13 +8,25 @@ class HpAdjustment {
   final HpAdjustmentType type;
   final int amount;
 
-  const HpAdjustment({required this.type, required this.amount});
+  final IncomingDamageType damageType;
+
+  const HpAdjustment({
+    required this.type,
+    required this.amount,
+    this.damageType = IncomingDamageType.other,
+  });
 }
 
 class HpAdjustDialog extends StatefulWidget {
   final bool showCriticalDamage;
 
-  const HpAdjustDialog({super.key, this.showCriticalDamage = false});
+  final bool showDamageType;
+
+  const HpAdjustDialog({
+    super.key,
+    this.showCriticalDamage = false,
+    this.showDamageType = false,
+  });
 
   @override
   State<HpAdjustDialog> createState() => _HpAdjustDialogState();
@@ -21,6 +34,7 @@ class HpAdjustDialog extends StatefulWidget {
 
 class _HpAdjustDialogState extends State<HpAdjustDialog> {
   late final TextEditingController amountController;
+  IncomingDamageType damageType = IncomingDamageType.other;
 
   @override
   void initState() {
@@ -47,12 +61,16 @@ class _HpAdjustDialogState extends State<HpAdjustDialog> {
       return;
     }
 
-    Navigator.pop(context, HpAdjustment(type: type, amount: amount));
+    Navigator.pop(
+      context,
+      HpAdjustment(type: type, amount: amount, damageType: damageType),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      scrollable: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -77,6 +95,18 @@ class _HpAdjustDialogState extends State<HpAdjustDialog> {
               ),
             ),
           ),
+          if (widget.showDamageType)
+            DropdownButtonFormField<IncomingDamageType>(
+              initialValue: damageType,
+              decoration: const InputDecoration(labelText: 'Damage type'),
+              items: [
+                for (final type in IncomingDamageType.values)
+                  DropdownMenuItem(value: type, child: Text(type.label)),
+              ],
+              onChanged: (type) {
+                if (type != null) setState(() => damageType = type);
+              },
+            ),
           const SizedBox(height: 10),
           DialogueActionButton(
             label: '🗡 Damage',

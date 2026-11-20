@@ -5,6 +5,46 @@ import 'package:whetstone/models/session_event.dart';
 import 'package:whetstone/persistence/portable_vault_document.dart';
 
 void main() {
+  test('legacy vault entries retain live state and default new fields', () {
+    final eldrin = seedCharacters.first;
+    final base = CharacterSession.fromCharacter(eldrin);
+    final definition = eldrin.toJson()..remove('savedClassRules');
+    final state = base.characterState.toJson()
+      ..['currentHp'] = 12
+      ..['temporaryHp'] = 3
+      ..['activeConditions'] = ['Poisoned'];
+    final legacy = PortableVaultDocument.fromJson({
+      'format': PortableVaultDocument.format,
+      'schemaVersion': 1,
+      'createdAt': '2026-08-12T09:00:00Z',
+      'characters': {eldrin.id: definition},
+      'sessions': {
+        eldrin.id: {
+          'characterState': state,
+          'inventory': [for (final item in base.inventory) item.toJson()],
+          'archivedInventory': [],
+          'isInCombat': true,
+        },
+      },
+    });
+    final restored = PortableVaultDocument.decode(
+      legacy.encode(),
+    ).sessions[eldrin.id]!;
+    expect(restored.characterState.currentHp, 12);
+    expect(restored.characterState.temporaryHp, 3);
+    expect(restored.characterState.activeConditions, {'Poisoned'});
+    expect(restored.characterState.conditionTurns, isEmpty);
+    expect(restored.characterState.hitDiceSpent, 0);
+    expect(restored.characterState.concentrationTarget, isNull);
+    expect(restored.combatRound, 1);
+    expect(restored.usedCombatActions, isEmpty);
+    expect(restored.readiedAction, isNull);
+    expect(
+      restored.inventory.map((item) => item.name),
+      base.inventory.map((item) => item.name),
+    );
+  });
+
   test('vault package round-trips every character and live session', () {
     final eldrin = seedCharacters[0];
     final mara = seedCharacters[1];

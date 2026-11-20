@@ -53,7 +53,9 @@ class ProfileModeView extends StatelessWidget {
                 ),
               ),
               subtitle: Text(
-                'Level ${character.level} ${character.characterClass}',
+                'Level ${character.level} ${character.characterClass}'
+                '${character.subclasses.isEmpty ? '' : '\n${character.subclasses.values.join(' · ')}'}'
+                '${character.primalOrder == null ? '' : '\nPrimal Order · ${character.primalOrder!.label}'}',
               ),
             ),
           ),

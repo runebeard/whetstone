@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../models/character_state.dart';
 import 'hp_adjust_dialog.dart';
 import 'stat_box.dart';
 
@@ -6,8 +7,9 @@ class HpBox extends StatelessWidget {
   final int currentHp;
   final int maxHp;
   final int temporaryHp;
-  final ValueChanged<int> onDamage;
-  final ValueChanged<int>? onCriticalDamage;
+  final void Function(int, IncomingDamageType) onDamage;
+  final bool showDamageType;
+  final void Function(int, IncomingDamageType)? onCriticalDamage;
   final ValueChanged<int> onHealing;
   final ValueChanged<int> onTemporaryHp;
   final VoidCallback onLongPress;
@@ -18,6 +20,7 @@ class HpBox extends StatelessWidget {
     required this.maxHp,
     required this.temporaryHp,
     required this.onDamage,
+    this.showDamageType = false,
     this.onCriticalDamage,
     required this.onHealing,
     required this.onTemporaryHp,
@@ -31,6 +34,7 @@ class HpBox extends StatelessWidget {
         final result = await showDialog<HpAdjustment>(
           context: context,
           builder: (context) => HpAdjustDialog(
+            showDamageType: showDamageType,
             showCriticalDamage: currentHp == 0 && onCriticalDamage != null,
           ),
         );
@@ -41,11 +45,11 @@ class HpBox extends StatelessWidget {
 
         switch (result.type) {
           case HpAdjustmentType.damage:
-            onDamage(result.amount);
+            onDamage(result.amount, result.damageType);
             break;
 
           case HpAdjustmentType.criticalDamage:
-            onCriticalDamage?.call(result.amount);
+            onCriticalDamage?.call(result.amount, result.damageType);
             break;
 
           case HpAdjustmentType.healing:

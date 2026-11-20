@@ -1,5 +1,77 @@
 import 'character_action.dart';
 
+enum WeaponCategory {
+  simpleMelee('Simple melee'),
+  simpleRanged('Simple ranged'),
+  martialMelee('Martial melee'),
+  martialRanged('Martial ranged');
+
+  const WeaponCategory(this.label);
+  final String label;
+}
+
+enum WeaponMastery {
+  cleave('Cleave'),
+  graze('Graze'),
+  nick('Nick'),
+  push('Push'),
+  sap('Sap'),
+  slow('Slow'),
+  topple('Topple'),
+  vex('Vex');
+
+  static String weaponType(String name) =>
+      name.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
+  static WeaponMastery? forWeapon(String name) => switch (weaponType(name)) {
+    'greataxe' || 'halberd' => cleave,
+    'glaive' || 'greatsword' => graze,
+    'dagger' || 'light hammer' || 'sickle' || 'scimitar' => nick,
+    'greatclub' || 'pike' || 'warhammer' || 'heavy crossbow' => push,
+    'mace' ||
+    'spear' ||
+    'flail' ||
+    'longsword' ||
+    'morningstar' ||
+    'war pick' => sap,
+    'club' ||
+    'javelin' ||
+    'light crossbow' ||
+    'sling' ||
+    'whip' ||
+    'longbow' ||
+    'musket' => slow,
+    'quarterstaff' || 'battleaxe' || 'lance' || 'maul' || 'trident' => topple,
+    'handaxe' ||
+    'dart' ||
+    'shortbow' ||
+    'rapier' ||
+    'shortsword' ||
+    'blowgun' ||
+    'hand crossbow' ||
+    'pistol' => vex,
+    _ => null,
+  };
+
+  static bool hasRoom({
+    required int limit,
+    required String name,
+    required Iterable<Weapon> weapons,
+    Weapon? editing,
+  }) {
+    final type = weaponType(name);
+    final selected = {
+      for (final weapon in weapons)
+        if (!identical(weapon, editing) && weapon.mastery != null)
+          weaponType(weapon.name),
+    };
+    return limit > 0 && (selected.contains(type) || selected.length < limit);
+  }
+
+  const WeaponMastery(this.label);
+  final String label;
+}
+
 class Weapon extends CharacterAction {
   @override
   final String id;
@@ -20,6 +92,25 @@ class Weapon extends CharacterAction {
   final String? damageType;
 
   final String? range;
+  final String? versatileDamageFormula;
+  final bool usesStrength;
+  final String? ammunitionName;
+  final WeaponCategory? category;
+  final WeaponMastery? mastery;
+  final List<String> properties;
+  bool get isLight =>
+      properties.any((value) => value.trim().toLowerCase() == 'light') ||
+      const {
+        'dagger',
+        'handaxe',
+        'light hammer',
+        'sickle',
+        'scimitar',
+        'shortsword',
+        'hand crossbow',
+      }.contains(WeaponMastery.weaponType(name));
+  final int? normalRange;
+  final int? longRange;
 
   const Weapon({
     required this.id,
@@ -29,7 +120,33 @@ class Weapon extends CharacterAction {
     this.damageFormula,
     this.damageType,
     this.range,
+    this.versatileDamageFormula,
+    this.usesStrength = false,
+    this.ammunitionName,
+    this.category,
+    this.mastery,
+    this.properties = const [],
+    this.normalRange,
+    this.longRange,
   });
+
+  Weapon withMastery(WeaponMastery? value) => Weapon(
+    id: id,
+    name: name,
+    attackModifier: attackModifier,
+    damage: damage,
+    damageFormula: damageFormula,
+    damageType: damageType,
+    range: range,
+    versatileDamageFormula: versatileDamageFormula,
+    usesStrength: usesStrength,
+    ammunitionName: ammunitionName,
+    category: category,
+    mastery: value,
+    properties: properties,
+    normalRange: normalRange,
+    longRange: longRange,
+  );
 
   @override
   CharacterActionType get type => CharacterActionType.weapon;
@@ -39,7 +156,16 @@ class Weapon extends CharacterAction {
     final displayModifier = attackModifier > 0
         ? '+$attackModifier'
         : '$attackModifier';
-    final displayRange = range == null ? '' : ' • $range';
-    return '$displayModifier to hit • $damage$displayRange';
+    return [
+      '$displayModifier to hit',
+      damage,
+      if (normalRange case final distance?)
+        longRange == null ? '$distance ft' : '$distance/$longRange ft'
+      else
+        ?range,
+      ?category?.label,
+      ...properties,
+      if (mastery case final value?) 'Mastery: ${value.label}',
+    ].join(' • ');
   }
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../models/built_in_class.dart';
+import '../models/ability.dart';
 import '../models/character.dart';
 import '../models/character_action.dart';
 import '../models/character_resource.dart';
@@ -9,6 +11,7 @@ import '../models/feature.dart';
 import '../models/inventory_item.dart';
 import '../models/library_content_copy.dart';
 import '../models/spell.dart';
+import '../models/spell_slots.dart';
 import '../models/weapon.dart';
 import '../widgets/character_resource_editor_dialog.dart';
 import '../widgets/feature_editor_dialog.dart';
@@ -37,12 +40,17 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
   late final TextEditingController levelController;
   late final TextEditingController maxHpController;
   late final TextEditingController proficiencyController;
+  late final Map<BuiltInClass, TextEditingController> additionalClasses;
   late final List<Spell> spells;
   late final List<Weapon> weapons;
   late final List<CharacterResource> resources;
   late final List<InventoryItem> inventory;
   late final List<Feature> features;
   late final Set<String> pinnedActionKeys;
+  final abilityIncreases = <Ability, int>{};
+  late final Map<String, String> subclasses;
+  PrimalOrder? primalOrder;
+  ElementalFury? elementalFury;
 
   @override
   void initState() {
@@ -52,7 +60,20 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
     proficiencyController = TextEditingController(
       text: '${widget.character.proficiencyBonus}',
     );
+    final primary = BuiltInClass.named(widget.character.characterClass);
+    additionalClasses = {
+      if (primary != null)
+        for (final entry in BuiltInClass.values)
+          if (entry != primary)
+            entry: TextEditingController(
+              text:
+                  '${widget.character.additionalClassLevels[entry.label] ?? 0}',
+            ),
+    };
     spells = [...widget.character.spells];
+    subclasses = {...widget.character.subclasses};
+    primalOrder = widget.character.primalOrder;
+    elementalFury = widget.character.elementalFury;
     weapons = [...widget.character.weapons];
     resources = [...widget.character.resources];
     inventory = [...widget.character.initialInventory];
@@ -65,6 +86,9 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
     levelController.dispose();
     maxHpController.dispose();
     proficiencyController.dispose();
+    for (final controller in additionalClasses.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -75,19 +99,313 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
         : null;
   }
 
+  Map<String, int> get classAllocation => {
+    for (final entry in additionalClasses.entries)
+      if ((int.tryParse(entry.value.text) ?? 0) > 0)
+        entry.key.label: int.parse(entry.value.text),
+  };
+
+  int druidLevelAt(int level, Map<String, int> allocation) =>
+      BuiltInClass.named(widget.character.characterClass) == BuiltInClass.druid
+      ? level - allocation.values.fold<int>(0, (sum, count) => sum + count)
+      : allocation['Druid'] ?? 0;
+
+  Iterable<BuiltInClass> eligibleSubclassClasses(
+    int level,
+    Map<String, int> allocation,
+  ) sync* {
+    final primary = BuiltInClass.named(widget.character.characterClass);
+    final primaryLevel =
+        level - allocation.values.fold<int>(0, (sum, count) => sum + count);
+    if (primary != null && primaryLevel >= 3) yield primary;
+    for (final entry in allocation.entries) {
+      if (entry.value >= 3) yield BuiltInClass.named(entry.key)!;
+    }
+  }
+
+  int abilityImprovementCount(int level, Map<String, int> allocation) {
+    final primary = BuiltInClass.named(widget.character.characterClass);
+    if (primary == null || level <= widget.character.level || level > 20) {
+      return 0;
+    }
+    final primaryLevel =
+        level - allocation.values.fold<int>(0, (sum, value) => sum + value);
+    if (primaryLevel < 1) return 0;
+    var count = 0;
+    for (final entry in {primary.label: primaryLevel, ...allocation}.entries) {
+      final previous = widget.character.levelInClass(entry.key);
+      final builtIn = BuiltInClass.named(entry.key)!;
+      count += builtIn.abilityImprovementLevels
+          .where(
+            (milestone) => milestone > previous && milestone <= entry.value,
+          )
+          .length;
+    }
+    return count;
+  }
+
+  int get assignedAbilityPoints =>
+      abilityIncreases.values.fold<int>(0, (sum, value) => sum + value);
+
+  int improvedScore(Ability ability) =>
+      widget.character.scoreFor(ability) + (abilityIncreases[ability] ?? 0);
+
+  int modifierChange(Ability ability) =>
+      ((improvedScore(ability) - 10) / 2).floor() -
+      widget.character.abilityModifierFor(ability);
+
+  Future<void> chooseAbilityImprovement() async {
+    final level = int.tryParse(levelController.text) ?? 0;
+    if (assignedAbilityPoints >=
+        2 * abilityImprovementCount(level, classAllocation)) {
+      showProgressionMessage(
+        'Enter a level that grants another Ability Score Improvement.',
+      );
+      return;
+    }
+    Ability? first;
+    Ability? second;
+    final picks = await showDialog<(Ability, Ability)>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Ability Score Improvement'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final isFirst in [true, false])
+                DropdownButtonFormField<Ability>(
+                  decoration: InputDecoration(
+                    labelText: isFirst ? 'First +1' : 'Second +1',
+                  ),
+                  items: [
+                    for (final ability in Ability.values)
+                      if (improvedScore(ability) < 20)
+                        DropdownMenuItem(
+                          value: ability,
+                          child: Text(
+                            '${ability.label} (${improvedScore(ability)})',
+                          ),
+                        ),
+                  ],
+                  onChanged: (ability) => setDialogState(() {
+                    if (isFirst) {
+                      first = ability;
+                    } else {
+                      second = ability;
+                    }
+                  }),
+                ),
+              if (first != null &&
+                  first == second &&
+                  improvedScore(first!) > 18)
+                const Text('An ability score cannot exceed 20.'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed:
+                  first != null &&
+                      second != null &&
+                      (first != second || improvedScore(first!) <= 18)
+                  ? () => Navigator.pop(context, (first!, second!))
+                  : null,
+              child: const Text('Apply Ability Increase'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || picks == null) return;
+    setState(() {
+      for (final ability in [picks.$1, picks.$2]) {
+        abilityIncreases.update(
+          ability,
+          (points) => points + 1,
+          ifAbsent: () => 1,
+        );
+      }
+    });
+  }
+
+  void showProgressionMessage(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void applyLevelUpDefaults(BuiltInClass primary) {
+    final current = widget.character;
+    final level = int.tryParse(levelController.text);
+    if (level == null || level <= current.level || level > 20) {
+      showProgressionMessage('Enter a higher level, up to level 20.');
+      return;
+    }
+    final allocation = classAllocation;
+    final primaryLevel =
+        level - allocation.values.fold<int>(0, (sum, count) => sum + count);
+    final nextLevels = {primary.label: primaryLevel, ...allocation};
+    final previousLevels = {
+      primary.label: current.levelInClass(primary.label),
+      ...current.additionalClassLevels,
+    };
+    if (primaryLevel < 1 ||
+        previousLevels.entries.any(
+          (entry) => (nextLevels[entry.key] ?? 0) < entry.value,
+        )) {
+      showProgressionMessage(
+        'Keep existing class levels to calculate level-up HP.',
+      );
+      return;
+    }
+    final constitution = current.abilityModifierFor(Ability.constitution);
+    var maximumHp = current.maxHp;
+    for (final entry in nextLevels.entries) {
+      final hitDie = BuiltInClass.named(entry.key)!.hitDie;
+      final gainedLevels = entry.value - (previousLevels[entry.key] ?? 0);
+      final hpPerLevel = (hitDie ~/ 2 + 1 + constitution).clamp(1, 999);
+      maximumHp += gainedLevels * hpPerLevel;
+    }
+    maxHpController.text = '$maximumHp';
+    proficiencyController.text = '${2 + (level - 1) ~/ 4}';
+  }
+
+  List<CharacterResource> updatedSpellSlotResources(
+    int level,
+    Map<String, int> allocation,
+  ) {
+    final wasMulticlass = widget.character.additionalClassLevels.isNotEmpty;
+    if (allocation.isEmpty &&
+        !wasMulticlass &&
+        (level == widget.character.level ||
+            !resources.any((resource) => spellSlotLevel(resource) != null))) {
+      return [...resources];
+    }
+    final slots = spellSlotsForClassLevels(
+      widget.character.characterClass,
+      level,
+      allocation,
+    );
+    if (slots.isEmpty && !wasMulticlass) return [...resources];
+    return [
+      for (final resource in resources)
+        if (spellSlotLevel(resource) == null) resource,
+      ...slots,
+    ];
+  }
+
+  List<CharacterResource> updatedResources(
+    int level,
+    Map<String, int> allocation,
+  ) {
+    final primary = BuiltInClass.named(widget.character.characterClass);
+    final slotsAndResources = updatedSpellSlotResources(level, allocation);
+    if (primary == null) return slotsAndResources;
+    final primaryLevel =
+        level - allocation.values.fold<int>(0, (sum, value) => sum + value);
+    final charisma = ((improvedScore(Ability.charisma) - 10) / 2).floor();
+    final generated = [
+      ...primary.classResources(primaryLevel, charismaModifier: charisma),
+      for (final entry in allocation.entries)
+        ...BuiltInClass.named(
+          entry.key,
+        )!.classResources(entry.value, charismaModifier: charisma),
+    ].where((resource) => progressingClassResourceIds.contains(resource.id));
+    return [
+      for (final resource in slotsAndResources)
+        if (!progressingClassResourceIds.contains(resource.id)) resource,
+      ...generated,
+    ];
+  }
+
   void save() {
     if (!formKey.currentState!.validate()) return;
-    final maximumHp = int.parse(maxHpController.text);
+    final level = int.parse(levelController.text);
+    final maximumHp =
+        int.parse(maxHpController.text) +
+        modifierChange(Ability.constitution) * level;
+    if (additionalClasses.values.any(
+      (controller) => numberBetween(controller.text, 0, 19) != null,
+    )) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter 0–19 for each additional class.')),
+      );
+      return;
+    }
+    final allocation = classAllocation;
+    if (assignedAbilityPoints >
+        2 * abilityImprovementCount(level, allocation)) {
+      showProgressionMessage(
+        'Clear ability increases or enter levels that grant them.',
+      );
+      return;
+    }
+    if (allocation.values.fold(0, (total, value) => total + value) >= level) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Keep at least one level in your primary class.'),
+        ),
+      );
+      return;
+    }
+    final current = widget.character;
+    final newClasses = allocation.keys.where(
+      (name) => current.levelInClass(name) == 0,
+    );
+    if (newClasses.isNotEmpty) {
+      for (final name in {
+        current.characterClass,
+        ...current.additionalClassLevels.keys,
+        ...newClasses,
+      }) {
+        final requirement = BuiltInClass.named(
+          name,
+        )?.unmetMulticlassRequirement(current.scoreFor);
+        if (requirement != null) {
+          showProgressionMessage(
+            'Multiclassing requires $requirement for $name.',
+          );
+          return;
+        }
+      }
+    }
     Navigator.pop(
       context,
       widget.character.copyWith(
-        level: int.parse(levelController.text),
+        level: level,
+        additionalClassLevels: allocation,
+        primalOrder: primalOrder,
+        elementalFury: elementalFury,
+        clearElementalFury: druidLevelAt(level, allocation) < 7,
+        druidCantripIds: {
+          for (final spell in spells)
+            if (spell.isCantrip && current.druidCantripIds.contains(spell.id))
+              spell.id,
+        },
+        clearPrimalOrder:
+            BuiltInClass.named(current.characterClass) != BuiltInClass.druid &&
+            !allocation.containsKey('Druid'),
+        subclasses: {
+          for (final entry in eligibleSubclassClasses(level, allocation))
+            entry.label: ?subclasses[entry.label],
+        },
         currentHp: widget.character.currentHp.clamp(0, maximumHp),
         maxHp: maximumHp,
+        abilityScores: {
+          ...current.abilityScores,
+          for (final ability in abilityIncreases.keys)
+            ability: improvedScore(ability),
+        },
+        initiativeModifier:
+            current.initiativeModifier + modifierChange(Ability.dexterity),
         proficiencyBonus: int.parse(proficiencyController.text),
         spells: [...spells],
         weapons: [...weapons],
-        resources: [...resources],
+        resources: updatedResources(level, allocation),
         initialInventory: [...inventory],
         features: [...features],
         initiallyPinnedActionKeys: {...pinnedActionKeys},
@@ -97,6 +415,11 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
 
   @override
   Widget build(BuildContext context) {
+    final primary = BuiltInClass.named(widget.character.characterClass);
+    final eligibleSubclasses = eligibleSubclassClasses(
+      int.tryParse(levelController.text) ?? 0,
+      classAllocation,
+    );
     return Scaffold(
       appBar: AppBar(
         title: const Text('Advance Character'),
@@ -162,6 +485,126 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
                       minimum: 1,
                       maximum: 999,
                     ),
+                    if (additionalClasses.isNotEmpty)
+                      ExpansionTile(
+                        title: const Text('Additional class levels'),
+                        subtitle: const Text(
+                          'Used to calculate Hit Dice and spell slots',
+                        ),
+                        initiallyExpanded:
+                            widget.character.additionalClassLevels.isNotEmpty,
+                        maintainState: true,
+                        children: [
+                          for (final entry in additionalClasses.entries)
+                            numberField(
+                              key: 'advancement-class-${entry.key.name}',
+                              controller: entry.value,
+                              label: entry.key.label,
+                              minimum: 0,
+                              maximum: 19,
+                            ),
+                        ],
+                      ),
+                    if (primary != null)
+                      TextButton(
+                        onPressed: () => applyLevelUpDefaults(primary),
+                        child: const Text('Apply level-up HP and proficiency'),
+                      ),
+                    for (final entry in eligibleSubclasses)
+                      InputDecorator(
+                        decoration: InputDecoration(
+                          labelText: '${entry.label} subclass',
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            key: ValueKey('advancement-subclass-${entry.name}'),
+                            isExpanded: true,
+                            value:
+                                subclasses[entry.label] ==
+                                    entry.basicRulesSubclass
+                                ? entry.basicRulesSubclass
+                                : '',
+                            items: [
+                              const DropdownMenuItem(
+                                value: '',
+                                child: Text('Choose later'),
+                              ),
+                              DropdownMenuItem(
+                                value: entry.basicRulesSubclass,
+                                child: Text(entry.basicRulesSubclass),
+                              ),
+                            ],
+                            onChanged: (value) => setState(() {
+                              if (value == null || value.isEmpty) {
+                                subclasses.remove(entry.label);
+                              } else {
+                                subclasses[entry.label] = value;
+                              }
+                            }),
+                          ),
+                        ),
+                      ),
+                    if (primary == BuiltInClass.druid ||
+                        classAllocation.containsKey('Druid'))
+                      DropdownButtonFormField<PrimalOrder>(
+                        decoration: const InputDecoration(
+                          labelText: 'Primal Order',
+                          helperText:
+                              'Magician adds a cantrip. Warden grants martial weapons and medium armor.',
+                        ),
+                        initialValue: primalOrder,
+                        items: [
+                          for (final order in PrimalOrder.values)
+                            DropdownMenuItem(
+                              value: order,
+                              child: Text(order.label),
+                            ),
+                        ],
+                        onChanged: (order) =>
+                            setState(() => primalOrder = order),
+                      ),
+                    if (primary != null)
+                      TextButton(
+                        onPressed: chooseAbilityImprovement,
+                        child: const Text('Choose Ability Score Improvement'),
+                      ),
+                    if (druidLevelAt(
+                          int.tryParse(levelController.text) ?? 0,
+                          classAllocation,
+                        ) >=
+                        7)
+                      DropdownButtonFormField<ElementalFury>(
+                        decoration: const InputDecoration(
+                          labelText: 'Elemental Fury',
+                        ),
+                        initialValue: elementalFury,
+                        items: [
+                          for (final choice in ElementalFury.values)
+                            DropdownMenuItem(
+                              value: choice,
+                              child: Text(choice.label),
+                            ),
+                        ],
+                        onChanged: (choice) =>
+                            setState(() => elementalFury = choice),
+                      ),
+                    if (abilityIncreases.isNotEmpty) ...[
+                      Text(
+                        abilityIncreases.entries
+                            .map(
+                              (entry) => '${entry.key.label} +${entry.value}',
+                            )
+                            .join(', '),
+                      ),
+                      if (modifierChange(Ability.constitution) > 0)
+                        const Text(
+                          'Constitution adds 1 maximum HP per level for each modifier increase.',
+                        ),
+                      TextButton(
+                        onPressed: () => setState(abilityIncreases.clear),
+                        child: const Text('Clear ability increases'),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -306,6 +749,10 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
       decoration: InputDecoration(labelText: label, prefixText: prefix),
       validator: (value) => numberBetween(value, minimum, maximum),
+      onChanged:
+          key == 'advancement-level' || key.startsWith('advancement-class-')
+          ? (_) => setState(() {})
+          : null,
     );
   }
 
@@ -391,10 +838,36 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
     );
   }
 
+  bool canSelectMastery(String name, {Weapon? editing}) {
+    final level = int.tryParse(levelController.text) ?? widget.character.level;
+    final limit =
+        BuiltInClass.named(
+          widget.character.characterClass,
+        )?.weaponMasteryLimit(level) ??
+        0;
+    return BuiltInClass.named(
+              widget.character.characterClass,
+            )?.allowsMastery(name) ==
+            true &&
+        WeaponMastery.hasRoom(
+          limit: limit,
+          name: name,
+          weapons: weapons,
+          editing: editing,
+        );
+  }
+
   Future<void> addWeapon() async {
     final weapon = await showDialog<Weapon>(
       context: context,
-      builder: (context) => const WeaponEditorDialog(),
+      builder: (context) => WeaponEditorDialog(
+        canSelectMastery:
+            BuiltInClass.named(
+              widget.character.characterClass,
+            )?.hasWeaponMastery ??
+            false,
+        allowsMasteryFor: canSelectMastery,
+      ),
     );
     if (!mounted || weapon == null) return;
     setState(() => weapons.add(weapon));
@@ -413,7 +886,16 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
   Future<void> editWeapon(int index) async {
     final weapon = await showDialog<Weapon>(
       context: context,
-      builder: (context) => WeaponEditorDialog(weapon: weapons[index]),
+      builder: (context) => WeaponEditorDialog(
+        weapon: weapons[index],
+        canSelectMastery:
+            BuiltInClass.named(
+              widget.character.characterClass,
+            )?.hasWeaponMastery ??
+            false,
+        allowsMasteryFor: (name) =>
+            canSelectMastery(name, editing: weapons[index]),
+      ),
     );
     if (!mounted || weapon == null) return;
     setState(() => weapons[index] = weapon);

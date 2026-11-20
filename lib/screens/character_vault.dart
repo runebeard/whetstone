@@ -10,6 +10,7 @@ import '../models/character_session.dart';
 import '../models/feature.dart';
 import '../models/content_pack.dart';
 import '../models/spell.dart';
+import '../models/spell_slots.dart';
 import '../models/weapon.dart';
 import '../widgets/character_card.dart';
 import '../widgets/character_export_dialog.dart';
@@ -349,11 +350,22 @@ class _CharacterVaultState extends State<CharacterVault> {
       return;
     }
     final updatedResourceValues = {
+      if (updated.levelInClass('Druid') >= 5)
+        wildResurgenceSlot.id: ?state.resourceValues[wildResurgenceSlot.id],
+      if (updated.levelInClass('Druid') >= 20)
+        for (final slot in natureMagicianSlots)
+          slot.id: ?state.resourceValues[slot.id],
       for (final resource in updated.resources)
-        resource.id: min(
-          state.resourceValues[resource.id] ?? resource.initialValue,
-          resource.maximum,
-        ),
+        resource.id: spellSlotLevel(resource) != null
+            ? remainingSpellSlots(
+                resource,
+                character.resources,
+                state.resourceValues,
+              )
+            : min(
+                state.resourceValues[resource.id] ?? resource.initialValue,
+                resource.maximum,
+              ),
     };
     final updatedState = state.copyWith(
       clearConcentration:
@@ -361,8 +373,14 @@ class _CharacterVaultState extends State<CharacterVault> {
           !updated.spells.any(
             (spell) => spell.id == state.concentrationSpellId,
           ),
+      spellSummons: {
+        for (final spell in updated.spells)
+          spell.id: ?state.spellSummons[spell.id],
+      },
       currentHp: updated.currentHp,
       maxHp: updated.maxHp,
+      clearWildShape: updated.levelInClass('Druid') < 2,
+      clearWildCompanion: updated.levelInClass('Druid') < 2,
       armourClass: updated.armourClass,
       initiativeModifier: updated.initiativeModifier,
       pinnedActionKeys: updated.initiallyPinnedActionKeys,
@@ -375,7 +393,14 @@ class _CharacterVaultState extends State<CharacterVault> {
       isInCombat: session.isInCombat,
       combatRound: session.combatRound,
       combatInitiative: session.combatInitiative,
+      readiedAction: session.readiedAction,
+      readiedEffect: session.readiedEffect,
       usedCombatActions: session.usedCombatActions,
+      actionSurge: session.actionSurge,
+      wildResurgenceUsedThisTurn: session.wildResurgenceUsedThisTurn,
+      primalStrikeUsedThisTurn: session.primalStrikeUsedThisTurn,
+      cleaveUsedThisTurn: session.cleaveUsedThisTurn,
+      nickUsedThisTurn: session.nickUsedThisTurn,
       timeline: session.timeline,
     );
     setState(() {

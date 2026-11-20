@@ -8,6 +8,9 @@ enum D20Mode {
   const D20Mode(this.label);
   final String label;
 
+  D20Mode withAdvantage() =>
+      this == D20Mode.disadvantage ? D20Mode.normal : D20Mode.advantage;
+
   int select(int first, int? second) => switch (this) {
     D20Mode.normal => first,
     D20Mode.advantage => max(first, second!),
@@ -87,6 +90,12 @@ class DiceExpression {
     final sign = modifier > 0 ? '+' : '−';
     return '${diceCount}d$dieSides $sign ${modifier.abs()}';
   }
+
+  DiceExpression withModifierBonus(int bonus) => DiceExpression(
+    diceCount: diceCount,
+    dieSides: dieSides,
+    modifier: modifier + bonus,
+  );
 
   DiceExpression withCriticalHitDice() => DiceExpression(
     diceCount: diceCount * 2,

@@ -4,14 +4,18 @@ import '../models/rest.dart';
 
 class RestConfirmationDialog extends StatefulWidget {
   final RestPlan plan;
-  final int availableHitDice;
-  final int hitDie;
+  final bool canChangeMastery;
+  final bool canUseNaturalRecovery;
+  final bool canChooseDruidLand;
+  final Map<int, int> availableHitDice;
 
   const RestConfirmationDialog({
     super.key,
     required this.plan,
-    this.availableHitDice = 0,
-    this.hitDie = 8,
+    this.canChangeMastery = false,
+    this.canUseNaturalRecovery = false,
+    this.canChooseDruidLand = false,
+    this.availableHitDice = const {},
   });
 
   @override
@@ -19,13 +23,21 @@ class RestConfirmationDialog extends StatefulWidget {
 }
 
 class _RestConfirmationDialogState extends State<RestConfirmationDialog> {
-  int hitDice = 0;
+  final hitDice = <int, int>{};
   RestPlan get plan => widget.plan;
-  bool get canConfirm => plan.hasChanges || hitDice > 0;
+  bool get canConfirm =>
+      plan.hasChanges ||
+      hitDice.values.any((count) => count > 0) ||
+      widget.canChangeMastery ||
+      widget.canUseNaturalRecovery ||
+      widget.canChooseDruidLand;
 
   @override
   Widget build(BuildContext context) {
     final isShortRest = plan.type == RestType.shortRest;
+    final dice = widget.availableHitDice.entries
+        .where((entry) => entry.value > 0)
+        .toList();
 
     return AlertDialog(
       title: Text('${plan.type.label}?'),
@@ -37,8 +49,12 @@ class _RestConfirmationDialogState extends State<RestConfirmationDialog> {
             Text(
               plan.hasChanges
                   ? 'This will recover:'
-                  : widget.availableHitDice > 0
+                  : dice.isNotEmpty
                   ? 'You can spend Hit Dice to recover HP.'
+                  : widget.canUseNaturalRecovery
+                  ? 'You can recover spell slots with Natural Recovery.'
+                  : widget.canChooseDruidLand
+                  ? 'You can choose your Circle of the Land terrain.'
                   : 'Nothing currently needs to recover.',
             ),
             if (canConfirm) ...[
@@ -50,20 +66,26 @@ class _RestConfirmationDialogState extends State<RestConfirmationDialog> {
                 ),
             ],
             const SizedBox(height: 12),
-            if (isShortRest && widget.availableHitDice > 0)
-              DropdownButtonFormField<int>(
-                key: const ValueKey('short-rest-hit-dice'),
-                decoration: InputDecoration(
-                  labelText:
-                      'Spend Hit Dice (${widget.availableHitDice} d${widget.hitDie} available)',
+            for (final die in dice)
+              if (isShortRest)
+                DropdownButtonFormField<int>(
+                  key: ValueKey(
+                    dice.length == 1
+                        ? 'short-rest-hit-dice'
+                        : 'short-rest-hit-dice-${die.key}',
+                  ),
+                  decoration: InputDecoration(
+                    labelText:
+                        'Spend Hit Dice (${die.value} d${die.key} available)',
+                  ),
+                  initialValue: 0,
+                  items: [
+                    for (var count = 0; count <= die.value; count++)
+                      DropdownMenuItem(value: count, child: Text('$count')),
+                  ],
+                  onChanged: (count) =>
+                      setState(() => hitDice[die.key] = count ?? 0),
                 ),
-                initialValue: 0,
-                items: [
-                  for (var count = 0; count <= widget.availableHitDice; count++)
-                    DropdownMenuItem(value: count, child: Text('$count')),
-                ],
-                onChanged: (count) => setState(() => hitDice = count ?? 0),
-              ),
             Text(
               'Conditions will not be removed.',
               style: Theme.of(context).textTheme.bodySmall,

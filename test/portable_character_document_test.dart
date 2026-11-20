@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:whetstone/models/ability.dart';
 import 'package:whetstone/models/character.dart';
 import 'package:whetstone/models/spell.dart';
+import 'package:whetstone/models/weapon.dart';
 import 'package:whetstone/models/character_session.dart';
 import 'package:whetstone/models/character_state.dart';
 import 'package:whetstone/models/inventory_item.dart';
@@ -9,6 +10,52 @@ import 'package:whetstone/models/journal_entry.dart';
 import 'package:whetstone/persistence/portable_character_document.dart';
 
 void main() {
+  test(
+    'Druid exports retain form, terrain, choices, and spent feature limits',
+    () {
+      final druid = Character(
+        id: 'druid-export',
+        name: 'Druid',
+        characterClass: 'Druid',
+        level: 20,
+        subclasses: {'Druid': 'Circle of the Land'},
+        primalOrder: PrimalOrder.magician,
+        elementalFury: ElementalFury.primalStrike,
+        currentHp: 20,
+        maxHp: 100,
+        armourClass: 15,
+        initiativeModifier: 2,
+        status: 'Combat',
+      );
+      final state = CharacterState.fromCharacter(druid).copyWith(
+        wildShapeForm: 'Owl',
+        wildShapeTurnsRemaining: 1200,
+        wildCompanion: 'Raven',
+        druidLand: DruidLand.polar,
+        naturalRecoveryUsed: true,
+        naturalRecoveryCastUsed: true,
+      );
+      final restored = PortableCharacterDocument.decode(
+        PortableCharacterDocument(
+          character: druid,
+          session: CharacterSession(
+            characterState: state,
+            inventory: [],
+            archivedInventory: [],
+            isInCombat: true,
+            wildResurgenceUsedThisTurn: true,
+            primalStrikeUsedThisTurn: true,
+          ),
+        ).encode(),
+      );
+      expect(restored.character.primalOrder, PrimalOrder.magician);
+      expect(restored.character.elementalFury, ElementalFury.primalStrike);
+      expect(restored.session.characterState.toJson(), state.toJson());
+      expect(restored.session.wildResurgenceUsedThisTurn, isTrue);
+      expect(restored.session.primalStrikeUsedThisTurn, isTrue);
+    },
+  );
+
   final character = Character(
     id: 'portable-hero',
     name: 'Aria',
@@ -54,6 +101,81 @@ void main() {
     combatInitiative: 16,
     usedCombatActions: {CombatActionCost.bonusAction},
   );
+
+  test(
+    'mastery limits count weapon types and retain the standard property',
+    () {
+      const weapons = [
+        Weapon(
+          id: 'a',
+          name: 'Dagger',
+          attackModifier: 2,
+          damage: '1d4',
+          mastery: WeaponMastery.nick,
+        ),
+        Weapon(
+          id: 'b',
+          name: ' dagger ',
+          attackModifier: 2,
+          damage: '1d4',
+          mastery: WeaponMastery.nick,
+        ),
+      ];
+      expect(WeaponMastery.forWeapon('  LIGHT   Hammer '), WeaponMastery.nick);
+      expect(WeaponMastery.forWeapon('Greatsword'), WeaponMastery.graze);
+      expect(WeaponMastery.forWeapon('Unknown'), isNull);
+      expect(
+        WeaponMastery.hasRoom(limit: 1, name: 'Dagger', weapons: weapons),
+        isTrue,
+      );
+      expect(
+        WeaponMastery.hasRoom(limit: 1, name: 'Spear', weapons: weapons),
+        isFalse,
+      );
+      expect(
+        WeaponMastery.hasRoom(limit: 2, name: 'Spear', weapons: weapons),
+        isTrue,
+      );
+    },
+  );
+
+  test('versatile weapon damage survives a character save', () {
+    const weapon = Weapon(
+      id: 'staff',
+      name: 'Staff',
+      attackModifier: 4,
+      damage: '1d6 + 2',
+      damageFormula: '1d6 + 2',
+      versatileDamageFormula: '1d8 + 2',
+      usesStrength: true,
+      category: WeaponCategory.simpleMelee,
+      mastery: WeaponMastery.topple,
+      properties: ['Versatile', 'Thrown'],
+      normalRange: 20,
+      longRange: 60,
+    );
+    final data = character.copyWith(weapons: [weapon]).toJson();
+    final restored = Character.fromJson(data).weapons.single;
+    expect(restored.versatileDamageFormula, '1d8 + 2');
+    expect(restored.category, WeaponCategory.simpleMelee);
+    expect(restored.mastery, WeaponMastery.topple);
+    expect(restored.properties, ['Versatile', 'Thrown']);
+    expect(restored.summary, contains('20/60 ft'));
+    expect(restored.damageFormula, '1d6 + 2');
+    final raging = character.copyWith(level: 9);
+    expect(raging.damageFormulaFor(restored, raging: true), '1d6 + 5');
+    expect(
+      raging.damageFormulaFor(restored, raging: true, twoHanded: true),
+      '1d8 + 5',
+    );
+    expect(raging.damageFormulaFor(restored), '1d6 + 2');
+    final legacy = (data['weapons'] as List).single as Map<String, Object?>;
+    legacy.remove('versatileDamageFormula');
+    expect(
+      Character.fromJson(data).weapons.single.versatileDamageFormula,
+      isNull,
+    );
+  });
 
   test('upcast damage uses the selected slot and survives a save', () {
     const spell = Spell(

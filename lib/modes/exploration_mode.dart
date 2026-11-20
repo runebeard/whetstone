@@ -16,6 +16,7 @@ import '../widgets/rest_section.dart';
 class ExplorationModeView extends StatelessWidget {
   final Character character;
   final CharacterState characterState;
+  final int? formArmourClass;
   final ValueChanged<CharacterState> onCharacterStateChanged;
   final ValueChanged<int>? onDamageTaken;
   final List<InventoryItem> inventory;
@@ -35,6 +36,7 @@ class ExplorationModeView extends StatelessWidget {
     super.key,
     required this.character,
     required this.characterState,
+    this.formArmourClass,
     required this.onCharacterStateChanged,
     this.onDamageTaken,
     required this.inventory,
@@ -77,6 +79,8 @@ class ExplorationModeView extends StatelessWidget {
           const SizedBox(height: 20),
           CombatSummary(
             characterState: characterState,
+            formArmourClass: formArmourClass,
+            additionalResistance: characterState.landResistanceFor(character),
             onChanged: onCharacterStateChanged,
             onDamageTaken: onDamageTaken,
           ),

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/ability.dart';
+import '../models/built_in_class.dart';
 import '../models/authored_class.dart';
 import '../models/character.dart';
 import '../models/character_resource.dart';
@@ -13,6 +14,7 @@ import '../models/library_content_copy.dart';
 import '../models/feature.dart';
 import '../models/skill.dart';
 import '../models/spell.dart';
+import '../models/spell_slots.dart';
 import '../models/weapon.dart';
 import '../widgets/spell_editor_dialog.dart';
 import '../widgets/character_resource_editor_dialog.dart';
@@ -57,6 +59,9 @@ class _CharacterEditorState extends State<CharacterEditor> {
   late final List<Feature> features;
   int currentStep = 0;
   AuthoredClass? authoredClass;
+  BuiltInClass? builtInClass;
+  PrimalOrder? primalOrder;
+  bool standardArrayActive = false;
   String? equipmentOptionId;
   late final List<AuthoredClass> authoredClasses = [
     for (final pack in widget.contentPacks)
@@ -131,43 +136,55 @@ class _CharacterEditorState extends State<CharacterEditor> {
     return null;
   }
 
+  bool get builtInSkillsComplete {
+    final selectedClass = builtInClass;
+    return selectedClass == null ||
+        (skillProficiencies.length == selectedClass.skillCount &&
+            skillProficiencies.entries.every(
+              (entry) =>
+                  selectedClass.allowsSkill(entry.key) &&
+                  entry.value == SkillProficiency.proficient,
+            ));
+  }
+
   void continueFromStep() {
     final valid = switch (currentStep) {
       0 => identityFormKey.currentState!.validate(),
       1 => abilitiesFormKey.currentState!.validate(),
       2 =>
-        authoredClass == null ||
-            authoredClass!.skills
-                    .where(skillProficiencies.containsKey)
-                    .length ==
-                authoredClass!.skillCount,
+        builtInSkillsComplete &&
+            (authoredClass == null ||
+                authoredClass!.skills
+                        .where(skillProficiencies.containsKey)
+                        .length ==
+                    authoredClass!.skillCount),
       _ => true,
     };
     if (!valid) {
       if (currentStep == 2) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Choose ${authoredClass!.skillCount} class skills.'),
+            content: Text(
+              'Choose ${authoredClass?.skillCount ?? builtInClass!.skillCount} class skills.',
+            ),
           ),
         );
       }
       return;
     }
-    if (currentStep == 1 && authoredClass != null) {
+    final hitDie = authoredClass?.hitDie ?? builtInClass?.hitDie;
+    if (currentStep == 1 && hitDie != null) {
       final constitution = int.parse(
         abilityControllers[Ability.constitution]!.text,
       );
-      final hp = max(
-        1,
-        authoredClass!.hitDie + ((constitution - 10) / 2).floor(),
-      );
+      final hp = max(1, hitDie + ((constitution - 10) / 2).floor());
       maxHpController.text = '$hp';
     }
     setState(() => currentStep += 1);
   }
 
   void saveCharacter() {
-    if (!nameFormKey.currentState!.validate()) {
+    if (!nameFormKey.currentState!.validate() || !builtInSkillsComplete) {
       return;
     }
     final authored = authoredClass;
@@ -207,15 +224,26 @@ class _CharacterEditorState extends State<CharacterEditor> {
     }
     final constitution = ((abilityScores[Ability.constitution]! - 10) / 2)
         .floor();
-    final maximumHp = authored == null
+    final hitDie = authored?.hitDie ?? builtInClass?.hitDie;
+    final maximumHp = hitDie == null
         ? int.parse(maxHpController.text)
-        : max(1, authored.hitDie + constitution);
+        : max(1, hitDie + constitution);
     final initiativeModifier = ((abilityScores[Ability.dexterity]! - 10) / 2)
         .floor();
     final proficiency = authored == null
         ? int.parse(proficiencyBonusController.text)
         : 2;
     final previous = widget.character;
+    final className = authored?.name ?? classController.text.trim();
+    final previousClass = BuiltInClass.named(previous?.characterClass ?? '');
+    final keepClassAllocation =
+        previousClass != null &&
+        previousClass == BuiltInClass.named(className) &&
+        (previous?.additionalClassLevels.isNotEmpty ?? false);
+    final keepSubclasses =
+        previousClass != null &&
+        previousClass == BuiltInClass.named(className) &&
+        (previous?.subclasses.isNotEmpty ?? false);
     final savedClass = previous == null
         ? null
         : AuthoredClass.fromCharacter(previous);
@@ -239,11 +267,31 @@ class _CharacterEditorState extends State<CharacterEditor> {
           widget.character?.id ??
           'character-${DateTime.now().microsecondsSinceEpoch}',
       name: nameController.text.trim(),
-      characterClass: authored?.name ?? classController.text.trim(),
+      characterClass: className,
       savedClassRules: authored?.snapshot ?? widget.character?.savedClassRules,
-      level: hasSavedAuthoredClass
+      additionalClassLevels: keepClassAllocation
+          ? previous!.additionalClassLevels
+          : const {},
+      subclasses: keepSubclasses ? previous!.subclasses : const {},
+      elementalFury: previousClass == BuiltInClass.named(className)
+          ? previous?.elementalFury
+          : null,
+      druidCantripIds: previousClass == BuiltInClass.named(className)
+          ? {
+              for (final spell in spells)
+                if (spell.isCantrip &&
+                    (previous?.druidCantripIds.contains(spell.id) ?? false))
+                  spell.id,
+            }
+          : const {},
+      primalOrder: builtInClass == BuiltInClass.druid
+          ? primalOrder
+          : (previousClass == BuiltInClass.named(className)
+                ? previous?.primalOrder
+                : null),
+      level: hasSavedAuthoredClass || keepClassAllocation || keepSubclasses
           ? widget.character!.level
-          : authored == null
+          : authored == null && builtInClass == null
           ? int.parse(levelController.text)
           : 1,
       currentHp: isEditing
@@ -257,11 +305,17 @@ class _CharacterEditorState extends State<CharacterEditor> {
       proficiencyBonus: proficiency,
       skillProficiencies: {...skillProficiencies},
       savingThrowProficiencies:
-          authored?.saves ?? {...savingThrowProficiencies},
+          authored?.saves ??
+          builtInClass?.saves ??
+          {...savingThrowProficiencies},
       weapons: updatedWeapons,
       spells: [...spells],
       initiallyPinnedActionKeys: {...pinnedActionKeys},
-      resources: [...resources, ...?authored?.resourcesAt(1)],
+      resources: [
+        ...resources,
+        ...unlistedStartingResources,
+        ...?authored?.resourcesAt(1),
+      ],
       initialInventory: [
         ...inventory,
         ...?authored?.startingEquipment(equipmentOptionId),
@@ -390,6 +444,7 @@ class _CharacterEditorState extends State<CharacterEditor> {
               ],
               onChanged: (entry) => setState(() {
                 authoredClass = entry;
+                builtInClass = null;
                 if (entry != null) skillProficiencies.clear();
                 equipmentOptionId = null;
                 classController.text = entry?.name ?? '';
@@ -399,6 +454,45 @@ class _CharacterEditorState extends State<CharacterEditor> {
                   proficiencyBonusController.text = '2';
                 }
               }),
+            ),
+          if (!isEditing && authoredClass == null)
+            DropdownButtonFormField<BuiltInClass>(
+              key: const ValueKey('built-in-class-picker'),
+              decoration: const InputDecoration(labelText: 'Built-in class'),
+              initialValue: builtInClass,
+              items: [
+                const DropdownMenuItem(child: Text('Manual')),
+                for (final entry in BuiltInClass.values)
+                  DropdownMenuItem(value: entry, child: Text(entry.label)),
+              ],
+              onChanged: (entry) => setState(() {
+                if (builtInClass != null) savingThrowProficiencies.clear();
+                if (builtInClass != entry) skillProficiencies.clear();
+                builtInClass = entry;
+                if (entry != null) {
+                  savingThrowProficiencies
+                    ..clear()
+                    ..addAll(entry.saves);
+                }
+                classController.text = entry?.label ?? '';
+                if (entry != null) {
+                  levelController.text = '1';
+                  proficiencyBonusController.text = '2';
+                  maxHpController.text = '${entry.hitDie}';
+                }
+              }),
+            ),
+          if (builtInClass == BuiltInClass.druid)
+            DropdownButtonFormField<PrimalOrder>(
+              decoration: const InputDecoration(labelText: 'Primal Order'),
+              initialValue: primalOrder,
+              items: [
+                for (final order in PrimalOrder.values)
+                  DropdownMenuItem(value: order, child: Text(order.label)),
+              ],
+              onChanged: (order) => setState(() => primalOrder = order),
+              validator: (order) =>
+                  order == null ? 'Choose a Primal Order' : null,
             ),
           if ((authoredClass?.equipmentOptions.length ?? 0) > 1)
             DropdownButtonFormField<String>(
@@ -419,7 +513,10 @@ class _CharacterEditorState extends State<CharacterEditor> {
           TextFormField(
             key: const ValueKey('character-class'),
             controller: classController,
-            readOnly: authoredClass != null || hasSavedAuthoredClass,
+            readOnly:
+                authoredClass != null ||
+                builtInClass != null ||
+                hasSavedAuthoredClass,
             textCapitalization: TextCapitalization.words,
             decoration: const InputDecoration(labelText: 'Class'),
             validator: requiredText,
@@ -430,7 +527,10 @@ class _CharacterEditorState extends State<CharacterEditor> {
               Expanded(
                 child: numberField(
                   key: 'character-level',
-                  readOnly: authoredClass != null || hasSavedAuthoredClass,
+                  readOnly:
+                      authoredClass != null ||
+                      builtInClass != null ||
+                      hasSavedAuthoredClass,
                   controller: levelController,
                   label: 'Level',
                   minimum: 1,
@@ -441,7 +541,7 @@ class _CharacterEditorState extends State<CharacterEditor> {
               Expanded(
                 child: numberField(
                   key: 'proficiency-bonus',
-                  readOnly: authoredClass != null,
+                  readOnly: authoredClass != null || builtInClass != null,
                   controller: proficiencyBonusController,
                   label: 'Proficiency',
                   minimum: 0,
@@ -457,7 +557,7 @@ class _CharacterEditorState extends State<CharacterEditor> {
               Expanded(
                 child: numberField(
                   key: 'maximum-hp',
-                  readOnly: authoredClass != null,
+                  readOnly: authoredClass != null || builtInClass != null,
                   controller: maxHpController,
                   label: 'Maximum HP',
                   minimum: 1,
@@ -481,6 +581,91 @@ class _CharacterEditorState extends State<CharacterEditor> {
     );
   }
 
+  void generateAbilityScores({required bool rolled}) {
+    setState(() => standardArrayActive = !rolled);
+    final random = Random();
+    final scores = rolled
+        ? List.generate(6, (_) {
+            final dice = List.generate(4, (_) => random.nextInt(6) + 1)..sort();
+            return dice.skip(1).reduce((left, right) => left + right);
+          })
+        : const [15, 14, 13, 12, 10, 8];
+    for (final (index, ability) in Ability.values.indexed) {
+      abilityControllers[ability]!.text = scores[index].toString();
+    }
+  }
+
+  Future<void> buyAbilityScores() async {
+    const costs = [0, 1, 2, 3, 4, 5, 7, 9];
+    final scores = {for (final ability in Ability.values) ability: 8};
+    final selection = await showDialog<Map<Ability, int>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final remaining =
+              27 -
+              scores.values.fold<int>(
+                0,
+                (total, score) => total + costs[score - 8],
+              );
+          return AlertDialog(
+            title: Text('Point Buy · $remaining points left'),
+            scrollable: true,
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final ability in Ability.values)
+                  Row(
+                    children: [
+                      Expanded(child: Text(ability.label)),
+                      IconButton(
+                        tooltip: 'Lower ${ability.label}',
+                        onPressed: scores[ability]! == 8
+                            ? null
+                            : () => setDialogState(
+                                () => scores[ability] = scores[ability]! - 1,
+                              ),
+                        icon: const Icon(Icons.remove),
+                      ),
+                      Text('${scores[ability]}'),
+                      IconButton(
+                        tooltip: 'Raise ${ability.label}',
+                        onPressed:
+                            scores[ability]! == 15 ||
+                                costs[scores[ability]! - 7] -
+                                        costs[scores[ability]! - 8] >
+                                    remaining
+                            ? null
+                            : () => setDialogState(
+                                () => scores[ability] = scores[ability]! + 1,
+                              ),
+                        icon: const Icon(Icons.add),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, scores),
+                child: const Text('Apply Scores'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (!mounted || selection == null) return;
+    setState(() => standardArrayActive = false);
+    for (final entry in selection.entries) {
+      abilityControllers[entry.key]!.text = entry.value.toString();
+    }
+  }
+
   Widget abilitiesStep() {
     return Form(
       key: abilitiesFormKey,
@@ -491,15 +676,71 @@ class _CharacterEditorState extends State<CharacterEditor> {
             spacing: 12,
             runSpacing: 12,
             children: [
+              if (!isEditing)
+                SizedBox(
+                  width: constraints.maxWidth,
+                  child: Wrap(
+                    spacing: 8,
+                    children: [
+                      OutlinedButton(
+                        onPressed: () => generateAbilityScores(rolled: false),
+                        child: const Text('Use Standard Array'),
+                      ),
+                      OutlinedButton(
+                        onPressed: buyAbilityScores,
+                        child: const Text('Point Buy'),
+                      ),
+                      OutlinedButton(
+                        onPressed: () => generateAbilityScores(rolled: true),
+                        child: const Text('Roll Ability Scores'),
+                      ),
+                      if (standardArrayActive)
+                        TextButton(
+                          onPressed: () =>
+                              setState(() => standardArrayActive = false),
+                          child: const Text('Edit Scores Manually'),
+                        ),
+                    ],
+                  ),
+                ),
               for (final ability in Ability.values)
                 SizedBox(
                   width: width,
-                  child: numberField(
-                    key: 'ability-${ability.name}',
-                    controller: abilityControllers[ability]!,
-                    label: ability.label,
-                    minimum: 1,
-                    maximum: 30,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: numberField(
+                          key: 'ability-${ability.name}',
+                          controller: abilityControllers[ability]!,
+                          label: ability.label,
+                          minimum: 1,
+                          maximum: 30,
+                          readOnly: standardArrayActive,
+                        ),
+                      ),
+                      if (standardArrayActive)
+                        PopupMenuButton<Ability>(
+                          tooltip: 'Swap ${ability.label} score',
+                          icon: const Icon(Icons.swap_horiz),
+                          onSelected: (other) => setState(() {
+                            final current = abilityControllers[ability]!;
+                            final swap = abilityControllers[other]!;
+                            final score = current.text;
+                            current.text = swap.text;
+                            swap.text = score;
+                          }),
+                          itemBuilder: (context) => [
+                            for (final other in Ability.values)
+                              if (other != ability)
+                                PopupMenuItem(
+                                  value: other,
+                                  child: Text(
+                                    '${other.label} (${abilityControllers[other]!.text})',
+                                  ),
+                                ),
+                          ],
+                        ),
+                    ],
                   ),
                 ),
             ],
@@ -512,6 +753,7 @@ class _CharacterEditorState extends State<CharacterEditor> {
   Widget proficienciesStep() {
     final authored = authoredClass;
     if (authored != null) return authoredProficiencies(authored);
+    final selectedClass = builtInClass;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -528,13 +770,15 @@ class _CharacterEditorState extends State<CharacterEditor> {
               FilterChip(
                 label: Text(ability.shortLabel),
                 selected: savingThrowProficiencies.contains(ability),
-                onSelected: (selected) {
-                  setState(() {
-                    selected
-                        ? savingThrowProficiencies.add(ability)
-                        : savingThrowProficiencies.remove(ability);
-                  });
-                },
+                onSelected: builtInClass != null
+                    ? null
+                    : (selected) {
+                        setState(() {
+                          selected
+                              ? savingThrowProficiencies.add(ability)
+                              : savingThrowProficiencies.remove(ability);
+                        });
+                      },
               ),
           ],
         ),
@@ -544,41 +788,74 @@ class _CharacterEditorState extends State<CharacterEditor> {
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 4),
-        for (final skill in standardSkills)
-          Row(
-            children: [
-              Expanded(child: Text(skill.name)),
-              DropdownButton<SkillProficiency>(
-                value: skillProficiencies[skill.id] ?? SkillProficiency.none,
-                items: const [
-                  DropdownMenuItem(
-                    value: SkillProficiency.none,
-                    child: Text('None'),
-                  ),
-                  DropdownMenuItem(
-                    value: SkillProficiency.proficient,
-                    child: Text('Proficient'),
-                  ),
-                  DropdownMenuItem(
-                    value: SkillProficiency.expertise,
-                    child: Text('Expertise'),
-                  ),
-                ],
-                onChanged: (value) {
-                  if (value == null) return;
-                  setState(() {
-                    if (value == SkillProficiency.none) {
-                      skillProficiencies.remove(skill.id);
-                    } else {
-                      skillProficiencies[skill.id] = value;
-                    }
-                  });
-                },
-              ),
-            ],
-          ),
+        if (selectedClass != null)
+          ...classSkillOptions(
+            selectedClass.skillCount,
+            selectedClass.allowsSkill,
+          )
+        else
+          for (final skill in standardSkills)
+            Row(
+              children: [
+                Expanded(child: Text(skill.name)),
+                DropdownButton<SkillProficiency>(
+                  value: skillProficiencies[skill.id] ?? SkillProficiency.none,
+                  items: const [
+                    DropdownMenuItem(
+                      value: SkillProficiency.none,
+                      child: Text('None'),
+                    ),
+                    DropdownMenuItem(
+                      value: SkillProficiency.proficient,
+                      child: Text('Proficient'),
+                    ),
+                    DropdownMenuItem(
+                      value: SkillProficiency.expertise,
+                      child: Text('Expertise'),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      if (value == SkillProficiency.none) {
+                        skillProficiencies.remove(skill.id);
+                      } else {
+                        skillProficiencies[skill.id] = value;
+                      }
+                    });
+                  },
+                ),
+              ],
+            ),
       ],
     );
+  }
+
+  Iterable<Widget> classSkillOptions(
+    int limit,
+    bool Function(String) allowsSkill,
+  ) sync* {
+    final selected = skillProficiencies.keys.where(allowsSkill).length;
+    yield Text('Choose $limit class skills ($selected selected)');
+    for (final skill in standardSkills.where(
+      (skill) => allowsSkill(skill.id),
+    )) {
+      final checked = skillProficiencies.containsKey(skill.id);
+      yield CheckboxListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(skill.name),
+        value: checked,
+        onChanged: !checked && selected >= limit
+            ? null
+            : (value) => setState(() {
+                if (value == true) {
+                  skillProficiencies[skill.id] = SkillProficiency.proficient;
+                } else {
+                  skillProficiencies.remove(skill.id);
+                }
+              }),
+      );
+    }
   }
 
   Widget authoredProficiencies(AuthoredClass authored) {
@@ -861,7 +1138,36 @@ class _CharacterEditorState extends State<CharacterEditor> {
     });
   }
 
+  Iterable<CharacterResource> get unlistedStartingResources {
+    final selectedClass = builtInClass;
+    if (selectedClass == null) return const [];
+    final charisma =
+        int.tryParse(abilityControllers[Ability.charisma]!.text) ?? 10;
+    final existingIds = resources.map((resource) => resource.id).toSet();
+    return selectedClass
+        .startingResources(charismaModifier: ((charisma - 10) / 2).floor())
+        .where((resource) => !existingIds.contains(resource.id));
+  }
+
+  void setClassSpellSlots() {
+    final slots = spellSlotsForClassLevels(
+      classController.text,
+      int.tryParse(levelController.text) ?? 0,
+      widget.character?.additionalClassLevels ?? const {},
+    );
+    if (slots.isEmpty) return;
+    setState(() {
+      resources.removeWhere((resource) => spellSlotLevel(resource) != null);
+      resources.addAll(slots);
+    });
+  }
+
   Widget resourcesStep() {
+    final canGenerateSlots = spellSlotsForClassLevels(
+      classController.text,
+      int.tryParse(levelController.text) ?? 0,
+      widget.character?.additionalClassLevels ?? const {},
+    ).isNotEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -871,7 +1177,19 @@ class _CharacterEditorState extends State<CharacterEditor> {
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         const SizedBox(height: 12),
-        if (resources.isEmpty)
+        if (canGenerateSlots && builtInClass == null)
+          OutlinedButton(
+            onPressed: setClassSpellSlots,
+            child: const Text('Set Spell Slots from Class Level'),
+          ),
+        for (final resource in unlistedStartingResources)
+          ListTile(
+            title: Text(resource.name),
+            subtitle: Text(
+              '${resource.maximum} uses • ${resource.rechargePeriod.label}',
+            ),
+          ),
+        if (resources.isEmpty && unlistedStartingResources.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Text('No resources added yet.'),
@@ -1203,10 +1521,29 @@ class _CharacterEditorState extends State<CharacterEditor> {
     });
   }
 
+  bool canSelectWeaponMastery(String name, {Weapon? editing}) {
+    final level = int.tryParse(levelController.text) ?? 1;
+    final limit =
+        BuiltInClass.named(classController.text)?.weaponMasteryLimit(level) ??
+        0;
+    return BuiltInClass.named(classController.text)?.allowsMastery(name) ==
+            true &&
+        WeaponMastery.hasRoom(
+          limit: limit,
+          name: name,
+          weapons: weapons,
+          editing: editing,
+        );
+  }
+
   Future<void> addWeapon() async {
     final weapon = await showDialog<Weapon>(
       context: context,
-      builder: (context) => const WeaponEditorDialog(),
+      builder: (context) => WeaponEditorDialog(
+        canSelectMastery:
+            BuiltInClass.named(classController.text)?.hasWeaponMastery ?? false,
+        allowsMasteryFor: canSelectWeaponMastery,
+      ),
     );
     if (!mounted || weapon == null) return;
     setState(() => weapons.add(weapon));
@@ -1225,7 +1562,13 @@ class _CharacterEditorState extends State<CharacterEditor> {
   Future<void> editWeapon(int index) async {
     final weapon = await showDialog<Weapon>(
       context: context,
-      builder: (context) => WeaponEditorDialog(weapon: weapons[index]),
+      builder: (context) => WeaponEditorDialog(
+        weapon: weapons[index],
+        canSelectMastery:
+            BuiltInClass.named(classController.text)?.hasWeaponMastery ?? false,
+        allowsMasteryFor: (name) =>
+            canSelectWeaponMastery(name, editing: weapons[index]),
+      ),
     );
     if (!mounted || weapon == null) return;
     setState(() => weapons[index] = weapon);

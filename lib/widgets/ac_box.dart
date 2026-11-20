@@ -4,7 +4,7 @@ import 'stat_box.dart';
 
 class AcBox extends StatelessWidget {
   final int armourClass;
-  final VoidCallback onLongPress;
+  final VoidCallback? onLongPress;
 
   const AcBox({
     super.key,

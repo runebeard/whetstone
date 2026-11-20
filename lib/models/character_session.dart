@@ -12,6 +12,8 @@ enum CombatActionCost {
   final String label;
 }
 
+enum ActionSurgeState { available, spent }
+
 class CharacterSession {
   final CharacterState characterState;
   final List<InventoryItem> inventory;
@@ -19,7 +21,14 @@ class CharacterSession {
   final bool isInCombat;
   final int combatRound;
   final int? combatInitiative;
+  final String? readiedAction;
+  final String? readiedEffect;
   final Set<CombatActionCost> usedCombatActions;
+  final ActionSurgeState? actionSurge;
+  final bool wildResurgenceUsedThisTurn;
+  final bool primalStrikeUsedThisTurn;
+  final bool cleaveUsedThisTurn;
+  final bool nickUsedThisTurn;
   final List<SessionEvent> timeline;
 
   const CharacterSession({
@@ -29,7 +38,14 @@ class CharacterSession {
     this.isInCombat = false,
     this.combatRound = 1,
     this.combatInitiative,
+    this.readiedAction,
+    this.readiedEffect,
     this.usedCombatActions = const {},
+    this.actionSurge,
+    this.wildResurgenceUsedThisTurn = false,
+    this.primalStrikeUsedThisTurn = false,
+    this.cleaveUsedThisTurn = false,
+    this.nickUsedThisTurn = false,
     this.timeline = const [],
   });
 
@@ -51,7 +67,16 @@ class CharacterSession {
           .toList(),
       'isInCombat': isInCombat,
       if (isInCombat) 'combatRound': combatRound,
+      if (isInCombat) 'actionSurge': ?actionSurge?.name,
+      if (isInCombat && wildResurgenceUsedThisTurn)
+        'wildResurgenceUsedThisTurn': true,
+      if (isInCombat && primalStrikeUsedThisTurn)
+        'primalStrikeUsedThisTurn': true,
+      if (isInCombat && cleaveUsedThisTurn) 'cleaveUsedThisTurn': true,
+      if (isInCombat && nickUsedThisTurn) 'nickUsedThisTurn': true,
       if (isInCombat) 'combatInitiative': ?combatInitiative,
+      if (isInCombat) 'readiedAction': ?readiedAction,
+      if (isInCombat && readiedAction != null) 'readiedEffect': ?readiedEffect,
       if (isInCombat && usedCombatActions.isNotEmpty)
         'usedCombatActions': usedCombatActions
             .map((cost) => cost.name)
@@ -76,6 +101,17 @@ class CharacterSession {
       isInCombat: json['isInCombat'] as bool? ?? false,
       combatRound: ((json['combatRound'] as int?) ?? 1).clamp(1, 999999),
       combatInitiative: json['combatInitiative'] as int?,
+      wildResurgenceUsedThisTurn:
+          json['wildResurgenceUsedThisTurn'] as bool? ?? false,
+      primalStrikeUsedThisTurn:
+          json['primalStrikeUsedThisTurn'] as bool? ?? false,
+      cleaveUsedThisTurn: json['cleaveUsedThisTurn'] as bool? ?? false,
+      nickUsedThisTurn: json['nickUsedThisTurn'] as bool? ?? false,
+      actionSurge: ActionSurgeState.values
+          .where((state) => state.name == json['actionSurge'])
+          .firstOrNull,
+      readiedAction: json['readiedAction'] as String?,
+      readiedEffect: json['readiedEffect'] as String?,
       usedCombatActions: {
         for (final cost in CombatActionCost.values)
           if ((json['usedCombatActions'] as List? ?? const []).contains(

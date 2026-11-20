@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../models/character.dart';
+import '../models/built_in_class.dart';
 import '../models/character_session.dart';
 
 class UnsupportedPortableCharacterVersion implements Exception {
@@ -76,13 +77,41 @@ class PortableCharacterDocument {
       throw const FormatException('The character identity is incomplete.');
     }
     final state = session.characterState;
+    final classes = character.additionalClassLevels;
+    final primary = BuiltInClass.named(character.characterClass);
+    if (character.subclasses.entries.any(
+      (entry) =>
+          BuiltInClass.named(entry.key)?.basicRulesSubclass != entry.value ||
+          character.levelInClass(entry.key) < 3,
+    )) {
+      throw const FormatException('The subclass selection is invalid.');
+    }
+    if (classes.isNotEmpty &&
+        (primary == null ||
+            classes.values.fold(0, (total, levels) => total + levels) >=
+                character.level ||
+            classes.entries.any(
+              (entry) =>
+                  entry.value < 1 ||
+                  BuiltInClass.named(entry.key)?.label != entry.key ||
+                  entry.key == primary.label,
+            ))) {
+      throw const FormatException('The class level allocation is invalid.');
+    }
     final concentrationSlotLevel = state.concentrationSlotLevel;
     final concentrationTurns = state.concentrationTurnsRemaining;
     if (state.maxHp < 1 ||
         state.currentHp < 0 ||
         state.currentHp > state.maxHp ||
         state.temporaryHp < 0 ||
-        state.hitDiceSpent < 0 ||
+        (state.wildShapeTurnsRemaining != null &&
+            (state.wildShapeForm == null || state.wildShapeTurnsRemaining! < 1)) ||
+        state.legacyHitDiceSpent < 0 ||
+        state.hitDiceSpentBySize.entries.any(
+          (entry) =>
+              !const {6, 8, 10, 12}.contains(entry.key) || entry.value < 0,
+        ) ||
+        state.relentlessRageAttempts < 0 ||
         (concentrationTurns != null &&
             (concentrationTurns < 1 || state.concentrationSpellId == null)) ||
         (concentrationSlotLevel != null &&

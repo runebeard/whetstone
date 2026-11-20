@@ -6,17 +6,21 @@ import '../models/spell.dart';
 class ActionDetailsDialog extends StatelessWidget {
   final CharacterAction action;
   final VoidCallback? onCast;
+  final VoidCallback? onCastRitual;
   final int? spellSaveDc;
   final VoidCallback? onRollDamage;
   final String? spellDamageFormula;
+  final String? spellRange;
 
   const ActionDetailsDialog({
     super.key,
     required this.action,
     this.onCast,
+    this.onCastRitual,
     this.spellSaveDc,
     this.onRollDamage,
     this.spellDamageFormula,
+    this.spellRange,
   });
 
   @override
@@ -39,7 +43,8 @@ class ActionDetailsDialog extends StatelessWidget {
                 ),
               if (spell.castingTime case final value?)
                 Text('Casting time: $value'),
-              if (spell.range case final value?) Text('Range: $value'),
+              if ((spellRange ?? spell.range) case final value?)
+                Text('Range: $value'),
               if (spell.duration case final value?) Text('Duration: $value'),
               if (spell.components case final value?)
                 Text('Components: $value'),
@@ -52,6 +57,12 @@ class ActionDetailsDialog extends StatelessWidget {
                 Text('Damage: $formula'),
               if (spell.halfDamageOnSave && spell.savingThrowAbility != null)
                 const Text('Half damage on a successful save'),
+              if (!spell.halfDamageOnSave &&
+                  spell.savingThrowAbility != null &&
+                  spell.damageFormula != null &&
+                  !spell.deriveAttackModifier &&
+                  spell.rollModifier == null)
+                const Text('No damage on a successful save'),
             ],
             if (spell?.concentration == true) ...[
               const SizedBox(height: 8),
@@ -64,6 +75,11 @@ class ActionDetailsDialog extends StatelessWidget {
       actions: [
         if (onRollDamage != null)
           TextButton(onPressed: onRollDamage, child: const Text('Roll Damage')),
+        if (onCastRitual != null)
+          TextButton(
+            onPressed: onCastRitual,
+            child: const Text('Cast as Ritual'),
+          ),
         if (onCast != null)
           TextButton(onPressed: onCast, child: const Text('Cast')),
         FilledButton(

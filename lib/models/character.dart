@@ -9,10 +9,33 @@ import 'skill.dart';
 import 'spell.dart';
 import 'weapon.dart';
 
+enum PrimalOrder {
+  magician('Magician'),
+  warden('Warden');
+
+  const PrimalOrder(this.label);
+  final String label;
+}
+
+enum ElementalFury {
+  potentSpellcasting('Potent Spellcasting'),
+  primalStrike('Primal Strike');
+
+  const ElementalFury(this.label);
+  final String label;
+}
+
 class Character {
   final String id;
   final String name;
   final String characterClass;
+  final Map<String, int> additionalClassLevels;
+  final Map<String, String> subclasses;
+  final PrimalOrder? primalOrder;
+  final ElementalFury? elementalFury;
+  final Set<String> druidCantripIds;
+  final Map<String, int> skillModifierMinimums;
+  final Map<Ability, int> saveModifierMinimums;
   // Keep recovered class rules intact until their format can be decoded.
   final Object? savedClassRules;
   final int level;
@@ -38,6 +61,13 @@ class Character {
     this.id = 'test-character',
     required this.name,
     required this.characterClass,
+    this.additionalClassLevels = const {},
+    this.subclasses = const {},
+    this.primalOrder,
+    this.elementalFury,
+    this.druidCantripIds = const {},
+    this.skillModifierMinimums = const {},
+    this.saveModifierMinimums = const {},
     this.savedClassRules,
     required this.level,
     required this.currentHp,
@@ -63,6 +93,15 @@ class Character {
     String? id,
     String? name,
     String? characterClass,
+    Map<String, int>? additionalClassLevels,
+    Map<String, String>? subclasses,
+    PrimalOrder? primalOrder,
+    bool clearPrimalOrder = false,
+    ElementalFury? elementalFury,
+    bool clearElementalFury = false,
+    Set<String>? druidCantripIds,
+    Map<String, int>? skillModifierMinimums,
+    Map<Ability, int>? saveModifierMinimums,
     int? level,
     int? currentHp,
     int? maxHp,
@@ -85,6 +124,17 @@ class Character {
       id: id ?? this.id,
       name: name ?? this.name,
       characterClass: characterClass ?? this.characterClass,
+      additionalClassLevels:
+          additionalClassLevels ?? this.additionalClassLevels,
+      subclasses: subclasses ?? this.subclasses,
+      primalOrder: clearPrimalOrder ? null : primalOrder ?? this.primalOrder,
+      elementalFury: clearElementalFury
+          ? null
+          : elementalFury ?? this.elementalFury,
+      druidCantripIds: druidCantripIds ?? this.druidCantripIds,
+      skillModifierMinimums:
+          skillModifierMinimums ?? this.skillModifierMinimums,
+      saveModifierMinimums: saveModifierMinimums ?? this.saveModifierMinimums,
       savedClassRules: savedClassRules,
       level: level ?? this.level,
       currentHp: currentHp ?? this.currentHp,
@@ -114,6 +164,13 @@ class Character {
       'id': id,
       'name': name,
       'characterClass': characterClass,
+      if (additionalClassLevels.isNotEmpty)
+        'additionalClassLevels': additionalClassLevels,
+      if (subclasses.isNotEmpty) 'subclasses': subclasses,
+      'primalOrder': ?primalOrder?.name,
+      'elementalFury': ?elementalFury?.name,
+      if (druidCantripIds.isNotEmpty)
+        'druidCantripIds': druidCantripIds.toList(),
       'savedClassRules': ?savedClassRules,
       'level': level,
       'currentHp': currentHp,
@@ -136,6 +193,14 @@ class Character {
               'attackModifier': weapon.attackModifier,
               'damage': weapon.damage,
               'damageFormula': weapon.damageFormula,
+              'versatileDamageFormula': ?weapon.versatileDamageFormula,
+              if (weapon.usesStrength) 'usesStrength': true,
+              'ammunitionName': ?weapon.ammunitionName,
+              'category': ?weapon.category?.name,
+              'mastery': ?weapon.mastery?.name,
+              if (weapon.properties.isNotEmpty) 'properties': weapon.properties,
+              'normalRange': ?weapon.normalRange,
+              'longRange': ?weapon.longRange,
               'damageType': weapon.damageType,
               'range': weapon.range,
             },
@@ -211,6 +276,23 @@ class Character {
       id: json['id'] as String,
       name: json['name'] as String,
       characterClass: json['characterClass'] as String,
+      elementalFury: ElementalFury.values
+          .where((choice) => choice.name == json['elementalFury'])
+          .firstOrNull,
+      druidCantripIds: (json['druidCantripIds'] as List<Object?>? ?? const [])
+          .cast<String>()
+          .toSet(),
+      primalOrder: PrimalOrder.values
+          .where((order) => order.name == json['primalOrder'])
+          .firstOrNull,
+      subclasses:
+          (json['subclasses'] as Map<String, Object?>?)
+              ?.cast<String, String>() ??
+          const {},
+      additionalClassLevels:
+          (json['additionalClassLevels'] as Map<String, Object?>?)
+              ?.cast<String, int>() ??
+          const {},
       savedClassRules: json['savedClassRules'],
       level: json['level'] as int,
       currentHp: json['currentHp'] as int,
@@ -237,6 +319,16 @@ class Character {
           attackModifier: weapon['attackModifier'] as int,
           damage: weapon['damage'] as String,
           damageFormula: weapon['damageFormula'] as String?,
+          versatileDamageFormula: weapon['versatileDamageFormula'] as String?,
+          usesStrength: weapon['usesStrength'] as bool? ?? false,
+          ammunitionName: weapon['ammunitionName'] as String?,
+          category: WeaponCategory.values.asNameMap()[weapon['category']],
+          mastery: WeaponMastery.values.asNameMap()[weapon['mastery']],
+          properties: (weapon['properties'] as List<Object?>? ?? const [])
+              .whereType<String>()
+              .toList(),
+          normalRange: weapon['normalRange'] as int?,
+          longRange: weapon['longRange'] as int?,
           damageType: weapon['damageType'] as String?,
           range: weapon['range'] as String?,
         );
@@ -327,15 +419,72 @@ class Character {
     return action.rollModifier;
   }
 
-  String? damageFormulaFor(CharacterAction action, {int? slotLevel}) {
+  int get championLevel =>
+      subclasses['Fighter'] == 'Champion' ? levelInClass('Fighter') : 0;
+
+  int get weaponCriticalThreshold => switch (championLevel) {
+    >= 15 => 18,
+    >= 3 => 19,
+    _ => 20,
+  };
+
+  int levelInClass(String name) {
+    final target = name.trim().toLowerCase();
+    if (characterClass.trim().toLowerCase() == target) {
+      return level -
+          additionalClassLevels.values.fold<int>(
+            0,
+            (sum, count) => sum + count,
+          );
+    }
+    for (final entry in additionalClassLevels.entries) {
+      if (entry.key.trim().toLowerCase() == target) return entry.value;
+    }
+    return 0;
+  }
+
+  int rageDamageBonusFor(CharacterAction action) {
+    if (action is! Weapon || !action.usesStrength) return 0;
+    final barbarianLevel = levelInClass('Barbarian');
+    return switch (barbarianLevel == 0 ? level : barbarianLevel) {
+      >= 16 => 4,
+      >= 9 => 3,
+      _ => 2,
+    };
+  }
+
+  String? damageFormulaFor(
+    CharacterAction action, {
+    int? slotLevel,
+    bool raging = false,
+    bool twoHanded = false,
+    bool applyPotentSpellcasting = true,
+  }) {
+    if (action is Weapon) {
+      final formula = twoHanded
+          ? action.versatileDamageFormula
+          : action.damageFormula;
+      final bonus = raging ? rageDamageBonusFor(action) : 0;
+      if (bonus == 0 || formula == null) return formula;
+      return DiceExpression.tryParse(
+            formula,
+          )?.withModifierBonus(bonus).notation ??
+          formula;
+    }
     final formula = action.damageFormula;
     if (action is! Spell || formula == null) return formula;
 
     final scales = action.isCantrip && action.scaleCantripDamage;
     final castingAbility = action.castingAbility;
-    final bonus = action.addCastingModifierToDamage && castingAbility != null
+    var bonus = action.addCastingModifierToDamage && castingAbility != null
         ? abilityModifierFor(castingAbility)
         : 0;
+    if (applyPotentSpellcasting &&
+        benefitsFromPotentSpellcasting(action) &&
+        !(action.addCastingModifierToDamage &&
+            castingAbility == Ability.wisdom)) {
+      bonus += abilityModifierFor(Ability.wisdom);
+    }
     final higherLevels = action.level <= 0 || action.level >= 9
         ? 0
         : ((slotLevel ?? action.level) - action.level).clamp(
@@ -362,6 +511,29 @@ class Character {
     ).notation;
   }
 
+  bool benefitsFromPotentSpellcasting(Spell spell) =>
+      elementalFury == ElementalFury.potentSpellcasting &&
+      levelInClass('Druid') >= 7 &&
+      spell.isCantrip &&
+      (spell.isCircleGrant || druidCantripIds.contains(spell.id));
+
+  String? rangeForSpell(Spell spell) {
+    final range = spell.range;
+    if (range == null ||
+        levelInClass('Druid') < 15 ||
+        !benefitsFromPotentSpellcasting(spell)) {
+      return range;
+    }
+    final match = RegExp(
+      r'^(\d+)\s*(?:feet|ft\.?)$',
+      caseSensitive: false,
+    ).firstMatch(range.trim());
+    final distance = int.tryParse(match?.group(1) ?? '');
+    return distance != null && distance >= 10
+        ? '${distance + 300} feet'
+        : range;
+  }
+
   int? spellSaveDc(Spell spell) {
     final ability = spell.castingAbility;
     if (ability == null || spell.savingThrowAbility == null) return null;
@@ -378,11 +550,13 @@ class Character {
 
   SavingThrowCheck savingThrowFor(Ability ability) {
     final proficient = savingThrowProficiencies.contains(ability);
+    final modifier =
+        abilityModifierFor(ability) + (proficient ? proficiencyBonus : 0);
+    final minimum = saveModifierMinimums[ability];
     return SavingThrowCheck(
       ability: ability,
-      modifier:
-          abilityModifierFor(ability) + (proficient ? proficiencyBonus : 0),
-      proficient: proficient,
+      modifier: minimum != null && minimum > modifier ? minimum : modifier,
+      proficient: proficient || minimum != null,
     );
   }
 
@@ -394,7 +568,19 @@ class Character {
       SkillProficiency.expertise => 2,
     };
 
-    return abilityModifier + (proficiencyBonus * proficiencyMultiplier);
+    final wisdom = abilityModifierFor(Ability.wisdom);
+    final primalBonus =
+        primalOrder == PrimalOrder.magician &&
+            levelInClass('Druid') > 0 &&
+            (skill.id == 'arcana' || skill.id == 'nature')
+        ? (wisdom < 1 ? 1 : wisdom)
+        : 0;
+    final modifier =
+        abilityModifier +
+        (proficiencyBonus * proficiencyMultiplier) +
+        primalBonus;
+    final minimum = skillModifierMinimums[skill.id];
+    return minimum != null && minimum > modifier ? minimum : modifier;
   }
 
   SkillCheck checkFor(Skill skill) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/ability.dart';
+import '../models/check_roll.dart';
 import '../models/character.dart';
 import '../models/character_action.dart';
 import '../models/character_resource.dart';
@@ -15,11 +16,14 @@ import '../widgets/resource_grid.dart';
 class CombatModeView extends StatelessWidget {
   final Character character;
   final CharacterState characterState;
+  final int? formArmourClass;
   final ValueChanged<CharacterState> onCharacterStateChanged;
   final ValueChanged<int>? onDamageTaken;
+  final CharacterState Function(CharacterState, int)? resolveDamage;
   final ValueChanged<CharacterAction> onActionTap;
   final ValueChanged<CharacterAction> onActionDetails;
   final ValueChanged<CharacterAction> onAttackRoll;
+  final String? Function(CharacterAction)? ammunitionLabel;
   final ValueChanged<CharacterAction> onDamageRoll;
   final VoidCallback? onDeathSaveRoll;
   final int combatRound;
@@ -27,8 +31,15 @@ class CombatModeView extends StatelessWidget {
   final ValueChanged<int>? onInitiativeRecorded;
   final int Function()? rollD20;
   final Set<CombatActionCost> usedCombatActions;
+  final ActionSurgeState? actionSurge;
+  final VoidCallback? onActionSurgeSpent;
   final void Function(CombatActionCost, bool)? onCombatActionChanged;
   final VoidCallback? onNextTurn;
+  final VoidCallback? onEndRage;
+  final VoidCallback? onExtendRage;
+  final String? readiedAction;
+  final VoidCallback? onChooseCombatAction;
+  final VoidCallback? onTriggerReadiedAction;
   final ValueChanged<CharacterAction> onTogglePinned;
   final ValueChanged<SavingThrowCheck> onSavingThrowTap;
   final ValueChanged<CharacterResource> onResourceSpend;
@@ -38,11 +49,14 @@ class CombatModeView extends StatelessWidget {
     super.key,
     required this.character,
     required this.characterState,
+    this.formArmourClass,
     required this.onCharacterStateChanged,
     this.onDamageTaken,
+    this.resolveDamage,
     required this.onActionTap,
     required this.onActionDetails,
     required this.onAttackRoll,
+    this.ammunitionLabel,
     required this.onDamageRoll,
     this.onDeathSaveRoll,
     this.combatRound = 1,
@@ -50,8 +64,15 @@ class CombatModeView extends StatelessWidget {
     this.onInitiativeRecorded,
     this.rollD20,
     this.usedCombatActions = const {},
+    this.actionSurge,
+    this.onActionSurgeSpent,
     this.onCombatActionChanged,
     this.onNextTurn,
+    this.onEndRage,
+    this.onExtendRage,
+    this.readiedAction,
+    this.onChooseCombatAction,
+    this.onTriggerReadiedAction,
     required this.onTogglePinned,
     required this.onSavingThrowTap,
     required this.onResourceSpend,
@@ -89,7 +110,11 @@ class CombatModeView extends StatelessWidget {
               isPinned: isPinned(action),
               onDetails: () => onActionDetails(action),
               attackModifier: character.attackModifierFor(action),
-              damageFormula: character.damageFormulaFor(action),
+              ammunitionLabel: ammunitionLabel?.call(action),
+              damageFormula: character.damageFormulaFor(
+                action,
+                raging: characterState.isRaging,
+              ),
               onAttack: character.attackModifierFor(action) == null
                   ? null
                   : () => onAttackRoll(action),
@@ -132,11 +157,19 @@ class CombatModeView extends StatelessWidget {
         children: [
           CombatSummary(
             characterState: characterState,
+            formArmourClass: formArmourClass,
+            additionalResistance: characterState.landResistanceFor(character),
             onChanged: onCharacterStateChanged,
             onDamageTaken: onDamageTaken,
+            resolveDamage: resolveDamage,
             onDeathSaveRoll: onDeathSaveRoll,
             onInitiativeRecorded: onInitiativeRecorded,
             rollD20: rollD20,
+            initiativeMode:
+                character.levelInClass('Barbarian') >= 7 ||
+                    character.championLevel >= 3
+                ? D20Mode.advantage
+                : D20Mode.normal,
           ),
           const SizedBox(height: 20),
           if (onNextTurn != null) ...[
@@ -163,10 +196,48 @@ class CombatModeView extends StatelessWidget {
                     onSelected: (used) =>
                         onCombatActionChanged?.call(cost, used),
                   ),
+                if (actionSurge != null)
+                  FilterChip(
+                    label: const Text('Action Surge action'),
+                    selected: actionSurge == ActionSurgeState.spent,
+                    onSelected: actionSurge == ActionSurgeState.available
+                        ? (_) => onActionSurgeSpent?.call()
+                        : null,
+                  ),
               ],
             ),
             const SizedBox(height: 16),
           ],
+          if (onExtendRage != null)
+            OutlinedButton(
+              onPressed:
+                  usedCombatActions.contains(CombatActionCost.bonusAction)
+                  ? null
+                  : onExtendRage,
+              child: const Text('Extend Rage'),
+            ),
+          if (onEndRage != null)
+            OutlinedButton(onPressed: onEndRage, child: const Text('End Rage')),
+          if (onChooseCombatAction != null)
+            OutlinedButton(
+              onPressed:
+                  usedCombatActions.contains(CombatActionCost.action) &&
+                      actionSurge != ActionSurgeState.available
+                  ? null
+                  : onChooseCombatAction,
+              child: const Text('Use an Action'),
+            ),
+          if (readiedAction case final plan?)
+            ListTile(
+              title: const Text('Readied Action'),
+              subtitle: Text(plan),
+              trailing: TextButton(
+                onPressed: usedCombatActions.contains(CombatActionCost.reaction)
+                    ? null
+                    : onTriggerReadiedAction,
+                child: const Text('Trigger'),
+              ),
+            ),
           buildActionSection('Attacks', attacks, showRollControls: true),
           buildActionSection('Actions', pinnedFeatures),
           buildActionSection(

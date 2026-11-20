@@ -7,6 +7,7 @@ class CombatActionCard extends StatelessWidget {
   final CharacterAction action;
   final bool isPinned;
   final int? attackModifier;
+  final String? ammunitionLabel;
   final String? damageFormula;
   final VoidCallback onDetails;
   final VoidCallback? onAttack;
@@ -21,6 +22,7 @@ class CombatActionCard extends StatelessWidget {
     required this.onDetails,
     required this.controlKeyPrefix,
     this.attackModifier,
+    this.ammunitionLabel,
     this.damageFormula,
     this.onAttack,
     this.onDamage,
@@ -119,6 +121,11 @@ class CombatActionCard extends StatelessWidget {
                             ],
                           ],
                         ),
+                        if (ammunitionLabel case final label?)
+                          Text(
+                            label,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
                         if (supportingSummary.isNotEmpty) ...[
                           const SizedBox(height: 2),
                           Text(

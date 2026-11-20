@@ -1,14 +1,102 @@
 import 'character.dart';
 
+const ragingCondition = 'Raging';
+const dodgingCondition = 'Dodging';
+const dashingCondition = 'Dashing';
+const disengagingCondition = 'Disengaging';
+const naturesSanctuaryCondition = 'Nature’s Sanctuary';
+const freedomOfMovementCondition = 'Freedom of Movement';
+
+enum IncomingDamageType {
+  other('Other or unspecified'),
+  bludgeoning('Bludgeoning'),
+  piercing('Piercing'),
+  slashing('Slashing'),
+  fire('Fire'),
+  cold('Cold'),
+  lightning('Lightning'),
+  poison('Poison');
+
+  const IncomingDamageType(this.label);
+  final String label;
+}
+
+enum DruidLand {
+  arid('Arid', IncomingDamageType.fire),
+  polar('Polar', IncomingDamageType.cold),
+  temperate('Temperate', IncomingDamageType.lightning),
+  tropical('Tropical', IncomingDamageType.poison);
+
+  const DruidLand(this.label, this.resistance);
+  final String label;
+  final IncomingDamageType resistance;
+
+  List<String> spellsAt(int level) {
+    final names = switch (this) {
+      arid => [
+        'Blur',
+        'Burning Hands',
+        'Fire Bolt',
+        'Fireball',
+        'Blight',
+        'Wall of Stone',
+      ],
+      polar => [
+        'Fog Cloud',
+        'Hold Person',
+        'Ray of Frost',
+        'Sleet Storm',
+        'Ice Storm',
+        'Cone of Cold',
+      ],
+      temperate => [
+        'Misty Step',
+        'Shocking Grasp',
+        'Sleep',
+        'Lightning Bolt',
+        'Freedom of Movement',
+        'Tree Stride',
+      ],
+      tropical => [
+        'Acid Splash',
+        'Ray of Sickness',
+        'Web',
+        'Stinking Cloud',
+        'Polymorph',
+        'Insect Plague',
+      ],
+    };
+    return level < 3
+        ? const []
+        : names.take(3 + ((level - 3) ~/ 2).clamp(0, 3)).toList();
+  }
+}
+
 class CharacterState {
   final int currentHp;
   final int maxHp;
   final int temporaryHp;
+  final String? wildShapeForm;
+  final int? wildShapeTurnsRemaining;
+  final String? wildCompanion;
+  final bool naturalRecoveryUsed;
+  final bool naturalRecoveryCastUsed;
+  final DruidLand? druidLand;
   final int armourClass;
   final int initiativeModifier;
-  final int hitDiceSpent;
+  final int legacyHitDiceSpent;
+  final Map<int, int> hitDiceSpentBySize;
+
+  int get hitDiceSpent => hitDiceSpentBySize.values.fold(
+    legacyHitDiceSpent,
+    (total, count) => total + count,
+  );
+  final bool persistentRageRecoveryUsed;
+  final int relentlessRageAttempts;
   final String? concentrationSpellId;
+  final Map<String, String> spellSummons;
   final int? concentrationSlotLevel;
+  final String? concentrationTarget;
   final int? concentrationTurnsRemaining;
   final int deathSaveSuccesses;
   final int deathSaveFailures;
@@ -21,11 +109,22 @@ class CharacterState {
     required this.currentHp,
     required this.maxHp,
     required this.temporaryHp,
+    this.wildShapeForm,
+    this.wildShapeTurnsRemaining,
+    this.wildCompanion,
+    this.naturalRecoveryUsed = false,
+    this.naturalRecoveryCastUsed = false,
+    this.druidLand,
     required this.armourClass,
     required this.initiativeModifier,
-    this.hitDiceSpent = 0,
+    int hitDiceSpent = 0,
+    this.hitDiceSpentBySize = const {},
+    this.persistentRageRecoveryUsed = false,
+    this.relentlessRageAttempts = 0,
     this.concentrationSpellId,
+    this.spellSummons = const {},
     this.concentrationSlotLevel,
+    this.concentrationTarget,
     this.concentrationTurnsRemaining,
     required this.deathSaveSuccesses,
     required this.deathSaveFailures,
@@ -33,7 +132,7 @@ class CharacterState {
     this.conditionTurns = const {},
     required this.pinnedActionKeys,
     required this.resourceValues,
-  });
+  }) : legacyHitDiceSpent = hitDiceSpent;
 
   factory CharacterState.fromCharacter(Character character) {
     return CharacterState(
@@ -58,11 +157,26 @@ class CharacterState {
       'currentHp': currentHp,
       'maxHp': maxHp,
       'temporaryHp': temporaryHp,
+      'wildShapeForm': ?wildShapeForm,
+      'wildShapeTurnsRemaining': ?wildShapeTurnsRemaining,
+      'wildCompanion': ?wildCompanion,
+      if (naturalRecoveryUsed) 'naturalRecoveryUsed': true,
+      if (naturalRecoveryCastUsed) 'naturalRecoveryCastUsed': true,
+      'druidLand': ?druidLand?.name,
       'armourClass': armourClass,
       'initiativeModifier': initiativeModifier,
-      if (hitDiceSpent > 0) 'hitDiceSpent': hitDiceSpent,
+      if (legacyHitDiceSpent > 0) 'hitDiceSpent': legacyHitDiceSpent,
+      if (hitDiceSpentBySize.isNotEmpty)
+        'hitDiceSpentBySize': hitDiceSpentBySize.map(
+          (size, count) => MapEntry('$size', count),
+        ),
+      if (persistentRageRecoveryUsed) 'persistentRageRecoveryUsed': true,
+      if (relentlessRageAttempts > 0)
+        'relentlessRageAttempts': relentlessRageAttempts,
       'concentrationSpellId': ?concentrationSpellId,
+      if (spellSummons.isNotEmpty) 'spellSummons': spellSummons,
       'concentrationSlotLevel': ?concentrationSlotLevel,
+      'concentrationTarget': ?concentrationTarget,
       'concentrationTurnsRemaining': ?concentrationTurnsRemaining,
       'deathSaveSuccesses': deathSaveSuccesses,
       'deathSaveFailures': deathSaveFailures,
@@ -82,11 +196,33 @@ class CharacterState {
       currentHp: json['currentHp'] as int,
       maxHp: json['maxHp'] as int,
       temporaryHp: json['temporaryHp'] as int,
+      wildShapeForm: json['wildShapeForm'] as String?,
+      wildShapeTurnsRemaining: json['wildShapeTurnsRemaining'] as int?,
+      wildCompanion: json['wildCompanion'] as String?,
+      naturalRecoveryUsed: json['naturalRecoveryUsed'] as bool? ?? false,
+      naturalRecoveryCastUsed:
+          json['naturalRecoveryCastUsed'] as bool? ?? false,
+      druidLand: DruidLand.values
+          .where((land) => land.name == json['druidLand'])
+          .firstOrNull,
       armourClass: json['armourClass'] as int,
       initiativeModifier: json['initiativeModifier'] as int,
       hitDiceSpent: json['hitDiceSpent'] as int? ?? 0,
+      hitDiceSpentBySize:
+          (json['hitDiceSpentBySize'] as Map<String, Object?>?)?.map(
+            (size, count) => MapEntry(int.parse(size), count as int),
+          ) ??
+          const {},
+      persistentRageRecoveryUsed:
+          json['persistentRageRecoveryUsed'] as bool? ?? false,
+      relentlessRageAttempts: json['relentlessRageAttempts'] as int? ?? 0,
       concentrationSpellId: json['concentrationSpellId'] as String?,
+      spellSummons:
+          (json['spellSummons'] as Map<String, Object?>?)
+              ?.cast<String, String>() ??
+          const {},
       concentrationSlotLevel: json['concentrationSlotLevel'] as int?,
+      concentrationTarget: json['concentrationTarget'] as String?,
       concentrationTurnsRemaining: json['concentrationTurnsRemaining'] as int?,
       deathSaveSuccesses: json['deathSaveSuccesses'] as int,
       deathSaveFailures: json['deathSaveFailures'] as int,
@@ -119,6 +255,35 @@ class CharacterState {
           : deathSaveFailures,
     );
   }
+
+  IncomingDamageType? landResistanceFor(Character character) =>
+      character.subclasses['Druid'] == 'Circle of the Land' &&
+          character.levelInClass('Druid') >= 10
+      ? druidLand?.resistance
+      : null;
+
+  int damageAfterResistance(
+    int amount,
+    IncomingDamageType type, {
+    IncomingDamageType? additionalResistance,
+  }) =>
+      type == additionalResistance ||
+          (isRaging &&
+              const {
+                IncomingDamageType.bludgeoning,
+                IncomingDamageType.piercing,
+                IncomingDamageType.slashing,
+              }.contains(type))
+      ? amount ~/ 2
+      : amount;
+
+  bool get isRaging => activeConditions.contains(ragingCondition);
+
+  CharacterState endRage() => !isRaging
+      ? this
+      : copyWith(
+          activeConditions: {...activeConditions}..remove(ragingCondition),
+        );
 
   bool get canConcentrate =>
       currentHp > 0 &&
@@ -173,11 +338,24 @@ class CharacterState {
     int? currentHp,
     int? maxHp,
     int? temporaryHp,
+    String? wildShapeForm,
+    int? wildShapeTurnsRemaining,
+    bool clearWildShape = false,
+    String? wildCompanion,
+    bool clearWildCompanion = false,
+    bool? naturalRecoveryUsed,
+    bool? naturalRecoveryCastUsed,
+    DruidLand? druidLand,
     int? armourClass,
     int? initiativeModifier,
     int? hitDiceSpent,
+    Map<int, int>? hitDiceSpentBySize,
+    bool? persistentRageRecoveryUsed,
+    int? relentlessRageAttempts,
     String? concentrationSpellId,
+    Map<String, String>? spellSummons,
     int? concentrationSlotLevel,
+    String? concentrationTarget,
     int? concentrationTurnsRemaining,
     bool clearConcentration = false,
     int? deathSaveSuccesses,
@@ -191,12 +369,38 @@ class CharacterState {
       currentHp: currentHp ?? this.currentHp,
       maxHp: maxHp ?? this.maxHp,
       temporaryHp: temporaryHp ?? this.temporaryHp,
+      wildShapeForm: clearWildShape
+          ? null
+          : wildShapeForm ?? this.wildShapeForm,
+      wildShapeTurnsRemaining: clearWildShape
+          ? null
+          : wildShapeTurnsRemaining ?? this.wildShapeTurnsRemaining,
+      wildCompanion: clearWildCompanion
+          ? null
+          : wildCompanion ?? this.wildCompanion,
+      naturalRecoveryUsed: naturalRecoveryUsed ?? this.naturalRecoveryUsed,
+      naturalRecoveryCastUsed:
+          naturalRecoveryCastUsed ?? this.naturalRecoveryCastUsed,
+      druidLand: druidLand ?? this.druidLand,
       armourClass: armourClass ?? this.armourClass,
       initiativeModifier: initiativeModifier ?? this.initiativeModifier,
-      hitDiceSpent: hitDiceSpent ?? this.hitDiceSpent,
+      hitDiceSpent: hitDiceSpent ?? legacyHitDiceSpent,
+      hitDiceSpentBySize: hitDiceSpentBySize ?? this.hitDiceSpentBySize,
+      persistentRageRecoveryUsed:
+          persistentRageRecoveryUsed ?? this.persistentRageRecoveryUsed,
+      relentlessRageAttempts:
+          relentlessRageAttempts ?? this.relentlessRageAttempts,
       concentrationSpellId: clearConcentration
           ? null
           : concentrationSpellId ?? this.concentrationSpellId,
+      spellSummons: {
+        for (final entry in (spellSummons ?? this.spellSummons).entries)
+          if (entry.key != this.concentrationSpellId ||
+              (!clearConcentration &&
+                  (concentrationSpellId == null ||
+                      concentrationSpellId == this.concentrationSpellId)))
+            entry.key: entry.value,
+      },
       concentrationTurnsRemaining:
           clearConcentration || concentrationTurnsRemaining == 0
           ? null
@@ -204,6 +408,13 @@ class CharacterState {
                 (concentrationSpellId == null ||
                         concentrationSpellId == this.concentrationSpellId
                     ? this.concentrationTurnsRemaining
+                    : null),
+      concentrationTarget: clearConcentration || concentrationTarget == ''
+          ? null
+          : concentrationTarget ??
+                (concentrationSpellId == null ||
+                        concentrationSpellId == this.concentrationSpellId
+                    ? this.concentrationTarget
                     : null),
       concentrationSlotLevel: clearConcentration
           ? null

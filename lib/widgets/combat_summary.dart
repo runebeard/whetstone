@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../models/character_state.dart';
+import '../models/check_roll.dart';
 import 'ac_box.dart';
 import 'conditions_box.dart';
 import 'conditions_dialog.dart';
@@ -14,9 +15,13 @@ import 'stat_edit_dialog.dart';
 
 class CombatSummary extends StatefulWidget {
   final CharacterState characterState;
+  final IncomingDamageType? additionalResistance;
+  final int? formArmourClass;
   final ValueChanged<CharacterState> onChanged;
   final ValueChanged<int>? onDamageTaken;
+  final CharacterState Function(CharacterState, int)? resolveDamage;
   final int Function()? rollD20;
+  final D20Mode initiativeMode;
 
   final VoidCallback? onDeathSaveRoll;
   final ValueChanged<int>? onInitiativeRecorded;
@@ -26,9 +31,13 @@ class CombatSummary extends StatefulWidget {
     this.onInitiativeRecorded,
     super.key,
     required this.characterState,
+    this.additionalResistance,
+    this.formArmourClass,
     required this.onChanged,
     this.onDamageTaken,
+    this.resolveDamage,
     this.rollD20,
+    this.initiativeMode = D20Mode.normal,
   });
 
   @override
@@ -86,10 +95,20 @@ class _CombatSummaryState extends State<CombatSummary> {
     }
   }
 
-  void applyDamage(int damage, {bool critical = false}) {
-    if (damage <= 0) return;
-    widget.onChanged(characterState.takeDamage(damage, critical: critical));
-    widget.onDamageTaken?.call(damage);
+  void applyDamage(
+    int damage,
+    IncomingDamageType type, {
+    bool critical = false,
+  }) {
+    final applied = characterState.damageAfterResistance(
+      damage,
+      type,
+      additionalResistance: widget.additionalResistance,
+    );
+    if (applied <= 0) return;
+    final damaged = characterState.takeDamage(applied, critical: critical);
+    widget.onChanged(widget.resolveDamage?.call(damaged, applied) ?? damaged);
+    widget.onDamageTaken?.call(applied);
   }
 
   void applyHealing(int healing) {
@@ -179,6 +198,7 @@ class _CombatSummaryState extends State<CombatSummary> {
         initiativeModifier: characterState.initiativeModifier,
         rollD20: rollD20,
         canRecord: widget.onInitiativeRecorded != null,
+        initialMode: widget.initiativeMode,
       ),
     );
     if (mounted && initiative != null) {
@@ -225,9 +245,12 @@ class _CombatSummaryState extends State<CombatSummary> {
                     currentHp: characterState.currentHp,
                     maxHp: characterState.maxHp,
                     temporaryHp: characterState.temporaryHp,
+                    showDamageType:
+                        characterState.isRaging ||
+                        widget.additionalResistance != null,
                     onDamage: applyDamage,
-                    onCriticalDamage: (damage) =>
-                        applyDamage(damage, critical: true),
+                    onCriticalDamage: (damage, type) =>
+                        applyDamage(damage, type, critical: true),
                     onHealing: applyHealing,
                     onTemporaryHp: applyTemporaryHp,
                     onLongPress: () {
@@ -237,8 +260,11 @@ class _CombatSummaryState extends State<CombatSummary> {
                 ),
                 Expanded(
                   child: AcBox(
-                    armourClass: characterState.armourClass,
-                    onLongPress: () => editArmourClass(context),
+                    armourClass:
+                        widget.formArmourClass ?? characterState.armourClass,
+                    onLongPress: widget.formArmourClass == null
+                        ? () => editArmourClass(context)
+                        : null,
                   ),
                 ),
                 Expanded(

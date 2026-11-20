@@ -1,8 +1,10 @@
 import 'ability.dart';
+import 'built_in_class.dart';
 import 'character.dart';
 import 'check_roll.dart';
 import 'character_resource.dart';
 import 'character_state.dart';
+import 'spell_slots.dart';
 
 enum RestType {
   shortRest('Short Rest'),
@@ -27,19 +29,41 @@ class RestPlan {
   bool get hasChanges => changes.isNotEmpty;
 
   static int hitDieFor(Character character) =>
-      switch (character.characterClass.trim().toLowerCase()) {
-        'barbarian' => 12,
-        'fighter' || 'paladin' || 'ranger' => 10,
-        'sorcerer' || 'wizard' => 6,
-        _ => 8,
-      };
+      BuiltInClass.named(character.characterClass)?.hitDie ?? 8;
 
   static int availableHitDice(Character character, CharacterState state) =>
-      (character.level - state.hitDiceSpent).clamp(0, character.level).toInt();
+      availableHitDiceBySize(character, state).values.fold(0, (a, b) => a + b);
+
+  static Map<int, int> availableHitDiceBySize(
+    Character character,
+    CharacterState state,
+  ) {
+    final primaryDie = hitDieFor(character);
+    final totals = <int, int>{primaryDie: character.level};
+    for (final entry in character.additionalClassLevels.entries) {
+      final extra = BuiltInClass.named(entry.key);
+      if (extra == null || entry.value <= 0) continue;
+      totals.update(primaryDie, (count) => count - entry.value);
+      totals.update(
+        extra.hitDie,
+        (count) => count + entry.value,
+        ifAbsent: () => entry.value,
+      );
+    }
+    return {
+      for (final entry in totals.entries)
+        entry.key:
+            (entry.value -
+                    (state.hitDiceSpentBySize[entry.key] ?? 0) -
+                    (entry.key == primaryDie ? state.legacyHitDiceSpent : 0))
+                .clamp(0, entry.value < 0 ? 0 : entry.value),
+    };
+  }
 
   RestPlan spendHitDice({
     required Character character,
-    required int count,
+    int count = 0,
+    Map<int, int>? countsBySize,
     required DiceRoller roller,
   }) {
     if (type != RestType.shortRest ||
@@ -47,31 +71,50 @@ class RestPlan {
         updatedState.currentHp >= updatedState.maxHp) {
       return this;
     }
-    final constitution = ((character.scoreFor(Ability.constitution) - 10) / 2)
-        .floor();
-    final sides = hitDieFor(character);
+    final constitution = character.abilityModifierFor(Ability.constitution);
+    final primaryDie = hitDieFor(character);
+    final requested = countsBySize ?? {primaryDie: count};
+    final available = availableHitDiceBySize(character, updatedState);
+    final spent = {...updatedState.hitDiceSpentBySize};
     var hp = updatedState.currentHp;
-    final limit = count.clamp(0, availableHitDice(character, updatedState));
-    final rolls = <int>[];
-    while (rolls.length < limit && hp < updatedState.maxHp) {
-      final roll = roller.rollDie(sides);
-      rolls.add(roll);
-      final healing = (roll + constitution)
-          .clamp(0, updatedState.maxHp - hp)
-          .toInt();
-      hp += healing;
+    final descriptions = <String>[];
+    for (final entry in requested.entries) {
+      final sides = entry.key;
+      final limit = entry.value.clamp(0, available[sides] ?? 0);
+      final rolls = <int>[];
+      while (rolls.length < limit && hp < updatedState.maxHp) {
+        final roll = roller.rollDie(sides);
+        rolls.add(roll);
+        hp += (roll + constitution).clamp(0, updatedState.maxHp - hp);
+      }
+      if (rolls.isEmpty) continue;
+      spent.update(
+        sides,
+        (count) => count + rolls.length,
+        ifAbsent: () => rolls.length,
+      );
+      descriptions.add('${rolls.length}d$sides rolled: ${rolls.join(', ')}');
     }
-    if (rolls.isEmpty) return this;
+    if (descriptions.isEmpty) return this;
+    if (updatedState.legacyHitDiceSpent > 0) {
+      final legacy = updatedState.legacyHitDiceSpent;
+      spent.update(
+        primaryDie,
+        (count) => count + legacy,
+        ifAbsent: () => legacy,
+      );
+    }
     return RestPlan(
       type: type,
       updatedState: updatedState.copyWith(
         currentHp: hp,
-        hitDiceSpent: updatedState.hitDiceSpent + rolls.length,
+        hitDiceSpent: 0,
+        hitDiceSpentBySize: spent,
       ),
       changes: [
         ...changes,
         'Hit points: ${updatedState.currentHp} → $hp '
-            '(${rolls.length}d$sides rolled: ${rolls.join(', ')})',
+            '(${descriptions.join(' · ')})',
       ],
     );
   }
@@ -85,14 +128,23 @@ class RestPlan {
     final resourceValues = {...currentState.resourceValues};
 
     for (final resource in character.resources) {
-      if (!_recovers(resource.rechargePeriod, type)) {
+      final currentValue = resourceValues[resource.id] ?? resource.initialValue;
+      final int recovered;
+      if (_recovers(resource.rechargePeriod, type)) {
+        recovered = resource.maximum;
+      } else if (type == RestType.shortRest &&
+          (resource.id == rageResourceId ||
+              resource.id == wildShapeResourceId ||
+              resource.id == secondWindResourceId ||
+              resource.id == clericChannelDivinityId ||
+              resource.id == paladinChannelDivinityId)) {
+        recovered = (currentValue + 1).clamp(0, resource.maximum);
+      } else {
         continue;
       }
-
-      final currentValue = resourceValues[resource.id] ?? resource.initialValue;
-      if (currentValue < resource.maximum) {
-        changes.add('${resource.name}: $currentValue → ${resource.maximum}');
-        resourceValues[resource.id] = resource.maximum;
+      if (currentValue < recovered) {
+        changes.add('${resource.name}: $currentValue → $recovered');
+        resourceValues[resource.id] = recovered;
       }
     }
 
@@ -101,11 +153,34 @@ class RestPlan {
     var deathSaveSuccesses = currentState.deathSaveSuccesses;
     var deathSaveFailures = currentState.deathSaveFailures;
 
-    var hitDiceSpent = currentState.hitDiceSpent;
+    final hitDiceSpent = currentState.hitDiceSpent;
+    if (currentState.relentlessRageAttempts > 0) {
+      changes.add('Relentless Rage save DC reset to 10');
+    }
     if (type == RestType.longRest) {
+      if (currentState.naturalRecoveryUsed) {
+        changes.add('Natural Recovery restored');
+      }
+      if (currentState.naturalRecoveryCastUsed) {
+        changes.add('Natural Recovery free cast restored');
+      }
+      if (resourceValues.remove(wildResurgenceSlot.id) != null) {
+        changes.add('Wild Resurgence slot creation restored');
+      }
+      for (final slot in natureMagicianSlots) {
+        if (resourceValues.remove(slot.id) != null) {
+          changes.add('Nature Magician restored');
+        }
+      }
+      if (currentState.wildShapeForm != null) changes.add('Wild Shape ended');
+      if (currentState.wildCompanion != null) {
+        changes.add('Wild Companion dismissed');
+      }
+      if (currentState.persistentRageRecoveryUsed) {
+        changes.add('Persistent Rage recovery restored');
+      }
       if (hitDiceSpent > 0) {
         changes.add('Recovered $hitDiceSpent Hit Dice');
-        hitDiceSpent = 0;
       }
       if (currentHp < currentState.maxHp) {
         changes.add('Hit points: $currentHp → ${currentState.maxHp}');
@@ -126,8 +201,23 @@ class RestPlan {
       type: type,
       updatedState: currentState.copyWith(
         currentHp: currentHp,
-        hitDiceSpent: hitDiceSpent,
+        hitDiceSpent: type == RestType.longRest
+            ? 0
+            : currentState.legacyHitDiceSpent,
+        hitDiceSpentBySize: type == RestType.longRest
+            ? const {}
+            : currentState.hitDiceSpentBySize,
+        relentlessRageAttempts: 0,
+        persistentRageRecoveryUsed:
+            type == RestType.shortRest &&
+            currentState.persistentRageRecoveryUsed,
         temporaryHp: temporaryHp,
+        clearWildShape: type == RestType.longRest,
+        clearWildCompanion: type == RestType.longRest,
+        naturalRecoveryUsed:
+            type == RestType.shortRest && currentState.naturalRecoveryUsed,
+        naturalRecoveryCastUsed:
+            type == RestType.shortRest && currentState.naturalRecoveryCastUsed,
         deathSaveSuccesses: deathSaveSuccesses,
         deathSaveFailures: deathSaveFailures,
         resourceValues: resourceValues,

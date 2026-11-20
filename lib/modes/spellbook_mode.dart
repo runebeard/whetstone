@@ -82,6 +82,31 @@ class SpellbookModeView extends StatelessWidget {
             onCreateCustom: onCreateCustom,
           ),
           const SizedBox(height: 16),
+          if (character.subclasses['Druid'] == 'Circle of the Land' &&
+              characterState.druidLand != null)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text('${characterState.druidLand!.label} Circle Spells'),
+              subtitle: Text(
+                characterState.druidLand!
+                    .spellsAt(character.levelInClass('Druid'))
+                    .join(', '),
+              ),
+            ),
+          if (characterState.spellSummons.isNotEmpty) ...[
+            Text(
+              'Active Summons',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            for (final spell in character.spells)
+              if (characterState.spellSummons[spell.id] case final summon?)
+                ListTile(
+                  title: Text(summon),
+                  subtitle: Text(spell.name),
+                  onTap: () => onManageSpell(spell),
+                ),
+            const SizedBox(height: 16),
+          ],
           buildSection('Cantrips', cantrips),
           buildSection('Prepared Spells', preparedSpells),
           buildSection('Other Spells', otherSpells),

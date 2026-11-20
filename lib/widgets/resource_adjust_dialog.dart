@@ -3,16 +3,29 @@ import 'package:flutter/material.dart';
 import '../models/character_resource.dart';
 import 'dialogue_action_button.dart';
 
-enum ResourceAdjustment { spend, restore, refill }
+enum ResourceAdjustment {
+  spend,
+  restore,
+  refill,
+  convertSlot,
+  tacticalMind,
+  createWildResurgenceSlot,
+}
 
 class ResourceAdjustDialog extends StatelessWidget {
   final CharacterResource resource;
   final int currentValue;
+  final bool canConvertSlot;
+  final bool canUseTacticalMind;
+  final bool canCreateWildResurgenceSlot;
 
   const ResourceAdjustDialog({
     super.key,
     required this.resource,
     required this.currentValue,
+    this.canConvertSlot = false,
+    this.canUseTacticalMind = false,
+    this.canCreateWildResurgenceSlot = false,
   });
 
   @override
@@ -50,6 +63,35 @@ class ResourceAdjustDialog extends StatelessWidget {
                 ? () => Navigator.pop(context, ResourceAdjustment.refill)
                 : null,
           ),
+          if (canConvertSlot) ...[
+            const SizedBox(height: 10),
+            DialogueActionButton(
+              icon: Icons.auto_awesome,
+              label: 'Spend a Slot to Restore One',
+              onTap: () =>
+                  Navigator.pop(context, ResourceAdjustment.convertSlot),
+            ),
+          ],
+          if (canCreateWildResurgenceSlot) ...[
+            const SizedBox(height: 10),
+            DialogueActionButton(
+              icon: Icons.auto_awesome,
+              label: 'Spend a Use to Create a Level 1 Slot',
+              onTap: () => Navigator.pop(
+                context,
+                ResourceAdjustment.createWildResurgenceSlot,
+              ),
+            ),
+          ],
+          if (canUseTacticalMind) ...[
+            const SizedBox(height: 10),
+            DialogueActionButton(
+              icon: Icons.psychology_outlined,
+              label: 'Tactical Mind',
+              onTap: () =>
+                  Navigator.pop(context, ResourceAdjustment.tacticalMind),
+            ),
+          ],
           const SizedBox(height: 12),
           TextButton(
             onPressed: () => Navigator.pop(context),

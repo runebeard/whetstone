@@ -12,6 +12,12 @@ class SequenceRoller extends DiceRoller {
 }
 
 void main() {
+  test('automatic advantage cancels selected disadvantage', () {
+    expect(D20Mode.normal.withAdvantage(), D20Mode.advantage);
+    expect(D20Mode.advantage.withAdvantage(), D20Mode.advantage);
+    expect(D20Mode.disadvantage.withAdvantage(), D20Mode.normal);
+  });
+
   test('critical damage doubles dice and applies the modifier once', () {
     final critical = DiceExpression.tryParse('2d6 + 3')!.withCriticalHitDice();
     expect(critical.diceCount, 4);
