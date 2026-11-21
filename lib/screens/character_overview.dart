@@ -90,6 +90,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   bool sneakAttackUsedThisTurn = false;
   bool steadyAimAttackPending = false;
   bool selfRestorationUsedThisTurn = false;
+  bool stunningStrikeUsedThisTurn = false;
   int flurryAttacksRemaining = 0;
   int attackActionAttacksRemaining = 0;
   CheckRoll? tacticalMindCheck;
@@ -146,6 +147,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       cleaveUsedThisTurn = widget.initialSession.cleaveUsedThisTurn;
       nickUsedThisTurn = widget.initialSession.nickUsedThisTurn;
       sneakAttackUsedThisTurn = widget.initialSession.sneakAttackUsedThisTurn;
+      stunningStrikeUsedThisTurn =
+          widget.initialSession.stunningStrikeUsedThisTurn;
       selfRestorationUsedThisTurn =
           widget.initialSession.selfRestorationUsedThisTurn;
       flurryAttacksRemaining = widget.initialSession.flurryAttacksRemaining
@@ -230,6 +233,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         sneakAttackUsedThisTurn: sneakAttackUsedThisTurn,
         steadyAimAttackPending: steadyAimAttackPending,
         selfRestorationUsedThisTurn: selfRestorationUsedThisTurn,
+        stunningStrikeUsedThisTurn: stunningStrikeUsedThisTurn,
         flurryAttacksRemaining: flurryAttacksRemaining,
         attackActionAttacksRemaining: attackActionAttacksRemaining,
         timeline: [...timeline],
@@ -2444,6 +2448,99 @@ class _CharacterOverviewState extends State<CharacterOverview>
     return advantage;
   }
 
+  Future<void> useStunningStrike() async {
+    final focus = character.resources
+        .where((resource) => resource.id == focusResourceId)
+        .firstOrNull;
+    bool canUse() =>
+        mounted &&
+        currentMode == CharacterMode.combat &&
+        character.levelInClass('Monk') >= 5 &&
+        characterState.canConcentrate &&
+        !stunningStrikeUsedThisTurn &&
+        focus != null &&
+        remainingUses(focus) > 0;
+    if (!canUse()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Stunning Strike needs an unused turn use and 1 Focus Point.',
+          ),
+        ),
+      );
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Stunning Strike · Eligible hit'),
+        content: const Text(
+          'Confirm you just hit a creature with an Unarmed Strike or a Monk weapon: a Simple Melee weapon, or a Light Martial Melee weapon. Spend 1 Focus Point for Stunning Strike. This does not spend another attack or action. Target eligibility is confirmed at the table.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Eligible hit · Spend 1 Focus'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true || !canUse()) return;
+    stunningStrikeUsedThisTurn = true;
+    updateCharacterState(
+      characterState.copyWith(
+        resourceValues: {
+          ...characterState.resourceValues,
+          focus!.id: remainingUses(focus) - 1,
+        },
+      ),
+    );
+    final dc =
+        8 +
+        character.proficiencyBonus +
+        character.abilityModifierFor(Ability.wisdom);
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Stunning Strike attempt',
+      detail: 'Target makes a DC $dc Constitution save · 1 Focus Point spent.',
+    );
+    final failed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Stunning Strike · Target save'),
+        content: Text(
+          'DC $dc Constitution save. On failure: target Stunned until the start of your next turn. On success: target Speed halved until the start of your next turn, and the next attack against it before then has Advantage. Resolve the target roll, immunity and conditions at the table.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Resolve later'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Save succeeded'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Save failed'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || failed == null) return;
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Stunning Strike · ${failed ? 'failed save' : 'successful save'}',
+      detail: failed
+          ? 'Target Stunned until the start of your next turn.'
+          : 'Target Speed halved until the start of your next turn. Next attack against it before then has Advantage.',
+    );
+  }
+
   Future<void> useSelfRestoration() async {
     bool canUse() =>
         mounted &&
@@ -2555,6 +2652,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   void beginAnotherCreatureTurn() {
     sneakAttackUsedThisTurn = false;
+    stunningStrikeUsedThisTurn = false;
     flurryAttacksRemaining = 0;
     steadyAimAttackPending = false;
     updateCharacterState(
@@ -3522,6 +3620,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   Future<void> confirmNewSneakAttackTurn() async {
     if (currentMode != CharacterMode.combat ||
         (!sneakAttackUsedThisTurn &&
+            !stunningStrikeUsedThisTurn &&
             !characterState.activeConditions.contains(steadyAimCondition))) {
       return;
     }
@@ -3530,7 +3629,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       builder: (context) => AlertDialog(
         title: const Text('Another creature’s turn'),
         content: const Text(
-          'Confirm that a different creature’s turn has begun. This refreshes Sneak Attack and ends Steady Aim. '
+          'Confirm that a different creature’s turn has begun. This refreshes Sneak Attack and Stunning Strike, ends Steady Aim, and clears pending Flurry strikes. '
           'It does not restore your Action, Bonus Action, or Reaction.',
         ),
         actions: [
@@ -3549,6 +3648,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         confirmed != true ||
         currentMode != CharacterMode.combat ||
         (!sneakAttackUsedThisTurn &&
+            !stunningStrikeUsedThisTurn &&
             !characterState.activeConditions.contains(steadyAimCondition))) {
       return;
     }
@@ -5571,6 +5671,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
       sneakAttackUsedThisTurn = false;
+      stunningStrikeUsedThisTurn = false;
       flurryAttacksRemaining = 0;
       steadyAimAttackPending = false;
       attackActionAttacksRemaining = 0;
@@ -6186,6 +6287,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
       sneakAttackUsedThisTurn = false;
+      stunningStrikeUsedThisTurn = false;
       flurryAttacksRemaining = 0;
       steadyAimAttackPending = false;
       attackActionAttacksRemaining = 0;
@@ -6262,6 +6364,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
       sneakAttackUsedThisTurn = false;
+      stunningStrikeUsedThisTurn = false;
       flurryAttacksRemaining = 0;
       steadyAimAttackPending = false;
       attackActionAttacksRemaining = 0;
@@ -6498,6 +6601,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onActionDetails: showActionDetails,
       onAttackRoll: rollAttack,
       onUnarmedStrike: activeWildShape == null ? useUnarmedStrike : null,
+      onStunningStrike: character.levelInClass('Monk') >= 5
+          ? useStunningStrike
+          : null,
+      stunningStrikeUsedThisTurn: stunningStrikeUsedThisTurn,
       flurryAttacksRemaining: flurryAttacksRemaining,
       canStartFlurry: character.resources.any(
         (resource) =>

@@ -404,6 +404,7 @@ class _CharacterVaultState extends State<CharacterVault> {
       sneakAttackUsedThisTurn: session.sneakAttackUsedThisTurn,
       steadyAimAttackPending: session.steadyAimAttackPending,
       selfRestorationUsedThisTurn: session.selfRestorationUsedThisTurn,
+      stunningStrikeUsedThisTurn: session.stunningStrikeUsedThisTurn,
       flurryAttacksRemaining: session.flurryAttacksRemaining,
       attackActionAttacksRemaining: session.attackActionAttacksRemaining,
       timeline: session.timeline,

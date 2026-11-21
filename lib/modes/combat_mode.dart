@@ -52,6 +52,8 @@ class CombatModeView extends StatelessWidget {
   final VoidCallback? onFastHands;
   final VoidCallback? onSteadyAim;
   final VoidCallback? onSelfRestoration;
+  final VoidCallback? onStunningStrike;
+  final bool stunningStrikeUsedThisTurn;
   final bool sneakAttackUsedThisTurn;
   final VoidCallback? onNewSneakAttackTurn;
   final VoidCallback? onTriggerReadiedAction;
@@ -100,6 +102,8 @@ class CombatModeView extends StatelessWidget {
     this.onFastHands,
     this.onSteadyAim,
     this.onSelfRestoration,
+    this.onStunningStrike,
+    this.stunningStrikeUsedThisTurn = false,
     this.sneakAttackUsedThisTurn = false,
     this.onNewSneakAttackTurn,
     this.onTriggerReadiedAction,
@@ -138,6 +142,18 @@ class CombatModeView extends StatelessWidget {
           OutlinedButton(
             onPressed: onSelfRestoration,
             child: const Text('Self-Restoration · End of turn'),
+          ),
+        if (title == 'Attacks' && onStunningStrike != null)
+          OutlinedButton(
+            onPressed:
+                stunningStrikeUsedThisTurn || !characterState.canConcentrate
+                ? null
+                : onStunningStrike,
+            child: Text(
+              stunningStrikeUsedThisTurn
+                  ? 'Stunning Strike · used this turn'
+                  : 'Stunning Strike · Confirm eligible hit',
+            ),
           ),
         if (title == 'Attacks' && onBonusUnarmedStrike != null)
           OutlinedButton(
@@ -319,6 +335,7 @@ class CombatModeView extends StatelessWidget {
               'Sneak Attack: ${character.sneakAttackDice}d6 · ${sneakAttackUsedThisTurn ? 'used this turn' : 'available after an eligible hit'}',
             ),
             if ((sneakAttackUsedThisTurn ||
+                    stunningStrikeUsedThisTurn ||
                     characterState.activeConditions.contains(
                       steadyAimCondition,
                     )) &&
@@ -328,6 +345,13 @@ class CombatModeView extends StatelessWidget {
                 child: const Text('Track another creature’s turn'),
               ),
           ],
+          if (character.sneakAttackDice == 0 &&
+              stunningStrikeUsedThisTurn &&
+              onNewSneakAttackTurn != null)
+            OutlinedButton(
+              onPressed: onNewSneakAttackTurn,
+              child: const Text('Track another creature’s turn'),
+            ),
           if (onCunningAction != null)
             OutlinedButton(
               onPressed:
