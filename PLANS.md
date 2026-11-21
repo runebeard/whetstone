@@ -177,7 +177,9 @@ Run `flutter analyze` and the relevant Flutter tests after each implementation i
 
 ## Release verification
 
-- [ ] Run the final Flutter suite, build an Android debug APK, and exercise the restored flows and older device backups on Android. All 216 Flutter tests passed after Paladin aura, healing, Radiant Strikes, Channel Divinity, and resource-layout recovery; analysis reported no issues. The earlier Android build could not download the Flutter Android artifacts. On 21 November 2026, Android Studio Java was present but the default Android SDK path and android/local.properties were still absent. Android build and device verification remain open.
+- [ ] Complete Android device testing and original Beta 5 backup import checks. All 216 Flutter tests passed and analysis was clean after the Paladin recovery. Android debug APK compilation and signature/package checks now pass; full device and Beta 5 parity verification remain open. No authorized Android device was connected on 21 November 2026.
+- [x] Provision a workspace-local Android SDK/NDK and Flutter Android artifacts, regenerate missing plugin metadata to fix JNI registration, and build a signed debug APK. Verify its separate `com.runebeard.whetstone.recovery` package and Whetstone Recovery launcher label. Preserve the original Beta 5 APK with a verified SHA-256.
+- [x] Add a repeatable Android build script using local toolchains and caches, restoring the caller environment on exit. Its dependency-refresh and cached build paths both produced verified APKs.
 - [x] Verify older character and vault compatibility with representative version-one fixtures. All 20 persistence tests passed. Importing actual Beta 5 device backups remains part of Android release verification.
 
 ### Reconstruction sources
