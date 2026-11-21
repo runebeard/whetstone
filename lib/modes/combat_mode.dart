@@ -44,6 +44,8 @@ class CombatModeView extends StatelessWidget {
   final String? readiedAction;
   final VoidCallback? onChooseCombatAction;
   final VoidCallback? onCunningAction;
+  final VoidCallback? onFastHands;
+  final VoidCallback? onSteadyAim;
   final bool sneakAttackUsedThisTurn;
   final VoidCallback? onNewSneakAttackTurn;
   final VoidCallback? onTriggerReadiedAction;
@@ -84,6 +86,8 @@ class CombatModeView extends StatelessWidget {
     this.readiedAction,
     this.onChooseCombatAction,
     this.onCunningAction,
+    this.onFastHands,
+    this.onSteadyAim,
     this.sneakAttackUsedThisTurn = false,
     this.onNewSneakAttackTurn,
     this.onTriggerReadiedAction,
@@ -262,7 +266,11 @@ class CombatModeView extends StatelessWidget {
             Text(
               'Sneak Attack: ${character.sneakAttackDice}d6 · ${sneakAttackUsedThisTurn ? 'used this turn' : 'available after an eligible hit'}',
             ),
-            if (sneakAttackUsedThisTurn && onNewSneakAttackTurn != null)
+            if ((sneakAttackUsedThisTurn ||
+                    characterState.activeConditions.contains(
+                      steadyAimCondition,
+                    )) &&
+                onNewSneakAttackTurn != null)
               OutlinedButton(
                 onPressed: onNewSneakAttackTurn,
                 child: const Text('Track another creature’s turn'),
@@ -276,6 +284,26 @@ class CombatModeView extends StatelessWidget {
                   ? null
                   : onCunningAction,
               child: const Text('Cunning Action'),
+            ),
+          if (onSteadyAim != null)
+            OutlinedButton(
+              onPressed:
+                  !characterState.canConcentrate ||
+                      usedCombatActions.contains(CombatActionCost.bonusAction)
+                  ? null
+                  : onSteadyAim,
+              child: const Text('Steady Aim'),
+            ),
+          if (characterState.activeConditions.contains(steadyAimCondition))
+            const Text('Steady Aim · Speed 0 until this turn ends'),
+          if (onFastHands != null)
+            OutlinedButton(
+              onPressed:
+                  !characterState.canConcentrate ||
+                      usedCombatActions.contains(CombatActionCost.bonusAction)
+                  ? null
+                  : onFastHands,
+              child: const Text('Fast Hands'),
             ),
           if (readiedAction case final plan?)
             ListTile(

@@ -16,6 +16,8 @@ import '../models/authored_class.dart';
 import '../models/character.dart';
 import '../models/character_action.dart';
 import '../models/check_roll.dart';
+import '../models/cunning_strike.dart';
+import '../widgets/sneak_attack_dialog.dart';
 import '../models/content_pack.dart';
 import '../models/character_resource.dart';
 import '../models/character_session.dart';
@@ -86,6 +88,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   bool cleaveUsedThisTurn = false;
   bool nickUsedThisTurn = false;
   bool sneakAttackUsedThisTurn = false;
+  bool steadyAimAttackPending = false;
   int attackActionAttacksRemaining = 0;
   CheckRoll? tacticalMindCheck;
   late final DiceRoller diceRoller;
@@ -126,6 +129,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
       cleaveUsedThisTurn = widget.initialSession.cleaveUsedThisTurn;
       nickUsedThisTurn = widget.initialSession.nickUsedThisTurn;
       sneakAttackUsedThisTurn = widget.initialSession.sneakAttackUsedThisTurn;
+      steadyAimAttackPending =
+          widget.initialSession.steadyAimAttackPending &&
+          characterState.activeConditions.contains(steadyAimCondition);
       attackActionAttacksRemaining = widget
           .initialSession
           .attackActionAttacksRemaining
@@ -194,6 +200,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         cleaveUsedThisTurn: cleaveUsedThisTurn,
         nickUsedThisTurn: nickUsedThisTurn,
         sneakAttackUsedThisTurn: sneakAttackUsedThisTurn,
+        steadyAimAttackPending: steadyAimAttackPending,
         attackActionAttacksRemaining: attackActionAttacksRemaining,
         timeline: [...timeline],
       ),
@@ -207,6 +214,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void updateCharacterState(CharacterState updatedState) {
+    if (!updatedState.activeConditions.contains(steadyAimCondition)) {
+      steadyAimAttackPending = false;
+    }
     if (!updatedState.canConcentrate &&
         updatedState.activeConditions.contains(divineSenseCondition)) {
       updatedState = updatedState.copyWith(
@@ -2237,6 +2247,80 @@ class _CharacterOverviewState extends State<CharacterOverview>
     publishSession();
   }
 
+  bool consumeSteadyAimAdvantage() {
+    final advantage =
+        steadyAimAttackPending &&
+        characterState.activeConditions.contains(steadyAimCondition);
+    steadyAimAttackPending = false;
+    return advantage;
+  }
+
+  Future<void> useSteadyAim() async {
+    bool canUse() =>
+        currentMode == CharacterMode.combat &&
+        character.levelInClass('Rogue') >= 3 &&
+        characterState.canConcentrate &&
+        !usedCombatActions.contains(CombatActionCost.bonusAction);
+    if (!canUse()) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Steady Aim'),
+        content: const Text(
+          'Confirm you have not moved this turn. Use a Bonus Action to gain Advantage '
+          'on your next attack roll this turn. Your Speed becomes 0 until this turn ends.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('No movement · Use Steady Aim'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true || !canUse()) return;
+    usedCombatActions.add(CombatActionCost.bonusAction);
+    steadyAimAttackPending = true;
+    updateCharacterState(
+      characterState.copyWith(
+        activeConditions: {
+          ...characterState.activeConditions,
+          steadyAimCondition,
+        },
+        conditionTurns: {
+          ...characterState.conditionTurns,
+          steadyAimCondition: 1,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Steady Aim',
+      detail: 'Next attack this turn has Advantage; Speed 0 until turn end.',
+    );
+  }
+
+  void beginAnotherCreatureTurn() {
+    sneakAttackUsedThisTurn = false;
+    steadyAimAttackPending = false;
+    updateCharacterState(
+      characterState.copyWith(
+        activeConditions: {...characterState.activeConditions}
+          ..remove(steadyAimCondition),
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.combat,
+      'New creature turn confirmed',
+      detail:
+          'Sneak Attack refreshed and Steady Aim ended. Action, Bonus Action and Reaction are unchanged.',
+    );
+  }
+
   Future<void> useUnarmedStrike() async {
     bool canUse() =>
         mounted &&
@@ -2288,6 +2372,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         'Unarmed Strike Attack',
         strength + character.proficiencyBonus,
         criticalThreshold: character.weaponCriticalThreshold,
+        hasAdvantage: consumeSteadyAimAdvantage(),
       );
       if (attack.isNaturalOne) return;
       if (attack.naturalRoll >= character.weaponCriticalThreshold &&
@@ -2469,11 +2554,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
       extendRage();
     }
     final threshold = action is Weapon ? character.weaponCriticalThreshold : 20;
+    final aimed = consumeSteadyAimAdvantage();
     final roll = rollCheck(
       '${action.name} Attack',
       modifier,
       criticalThreshold: threshold,
-      hasAdvantage: packTactics,
+      hasAdvantage: packTactics || aimed,
     );
     final critical = roll.naturalRoll >= threshold;
     pendingCriticalActionKey =
@@ -2715,6 +2801,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       '${weapon.name} $mastery Attack',
       weapon.attackModifier,
       criticalThreshold: character.weaponCriticalThreshold,
+      hasAdvantage: consumeSteadyAimAdvantage(),
     );
     publishSession();
     if (attack.isNaturalOne) return;
@@ -2787,6 +2874,64 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
+  bool get hasPoisonersKit => inventory.any(
+    (item) =>
+        item.quantity > 0 &&
+        item.name.toLowerCase().replaceAll(RegExp('[^a-z]'), '') ==
+            'poisonerskit',
+  );
+
+  Future<void> resolveCunningStrike(CunningStrike effect) async {
+    if (!mounted) return;
+    if (effect.save == null) {
+      recordSessionEvent(
+        SessionEventType.combat,
+        'Cunning Strike · ${effect.label}',
+        detail: effect.effect,
+      );
+      return;
+    }
+    final dc =
+        8 +
+        characterForPhysicalChecks.abilityModifierFor(Ability.dexterity) +
+        character.proficiencyBonus;
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Cunning Strike · ${effect.label}',
+      detail: 'DC $dc ${effect.save!.label} save · ${effect.effect}',
+    );
+    final failed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Cunning Strike · ${effect.label}'),
+        content: Text(
+          'DC $dc ${effect.save!.label} save. ${effect.effect} '
+          'Resolve target rolls, eligibility and immunity at the table.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Resolve later'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Save succeeded'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Save failed'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || failed == null) return;
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Cunning Strike · ${effect.label} · ${failed ? 'failed save' : 'successful save'}',
+      detail: failed ? effect.effect : 'The target avoids the effect.',
+    );
+  }
+
   Future<void> resolveSneakAttack(
     Weapon weapon, {
     required bool critical,
@@ -2798,55 +2943,63 @@ class _CharacterOverviewState extends State<CharacterOverview>
         weapon.sneakAttackEligible &&
         !sneakAttackUsedThisTurn;
     if (!canUse()) return;
-    final confirmed = await showDialog<bool>(
+    final selection = await showDialog<SneakAttackSelection>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('${weapon.name} · Sneak Attack'),
-        content: Text(
-          'After this attack hits one creature, add ${critical ? character.sneakAttackDice * 2 : character.sneakAttackDice}d6 '
-          '${weapon.damageType ?? 'weapon'} damage. Confirm that you had Advantage, '
-          'or an ally able to act was within 5 feet of the target and you did not have Disadvantage. '
-          'Only one Sneak Attack is allowed per turn.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Skip'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Eligible hit · Roll Sneak Attack'),
-          ),
-        ],
+      builder: (context) => SneakAttackDialog(
+        weaponName: weapon.name,
+        damageType: weapon.damageType ?? 'weapon',
+        rogueLevel: character.levelInClass('Rogue'),
+        diceCount: character.sneakAttackDice,
+        critical: critical,
+        hasPoisonersKit: hasPoisonersKit,
       ),
     );
-    if (!mounted || confirmed != true || !canUse()) return;
+    if (!mounted ||
+        selection == null ||
+        !canUse() ||
+        !selection.isValid(
+          rogueLevel: character.levelInClass('Rogue'),
+          sneakDice: character.sneakAttackDice,
+          hasPoisonersKit: hasPoisonersKit,
+        )) {
+      return;
+    }
     sneakAttackUsedThisTurn = true;
     final expression = DiceExpression(
-      diceCount: character.sneakAttackDice * (critical ? 2 : 1),
+      diceCount:
+          (character.sneakAttackDice - selection.diceCost) * (critical ? 2 : 1),
       dieSides: 6,
     );
     final roll = expression.roll('Sneak Attack', diceRoller);
     addRollNotice(
       title: critical ? 'Sneak Attack Critical Damage' : 'Sneak Attack Damage',
-      calculation:
-          '${expression.notation}: ${roll.dice.join(' + ')} = ${roll.total}',
+      calculation: roll.dice.isEmpty
+          ? 'All Sneak Attack dice traded for Cunning Strike · 0 damage'
+          : '${expression.notation}: ${roll.dice.join(' + ')} = ${roll.total}',
       total: roll.total,
       tone: RollNoticeTone.damage,
       detail:
           'Add to this hit’s ${weapon.damageType ?? 'weapon'} damage before applying resistance.',
     );
+    for (final effect in selection.effects) {
+      await resolveCunningStrike(effect);
+      if (!mounted) return;
+    }
   }
 
   Future<void> confirmNewSneakAttackTurn() async {
-    if (currentMode != CharacterMode.combat || !sneakAttackUsedThisTurn) return;
+    if (currentMode != CharacterMode.combat ||
+        (!sneakAttackUsedThisTurn &&
+            !characterState.activeConditions.contains(steadyAimCondition))) {
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Another creature’s turn'),
         content: const Text(
-          'Confirm that a different creature’s turn has begun since your last Sneak Attack. '
-          'This only refreshes Sneak Attack eligibility. It does not restore your Action, Bonus Action, or Reaction.',
+          'Confirm that a different creature’s turn has begun. This refreshes Sneak Attack and ends Steady Aim. '
+          'It does not restore your Action, Bonus Action, or Reaction.',
         ),
         actions: [
           TextButton(
@@ -2863,16 +3016,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
     if (!mounted ||
         confirmed != true ||
         currentMode != CharacterMode.combat ||
-        !sneakAttackUsedThisTurn) {
+        (!sneakAttackUsedThisTurn &&
+            !characterState.activeConditions.contains(steadyAimCondition))) {
       return;
     }
-    setState(() => sneakAttackUsedThisTurn = false);
-    recordSessionEvent(
-      SessionEventType.combat,
-      'Sneak Attack · New creature turn',
-      detail:
-          'Player confirmed a new turn. Action and Reaction availability are unchanged.',
-    );
+    beginAnotherCreatureTurn();
   }
 
   Future<void> rollDamage(
@@ -4829,6 +4977,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
       sneakAttackUsedThisTurn = false;
+      steadyAimAttackPending = false;
       attackActionAttacksRemaining = 0;
       readiedAction = null;
       readiedEffect = null;
@@ -4925,17 +5074,42 @@ class _CharacterOverviewState extends State<CharacterOverview>
       !usedCombatActions.contains(CombatActionCost.action) ||
       actionSurge == ActionSurgeState.available;
 
-  Future<void> chooseCombatAction({bool asBonusAction = false}) async {
+  bool get hasFastHands =>
+      character.levelInClass('Rogue') >= 3 &&
+      character.subclasses['Rogue'] == 'Thief';
+
+  bool get hasThievesTools => inventory.any(
+    (item) =>
+        item.quantity > 0 &&
+        item.name.toLowerCase().replaceAll(RegExp('[^a-z]'), '') ==
+            'thievestools',
+  );
+
+  Future<void> chooseCombatAction({
+    bool asBonusAction = false,
+    bool fastHands = false,
+  }) async {
     bool canUse() =>
         characterState.canConcentrate &&
         (asBonusAction
-            ? character.levelInClass('Rogue') >= 2 &&
+            ? (fastHands
+                      ? hasFastHands
+                      : character.levelInClass('Rogue') >= 2) &&
                   !usedCombatActions.contains(CombatActionCost.bonusAction)
-            : canUseNonMagicAction);
+            : !fastHands && canUseNonMagicAction);
     if (!canUse()) {
       return;
     }
+    final prefix = fastHands
+        ? 'Fast Hands · '
+        : asBonusAction
+        ? 'Cunning Action · '
+        : '';
     const actions = {
+      'Pick a pocket': 'Roll Dexterity (Sleight of Hand).',
+      'Pick a lock / disarm trap':
+          'Requires carried Thieves’ Tools; roll Dexterity (Sleight of Hand).',
+      'Magic Item': 'Take the Magic action to use a qualifying magic item.',
       'Dash': 'Gain extra movement this turn.',
       'Disengage': 'Your movement avoids opportunity attacks this turn.',
       'Dodge': 'Gain defensive benefits until your next turn.',
@@ -4950,19 +5124,48 @@ class _CharacterOverviewState extends State<CharacterOverview>
     final choice = await showDialog<String>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: Text(asBonusAction ? 'Cunning Action' : 'Use an Action'),
+        title: Text(
+          fastHands
+              ? 'Fast Hands'
+              : asBonusAction
+              ? 'Cunning Action'
+              : 'Use an Action',
+        ),
         children: [
           for (final action in actions.entries)
-            if (!asBonusAction ||
-                const {'Dash', 'Disengage', 'Hide'}.contains(action.key))
+            if (fastHands
+                ? const {
+                    'Pick a pocket',
+                    'Pick a lock / disarm trap',
+                    'Utilize',
+                    'Magic Item',
+                  }.contains(action.key)
+                : asBonusAction
+                ? const {'Dash', 'Disengage', 'Hide'}.contains(action.key)
+                : !const {
+                    'Pick a pocket',
+                    'Pick a lock / disarm trap',
+                    'Magic Item',
+                  }.contains(action.key))
               SimpleDialogOption(
-                onPressed: () => Navigator.pop(context, action.key),
+                onPressed:
+                    action.key == 'Pick a lock / disarm trap' &&
+                        !hasThievesTools
+                    ? null
+                    : () => Navigator.pop(context, action.key),
                 child: ListTile(
+                  enabled:
+                      action.key != 'Pick a lock / disarm trap' ||
+                      hasThievesTools,
                   contentPadding: EdgeInsets.zero,
                   title: Text(action.key),
                   subtitle: Text(action.value),
                 ),
               ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
         ],
       ),
     );
@@ -4974,6 +5177,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
     String? actionDetail;
     Skill? actionSkill;
     final applicableSkills = switch (choice) {
+      'Pick a pocket' ||
+      'Pick a lock / disarm trap' => const {'sleight_of_hand'},
       'Hide' => const {'stealth'},
       'Search' => const {'insight', 'medicine', 'perception', 'survival'},
       'Study' => const {
@@ -5021,21 +5226,35 @@ class _CharacterOverviewState extends State<CharacterOverview>
         actionSkill = skills.where((skill) => skill.id == skillId).firstOrNull;
       }
     }
-    if (choice == 'Utilize') {
+    if (choice == 'Pick a lock / disarm trap' && !hasThievesTools) return;
+    if (choice == 'Utilize' || choice == 'Magic Item') {
       final items = inventory.where((item) => item.quantity > 0).toList();
       actionDetail = await showDialog<String>(
         context: context,
         builder: (context) => SimpleDialog(
-          title: const Text('Use an item'),
+          title: Text(
+            choice == 'Magic Item' ? 'Use a magic item' : 'Use an item',
+          ),
           children: [
+            if (choice == 'Magic Item')
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'Confirm the item requires a Magic action. Resolve its requirements, charges and effects at the table.',
+                ),
+              ),
             for (final item in items)
               SimpleDialogOption(
                 onPressed: () => Navigator.pop(context, item.name),
                 child: Text(item.name),
               ),
             SimpleDialogOption(
-              onPressed: () =>
-                  Navigator.pop(context, 'Object used at the table'),
+              onPressed: () => Navigator.pop(
+                context,
+                choice == 'Magic Item'
+                    ? 'Magic item used at the table'
+                    : 'Object used at the table',
+              ),
               child: const Text('Use another object'),
             ),
           ],
@@ -5175,15 +5394,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
     }
     recordSessionEvent(
       SessionEventType.combat,
-      asBonusAction ? 'Cunning Action · $choice' : '$choice used',
+      asBonusAction ? '$prefix$choice' : '$choice used',
       detail: plan ?? actionDetail,
     );
     if (actionSkill != null) {
       final check = characterForPhysicalChecks.checkFor(actionSkill);
       tacticalMindCheck = rollSkillCheck(
         check,
-        label:
-            '${asBonusAction ? 'Cunning Action · ' : ''}$choice · ${actionSkill.name}',
+        label: '$prefix$choice · ${actionSkill.name}',
         describe: choice == 'Hide'
             ? (roll) => roll.total >= 15
                   ? 'Meets DC 15 · Confirm hiding conditions with the GM'
@@ -5211,6 +5429,39 @@ class _CharacterOverviewState extends State<CharacterOverview>
         ),
       );
       return;
+    }
+    if (weapon != null &&
+        characterState.activeConditions.contains(steadyAimCondition)) {
+      final sameTurn = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Steady Aim · Reaction turn'),
+          content: const Text(
+            'Is this readied attack on your own current turn? Steady Aim expires when that turn ends.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Another creature’s turn'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Same turn'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted ||
+          sameTurn == null ||
+          !characterState.canConcentrate ||
+          usedCombatActions.contains(CombatActionCost.reaction)) {
+        return;
+      }
+      if (!sameTurn) beginAnotherCreatureTurn();
     }
     bool? packTactics;
     if (weapon?.id == 'wild-shape-wolf') {
@@ -5266,6 +5517,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
       sneakAttackUsedThisTurn = false;
+      steadyAimAttackPending = false;
       attackActionAttacksRemaining = 0;
       readiedAction = null;
       readiedEffect = null;
@@ -5318,6 +5570,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       dashingCondition,
       disengagingCondition,
       naturesSanctuaryCondition,
+      steadyAimCondition,
     };
     if (ended.activeConditions.any(turnEffects.contains)) {
       ended = ended.copyWith(
@@ -5338,6 +5591,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
       sneakAttackUsedThisTurn = false;
+      steadyAimAttackPending = false;
       attackActionAttacksRemaining = 0;
       readiedAction = null;
       readiedEffect = null;
@@ -5596,6 +5850,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onChooseCombatAction: chooseCombatAction,
       sneakAttackUsedThisTurn: sneakAttackUsedThisTurn,
       onNewSneakAttackTurn: confirmNewSneakAttackTurn,
+      onSteadyAim: character.levelInClass('Rogue') >= 3 ? useSteadyAim : null,
+      onFastHands: hasFastHands
+          ? () => chooseCombatAction(asBonusAction: true, fastHands: true)
+          : null,
       onCunningAction: character.levelInClass('Rogue') >= 2
           ? () => chooseCombatAction(asBonusAction: true)
           : null,

@@ -7,6 +7,7 @@ const disengagingCondition = 'Disengaging';
 const naturesSanctuaryCondition = 'Nature’s Sanctuary';
 const freedomOfMovementCondition = 'Freedom of Movement';
 const divineSenseCondition = 'Divine Sense';
+const steadyAimCondition = 'Steady Aim';
 
 enum IncomingDamageType {
   other('Other or unspecified'),
