@@ -7,6 +7,7 @@ const rageResourceId = 'whetstone:class:rage';
 const secondWindResourceId = 'whetstone:class:second-wind';
 const indomitableResourceId = 'whetstone:class:indomitable';
 const actionSurgeResourceId = 'whetstone:class:action-surge';
+const focusResourceId = 'whetstone:class:focus';
 const wildShapeResourceId = 'whetstone:class:wild-shape';
 const bardicInspirationResourceId = 'whetstone:class:bardic-inspiration';
 const layOnHandsResourceId = 'whetstone:class:lay-on-hands';
@@ -18,6 +19,7 @@ const progressingClassResourceIds = {
   secondWindResourceId,
   indomitableResourceId,
   actionSurgeResourceId,
+  focusResourceId,
   wildShapeResourceId,
   bardicInspirationResourceId,
   layOnHandsResourceId,
@@ -216,6 +218,14 @@ enum BuiltInClass {
       _ => null,
     };
     return [
+      if (this == monk && level >= 2)
+        CharacterResource(
+          id: focusResourceId,
+          name: 'Focus Points',
+          maximum: level,
+          initialValue: level,
+          rechargePeriod: RechargePeriod.shortRest,
+        ),
       if (personalResource case (final id, final name, final uses))
         CharacterResource(
           id: id,

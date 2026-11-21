@@ -113,6 +113,23 @@ class _CharacterOverviewState extends State<CharacterOverview>
   void initState() {
     super.initState();
     character = widget.character;
+    if (character.levelInClass('Monk') >= 2 &&
+        !character.resources.any(
+          (resource) => resource.id == focusResourceId,
+        )) {
+      character = character.copyWith(
+        resources: [
+          ...character.resources,
+          ...BuiltInClass.monk.classResources(
+            character.levelInClass('Monk'),
+            charismaModifier: 0,
+          ),
+        ],
+      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onCharacterChanged(character);
+      });
+    }
     diceRoller = widget.diceRoller ?? RandomDiceRoller();
     characterState = widget.initialSession.characterState;
     combatRound = widget.initialSession.isInCombat
@@ -2321,17 +2338,132 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
-  Future<void> useUnarmedStrike() async {
+  Future<void> useMonkMovement() async {
+    bool canUse() =>
+        mounted &&
+        currentMode == CharacterMode.combat &&
+        character.levelInClass('Monk') >= 2 &&
+        characterState.canConcentrate &&
+        !usedCombatActions.contains(CombatActionCost.bonusAction);
+    if (!canUse()) return;
+    final focus = character.resources
+        .where((resource) => resource.id == focusResourceId)
+        .firstOrNull;
+    final choice = await showDialog<int>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Monk’s Focus · Movement and defense'),
+        children: [
+          for (final (index, label) in [
+            (0, 'Patient Defense · Disengage (free)'),
+            (1, 'Patient Defense · Disengage + Dodge (1 Focus)'),
+            (2, 'Step of the Wind · Dash (free)'),
+            (3, 'Step of the Wind · Dash + Disengage (1 Focus)'),
+          ])
+            SimpleDialogOption(
+              onPressed:
+                  index.isOdd && (focus == null || remainingUses(focus) < 1)
+                  ? null
+                  : () => Navigator.pop(context, index),
+              child: Text(label),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (choice == null || !canUse()) return;
+    if (choice.isOdd && (focus == null || remainingUses(focus) < 1)) return;
+    final heightened = character.levelInClass('Monk') >= 10;
+    final temporaryHp = choice == 1 && heightened
+        ? DiceExpression(
+            diceCount: 2,
+            dieSides: character.martialArtsDieSides,
+          ).roll('Heightened Patient Defense', diceRoller)
+        : null;
+    final effects = <String>{
+      if (choice < 2 || choice == 3) disengagingCondition,
+      if (choice == 1) dodgingCondition,
+      if (choice >= 2) dashingCondition,
+    };
+    usedCombatActions.add(CombatActionCost.bonusAction);
+    updateCharacterState(
+      characterState.copyWith(
+        temporaryHp:
+            temporaryHp == null ||
+                temporaryHp.total < characterState.temporaryHp
+            ? characterState.temporaryHp
+            : temporaryHp.total,
+        activeConditions: {...characterState.activeConditions, ...effects},
+        conditionTurns: {
+          ...characterState.conditionTurns,
+          for (final effect in effects) effect: 1,
+        },
+        resourceValues: {
+          ...characterState.resourceValues,
+          if (choice.isOdd) focus!.id: remainingUses(focus) - 1,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.combat,
+      choice < 2 ? 'Patient Defense' : 'Step of the Wind',
+      detail:
+          '${effects.join(' + ')} until your next turn. ${choice == 3 ? 'Jump distance doubled for this turn. ' : ''}'
+          '${choice == 1 ? 'Visible attackers have Disadvantage; Dexterity saves have Advantage while Dodge remains eligible. ' : ''}'
+          '${temporaryHp == null ? '' : 'Heightened Focus rolled ${temporaryHp.dice.join(' + ')} = ${temporaryHp.total} Temporary HP; keep the larger pool. '}'
+          '${choice == 3 && heightened ? 'You may move one willing Large or smaller creature within 5 feet with you this turn, without opportunity attacks against it. ' : ''}'
+          '${choice.isOdd ? 'Spent 1 Focus Point.' : 'No Focus Point spent.'} Movement and jumping are resolved at the table.',
+    );
+  }
+
+  Future<void> useUnarmedStrike({bool asBonusAction = false}) async {
+    final monk = character.martialArtsDieSides > 0;
     bool canUse() =>
         mounted &&
         currentMode == CharacterMode.combat &&
         activeWildShape == null &&
-        canUseAttackAction;
+        characterState.canConcentrate &&
+        (asBonusAction
+            ? monk && !usedCombatActions.contains(CombatActionCost.bonusAction)
+            : canUseAttackAction);
     if (!canUse()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No Attack action attacks remaining.')),
       );
       return;
+    }
+    var martialArts = false;
+    if (monk) {
+      final eligible = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Martial Arts eligibility'),
+          content: const Text(
+            'Confirm you are unarmed or wielding only Monk weapons, wearing no armor and wielding no Shield. '
+            'Monk weapons are Simple Melee weapons and Light Martial Melee weapons. Equipment in your pack does not establish what you are wielding.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            if (!asBonusAction)
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Basic strike'),
+              ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Eligible · Use Martial Arts'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || eligible == null || !canUse()) return;
+      martialArts = eligible;
     }
     final choice = await showDialog<String>(
       context: context,
@@ -2343,7 +2475,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
             child: Text(
               'Choose an effect against a target within 5 feet. Grapple needs a free hand. '
               'Grapple and Shove require a target no more than one size larger than you. '
-              'Confirm eligibility at the table. These are basic Strength-based options.',
+              'Confirm target eligibility at the table. Martial Arts can use Dexterity for attacks, damage and the save DC.',
             ),
           ),
           for (final option in [
@@ -2364,13 +2496,22 @@ class _CharacterOverviewState extends State<CharacterOverview>
       ),
     );
     if (!mounted || choice == null || !canUse()) return;
-    spendAttackActionAttack();
+    if (asBonusAction) {
+      setState(() => usedCombatActions.add(CombatActionCost.bonusAction));
+      publishSession();
+    } else {
+      spendAttackActionAttack();
+    }
     if (characterState.isRaging) extendRage();
     final strength = character.abilityModifierFor(Ability.strength);
+    final dexterity = character.abilityModifierFor(Ability.dexterity);
+    final useDexterity = martialArts && dexterity > strength;
+    final modifier = useDexterity ? dexterity : strength;
+    final abilityLabel = useDexterity ? 'Dexterity' : 'Strength';
     if (choice == 'Damage') {
       final attack = rollCheck(
         'Unarmed Strike Attack',
-        strength + character.proficiencyBonus,
+        modifier + character.proficiencyBonus,
         criticalThreshold: character.weaponCriticalThreshold,
         hasAdvantage: consumeSteadyAimAdvantage(),
       );
@@ -2384,7 +2525,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
               'You can move up to half your Speed without provoking opportunity attacks.',
         );
       }
-      final hit = await showDialog<bool>(
+      final hit = await showDialog<String>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Unarmed Strike result'),
@@ -2395,28 +2536,44 @@ class _CharacterOverviewState extends State<CharacterOverview>
               child: const Text('Miss'),
             ),
             FilledButton(
-              onPressed: () => Navigator.pop(context, true),
+              onPressed: () => Navigator.pop(context, 'bludgeoning'),
               child: const Text('Hit · Apply unarmed damage'),
             ),
+            if (character.levelInClass('Monk') >= 6)
+              FilledButton(
+                onPressed: () => Navigator.pop(context, 'force'),
+                child: const Text('Hit · Empowered Strike (Force)'),
+              ),
           ],
         ),
       );
-      if (!mounted || hit != true) return;
-      final rage = characterState.isRaging ? character.rageDamageBonus : 0;
-      final damage = (1 + strength + rage).clamp(0, 999999);
+      if (!mounted || hit == null) return;
+      final rage = characterState.isRaging && !useDexterity
+          ? character.rageDamageBonus
+          : 0;
+      final critical = attack.naturalRoll >= character.weaponCriticalThreshold;
+      final dice = martialArts
+          ? DiceExpression(
+              diceCount: critical ? 2 : 1,
+              dieSides: character.martialArtsDieSides,
+            ).roll('Martial Arts', diceRoller)
+          : null;
+      final base = dice?.total ?? 1;
+      final damage = (base + modifier + rage).clamp(0, 999999);
       addRollNotice(
         title: 'Unarmed Strike Damage',
-        calculation: '1 + $strength Strength modifier + $rage Rage = $damage',
+        calculation:
+            '${dice == null ? '1' : '${critical ? 2 : 1}d${character.martialArtsDieSides} (${dice.dice.join(' + ')})'} + $modifier $abilityLabel modifier + $rage Rage = $damage',
         total: damage,
         tone: RollNoticeTone.damage,
-        detail: 'bludgeoning',
+        detail: hit,
       );
       rollRadiantStrikes(
         critical: attack.naturalRoll >= character.weaponCriticalThreshold,
       );
       return;
     }
-    final dc = 8 + strength + character.proficiencyBonus;
+    final dc = 8 + modifier + character.proficiencyBonus;
     final effect = choice == 'Grapple'
         ? 'Target Grappled (escape DC $dc).'
         : choice == 'Shove · Prone'
@@ -5825,6 +5982,13 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onActionDetails: showActionDetails,
       onAttackRoll: rollAttack,
       onUnarmedStrike: activeWildShape == null ? useUnarmedStrike : null,
+      onMonkMovement: character.levelInClass('Monk') >= 2
+          ? useMonkMovement
+          : null,
+      onBonusUnarmedStrike:
+          activeWildShape == null && character.martialArtsDieSides > 0
+          ? () => useUnarmedStrike(asBonusAction: true)
+          : null,
       ammunitionLabel: ammunitionLabel,
       onDamageRoll: rollDamage,
       onDeathSaveRoll: rollDeathSave,

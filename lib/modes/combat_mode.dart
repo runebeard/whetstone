@@ -26,6 +26,8 @@ class CombatModeView extends StatelessWidget {
   final ValueChanged<CharacterAction> onActionDetails;
   final ValueChanged<CharacterAction> onAttackRoll;
   final VoidCallback? onUnarmedStrike;
+  final VoidCallback? onMonkMovement;
+  final VoidCallback? onBonusUnarmedStrike;
   final String? Function(CharacterAction)? ammunitionLabel;
   final ValueChanged<CharacterAction> onDamageRoll;
   final VoidCallback? onDeathSaveRoll;
@@ -68,6 +70,8 @@ class CombatModeView extends StatelessWidget {
     required this.onActionDetails,
     required this.onAttackRoll,
     this.onUnarmedStrike,
+    this.onMonkMovement,
+    this.onBonusUnarmedStrike,
     this.ammunitionLabel,
     required this.onDamageRoll,
     this.onDeathSaveRoll,
@@ -121,6 +125,24 @@ class CombatModeView extends StatelessWidget {
           OutlinedButton(
             onPressed: onUnarmedStrike,
             child: const Text('Unarmed Strike'),
+          ),
+        if (title == 'Attacks' && onBonusUnarmedStrike != null)
+          OutlinedButton(
+            onPressed:
+                !characterState.canConcentrate ||
+                    usedCombatActions.contains(CombatActionCost.bonusAction)
+                ? null
+                : onBonusUnarmedStrike,
+            child: const Text('Martial Arts · Bonus Unarmed Strike'),
+          ),
+        if (title == 'Attacks' && onMonkMovement != null)
+          OutlinedButton(
+            onPressed:
+                !characterState.canConcentrate ||
+                    usedCombatActions.contains(CombatActionCost.bonusAction)
+                ? null
+                : onMonkMovement,
+            child: const Text('Monk’s Focus · Movement and defense'),
           ),
         if (title == 'Attacks' && attackActionStatus != null)
           Text(attackActionStatus!),
