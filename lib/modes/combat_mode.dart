@@ -54,6 +54,10 @@ class CombatModeView extends StatelessWidget {
   final VoidCallback? onSelfRestoration;
   final VoidCallback? onMonkDefense;
   final VoidCallback? onSuperiorDefense;
+  final VoidCallback? onFleetStep;
+  final bool canUseFleetStep;
+  final bool fleetStepUsedThisTurn;
+  final bool stepOfWindUsedThisTurn;
   final VoidCallback? onStunningStrike;
   final bool stunningStrikeUsedThisTurn;
   final bool sneakAttackUsedThisTurn;
@@ -106,6 +110,10 @@ class CombatModeView extends StatelessWidget {
     this.onSelfRestoration,
     this.onMonkDefense,
     this.onSuperiorDefense,
+    this.onFleetStep,
+    this.canUseFleetStep = false,
+    this.fleetStepUsedThisTurn = false,
+    this.stepOfWindUsedThisTurn = false,
     this.onStunningStrike,
     this.stunningStrikeUsedThisTurn = false,
     this.sneakAttackUsedThisTurn = false,
@@ -141,6 +149,11 @@ class CombatModeView extends StatelessWidget {
           OutlinedButton(
             onPressed: onUnarmedStrike,
             child: const Text('Unarmed Strike'),
+          ),
+        if (title == 'Attacks' && onFleetStep != null)
+          OutlinedButton(
+            onPressed: canUseFleetStep ? onFleetStep : null,
+            child: const Text('Fleet Step · Follow Bonus Action'),
           ),
         if (title == 'Attacks' && onSuperiorDefense != null)
           OutlinedButton(

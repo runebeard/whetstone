@@ -405,6 +405,8 @@ class _CharacterVaultState extends State<CharacterVault> {
       steadyAimAttackPending: session.steadyAimAttackPending,
       selfRestorationUsedThisTurn: session.selfRestorationUsedThisTurn,
       stunningStrikeUsedThisTurn: session.stunningStrikeUsedThisTurn,
+      fleetStepUsedThisTurn: session.fleetStepUsedThisTurn,
+      stepOfWindUsedThisTurn: session.stepOfWindUsedThisTurn,
       flurryAttacksRemaining: session.flurryAttacksRemaining,
       attackActionAttacksRemaining: session.attackActionAttacksRemaining,
       timeline: session.timeline,

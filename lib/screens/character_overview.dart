@@ -91,6 +91,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
   bool steadyAimAttackPending = false;
   bool selfRestorationUsedThisTurn = false;
   bool stunningStrikeUsedThisTurn = false;
+  bool fleetStepUsedThisTurn = false;
+  bool stepOfWindUsedThisTurn = false;
   int flurryAttacksRemaining = 0;
   int attackActionAttacksRemaining = 0;
   CheckRoll? tacticalMindCheck;
@@ -142,6 +144,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
         ? widget.initialSession.combatRound
         : 1;
     if (widget.initialSession.isInCombat) {
+      fleetStepUsedThisTurn = widget.initialSession.fleetStepUsedThisTurn;
+      stepOfWindUsedThisTurn = widget.initialSession.stepOfWindUsedThisTurn;
       combatInitiative = widget.initialSession.combatInitiative;
       readiedAction = widget.initialSession.readiedAction;
       readiedEffect = widget.initialSession.readiedEffect;
@@ -239,6 +243,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
         steadyAimAttackPending: steadyAimAttackPending,
         selfRestorationUsedThisTurn: selfRestorationUsedThisTurn,
         stunningStrikeUsedThisTurn: stunningStrikeUsedThisTurn,
+        fleetStepUsedThisTurn: fleetStepUsedThisTurn,
+        stepOfWindUsedThisTurn: stepOfWindUsedThisTurn,
         flurryAttacksRemaining: flurryAttacksRemaining,
         attackActionAttacksRemaining: attackActionAttacksRemaining,
         timeline: [...timeline],
@@ -2663,6 +2669,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void beginAnotherCreatureTurn() {
+    fleetStepUsedThisTurn = true;
     sneakAttackUsedThisTurn = false;
     stunningStrikeUsedThisTurn = false;
     flurryAttacksRemaining = 0;
@@ -2784,13 +2791,24 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
-  Future<void> useMonkMovement() async {
+  bool get canUseFleetStep =>
+      currentMode == CharacterMode.combat &&
+      character.levelInClass('Monk') >= 11 &&
+      character.subclasses['Monk'] == 'Warrior of the Open Hand' &&
+      characterState.canConcentrate &&
+      usedCombatActions.contains(CombatActionCost.bonusAction) &&
+      !fleetStepUsedThisTurn &&
+      !stepOfWindUsedThisTurn;
+
+  Future<void> useMonkMovement({bool asFleetStep = false}) async {
     bool canUse() =>
         mounted &&
         currentMode == CharacterMode.combat &&
         character.levelInClass('Monk') >= 2 &&
         characterState.canConcentrate &&
-        !usedCombatActions.contains(CombatActionCost.bonusAction);
+        (asFleetStep
+            ? canUseFleetStep
+            : !usedCombatActions.contains(CombatActionCost.bonusAction));
     if (!canUse()) return;
     final focus = character.resources
         .where((resource) => resource.id == focusResourceId)
@@ -2798,21 +2816,33 @@ class _CharacterOverviewState extends State<CharacterOverview>
     final choice = await showDialog<int>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: const Text('Monk’s Focus · Movement and defense'),
+        title: Text(
+          asFleetStep
+              ? 'Fleet Step · Immediate follow-up'
+              : 'Monk’s Focus · Movement and defense',
+        ),
         children: [
+          if (asFleetStep)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'Confirm you just completed a Bonus Action other than Step of the Wind on your turn. Use Step of the Wind immediately afterward, without spending another Bonus Action.',
+              ),
+            ),
           for (final (index, label) in [
             (0, 'Patient Defense · Disengage (free)'),
             (1, 'Patient Defense · Disengage + Dodge (1 Focus)'),
             (2, 'Step of the Wind · Dash (free)'),
             (3, 'Step of the Wind · Dash + Disengage (1 Focus)'),
           ])
-            SimpleDialogOption(
-              onPressed:
-                  index.isOdd && (focus == null || remainingUses(focus) < 1)
-                  ? null
-                  : () => Navigator.pop(context, index),
-              child: Text(label),
-            ),
+            if (!asFleetStep || index >= 2)
+              SimpleDialogOption(
+                onPressed:
+                    index.isOdd && (focus == null || remainingUses(focus) < 1)
+                    ? null
+                    : () => Navigator.pop(context, index),
+                child: Text(label),
+              ),
           SimpleDialogOption(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
@@ -2822,6 +2852,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
     if (choice == null || !canUse()) return;
     if (choice.isOdd && (focus == null || remainingUses(focus) < 1)) return;
+    if (asFleetStep) fleetStepUsedThisTurn = true;
+    if (choice >= 2) stepOfWindUsedThisTurn = true;
     final heightened = character.levelInClass('Monk') >= 10;
     final temporaryHp = choice == 1 && heightened
         ? DiceExpression(
@@ -2855,7 +2887,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
     recordSessionEvent(
       SessionEventType.combat,
-      choice < 2 ? 'Patient Defense' : 'Step of the Wind',
+      asFleetStep
+          ? 'Fleet Step'
+          : choice < 2
+          ? 'Patient Defense'
+          : 'Step of the Wind',
       detail:
           '${effects.join(' + ')} until your next turn. ${choice == 3 ? 'Jump distance doubled for this turn. ' : ''}'
           '${choice == 1 ? 'Visible attackers have Disadvantage; Dexterity saves have Advantage while Dodge remains eligible. ' : ''}'
@@ -5851,6 +5887,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       steadyAimAttackPending = false;
       attackActionAttacksRemaining = 0;
       selfRestorationUsedThisTurn = false;
+      fleetStepUsedThisTurn = false;
+      stepOfWindUsedThisTurn = false;
       readiedAction = null;
       readiedEffect = null;
     });
@@ -6467,6 +6505,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       steadyAimAttackPending = false;
       attackActionAttacksRemaining = 0;
       selfRestorationUsedThisTurn = false;
+      fleetStepUsedThisTurn = false;
+      stepOfWindUsedThisTurn = false;
       readiedAction = null;
       readiedEffect = null;
     });
@@ -6544,6 +6584,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       steadyAimAttackPending = false;
       attackActionAttacksRemaining = 0;
       selfRestorationUsedThisTurn = false;
+      fleetStepUsedThisTurn = false;
+      stepOfWindUsedThisTurn = false;
       readiedAction = null;
       readiedEffect = null;
     });
@@ -6786,6 +6828,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onActionDetails: showActionDetails,
       onAttackRoll: rollAttack,
       onUnarmedStrike: activeWildShape == null ? useUnarmedStrike : null,
+      onFleetStep:
+          character.levelInClass('Monk') >= 11 &&
+              character.subclasses['Monk'] == 'Warrior of the Open Hand'
+          ? () => useMonkMovement(asFleetStep: true)
+          : null,
+      canUseFleetStep: canUseFleetStep,
       onSuperiorDefense: character.levelInClass('Monk') >= 18
           ? useSuperiorDefense
           : null,
