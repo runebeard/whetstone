@@ -150,8 +150,35 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
   int improvedScore(Ability ability) =>
       widget.character.scoreFor(ability) + (abilityIncreases[ability] ?? 0);
 
+  bool get grantsBodyAndMind {
+    if (widget.character.features.any(
+      (feature) => feature.id == 'whetstone:class:body-and-mind',
+    )) {
+      return false;
+    }
+    final target = int.tryParse(levelController.text) ?? 0;
+    if (target > 20 || widget.character.levelInClass('Monk') >= 20) {
+      return false;
+    }
+    final monk = widget.character.characterClass == 'Monk'
+        ? target -
+              classAllocation.values.fold<int>(0, (sum, value) => sum + value)
+        : classAllocation['Monk'] ?? 0;
+    return monk >= 20;
+  }
+
+  int finalScore(Ability ability) {
+    final score = improvedScore(ability);
+    if (!grantsBodyAndMind ||
+        !{Ability.dexterity, Ability.wisdom}.contains(ability) ||
+        score >= 25) {
+      return score;
+    }
+    return (score + 4).clamp(0, 25);
+  }
+
   int modifierChange(Ability ability) =>
-      ((improvedScore(ability) - 10) / 2).floor() -
+      ((finalScore(ability) - 10) / 2).floor() -
       widget.character.abilityModifierFor(ability);
 
   Future<void> chooseAbilityImprovement() async {
@@ -308,7 +335,7 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
     final primaryLevel =
         level - allocation.values.fold<int>(0, (sum, value) => sum + value);
     final charisma = ((improvedScore(Ability.charisma) - 10) / 2).floor();
-    final wisdom = ((improvedScore(Ability.wisdom) - 10) / 2).floor();
+    final wisdom = ((finalScore(Ability.wisdom) - 10) / 2).floor();
     final generated = [
       ...primary.classResources(
         primaryLevel,
@@ -406,8 +433,7 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
         maxHp: maximumHp,
         abilityScores: {
           ...current.abilityScores,
-          for (final ability in abilityIncreases.keys)
-            ability: improvedScore(ability),
+          for (final ability in Ability.values) ability: finalScore(ability),
         },
         initiativeModifier:
             current.initiativeModifier + modifierChange(Ability.dexterity),
@@ -416,7 +442,16 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
         weapons: [...weapons],
         resources: updatedResources(level, allocation),
         initialInventory: [...inventory],
-        features: [...features],
+        features: [
+          ...features,
+          if (grantsBodyAndMind)
+            const Feature(
+              id: 'whetstone:class:body-and-mind',
+              name: 'Body and Mind',
+              summary:
+                  'Monk level 20: Dexterity and Wisdom increased by 4, capped at 25. The score increases have already been applied.',
+            ),
+        ],
         initiallyPinnedActionKeys: {...pinnedActionKeys},
       ),
     );
@@ -596,6 +631,10 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
                         ],
                         onChanged: (choice) =>
                             setState(() => elementalFury = choice),
+                      ),
+                    if (grantsBodyAndMind)
+                      const Text(
+                        'Body and Mind · +4 Dexterity and Wisdom, to a maximum of 25. Applied once when reaching Monk level 20. Recalculate equipment-dependent AC afterward.',
                       ),
                     if (abilityIncreases.isNotEmpty) ...[
                       Text(
