@@ -31,6 +31,7 @@ class CharacterSession {
   final bool nickUsedThisTurn;
   final bool sneakAttackUsedThisTurn;
   final bool steadyAimAttackPending;
+  final bool selfRestorationUsedThisTurn;
   final int flurryAttacksRemaining;
   final int attackActionAttacksRemaining;
   final List<SessionEvent> timeline;
@@ -52,6 +53,7 @@ class CharacterSession {
     this.nickUsedThisTurn = false,
     this.sneakAttackUsedThisTurn = false,
     this.steadyAimAttackPending = false,
+    this.selfRestorationUsedThisTurn = false,
     this.flurryAttacksRemaining = 0,
     this.attackActionAttacksRemaining = 0,
     this.timeline = const [],
@@ -84,6 +86,8 @@ class CharacterSession {
       if (isInCombat && nickUsedThisTurn) 'nickUsedThisTurn': true,
       if (isInCombat && sneakAttackUsedThisTurn)
         'sneakAttackUsedThisTurn': true,
+      if (isInCombat && selfRestorationUsedThisTurn)
+        'selfRestorationUsedThisTurn': true,
       if (isInCombat && steadyAimAttackPending) 'steadyAimAttackPending': true,
       if (isInCombat && flurryAttacksRemaining > 0)
         'flurryAttacksRemaining': flurryAttacksRemaining,
@@ -125,6 +129,8 @@ class CharacterSession {
       sneakAttackUsedThisTurn:
           json['sneakAttackUsedThisTurn'] as bool? ?? false,
       steadyAimAttackPending: json['steadyAimAttackPending'] as bool? ?? false,
+      selfRestorationUsedThisTurn:
+          json['selfRestorationUsedThisTurn'] as bool? ?? false,
       flurryAttacksRemaining: ((json['flurryAttacksRemaining'] as int?) ?? 0)
           .clamp(0, 3),
       attackActionAttacksRemaining:

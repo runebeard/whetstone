@@ -89,6 +89,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   bool nickUsedThisTurn = false;
   bool sneakAttackUsedThisTurn = false;
   bool steadyAimAttackPending = false;
+  bool selfRestorationUsedThisTurn = false;
   int flurryAttacksRemaining = 0;
   int attackActionAttacksRemaining = 0;
   CheckRoll? tacticalMindCheck;
@@ -145,6 +146,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       cleaveUsedThisTurn = widget.initialSession.cleaveUsedThisTurn;
       nickUsedThisTurn = widget.initialSession.nickUsedThisTurn;
       sneakAttackUsedThisTurn = widget.initialSession.sneakAttackUsedThisTurn;
+      selfRestorationUsedThisTurn =
+          widget.initialSession.selfRestorationUsedThisTurn;
       flurryAttacksRemaining = widget.initialSession.flurryAttacksRemaining
           .clamp(
             0,
@@ -226,6 +229,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         nickUsedThisTurn: nickUsedThisTurn,
         sneakAttackUsedThisTurn: sneakAttackUsedThisTurn,
         steadyAimAttackPending: steadyAimAttackPending,
+        selfRestorationUsedThisTurn: selfRestorationUsedThisTurn,
         flurryAttacksRemaining: flurryAttacksRemaining,
         attackActionAttacksRemaining: attackActionAttacksRemaining,
         timeline: [...timeline],
@@ -2438,6 +2442,66 @@ class _CharacterOverviewState extends State<CharacterOverview>
         characterState.activeConditions.contains(steadyAimCondition);
     steadyAimAttackPending = false;
     return advantage;
+  }
+
+  Future<void> useSelfRestoration() async {
+    bool canUse() =>
+        mounted &&
+        currentMode == CharacterMode.combat &&
+        character.levelInClass('Monk') >= 10 &&
+        !selfRestorationUsedThisTurn;
+    if (!canUse()) return;
+    final eligible = characterState.activeConditions.intersection({
+      'Charmed',
+      'Frightened',
+      'Poisoned',
+    });
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Self-Restoration'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'Confirm this is the end of your own turn. Remove one listed condition without spending an action or Focus. You also avoid Exhaustion from forgoing food and drink; track those causes at the table.',
+            ),
+          ),
+          if (eligible.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('No eligible condition to remove.'),
+            ),
+          for (final condition in eligible)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, condition),
+              child: Text('End turn · Remove $condition'),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (choice == null ||
+        !canUse() ||
+        !characterState.activeConditions.contains(choice)) {
+      return;
+    }
+    selfRestorationUsedThisTurn = true;
+    updateCharacterState(
+      characterState.copyWith(
+        activeConditions: {...characterState.activeConditions}..remove(choice),
+        conditionTurns: {...characterState.conditionTurns}..remove(choice),
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.condition,
+      'Self-Restoration',
+      detail:
+          'Removed $choice at the confirmed end of your turn. No action or Focus spent.',
+    );
   }
 
   Future<void> useSteadyAim() async {
@@ -5510,6 +5574,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       flurryAttacksRemaining = 0;
       steadyAimAttackPending = false;
       attackActionAttacksRemaining = 0;
+      selfRestorationUsedThisTurn = false;
       readiedAction = null;
       readiedEffect = null;
     });
@@ -6124,6 +6189,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       flurryAttacksRemaining = 0;
       steadyAimAttackPending = false;
       attackActionAttacksRemaining = 0;
+      selfRestorationUsedThisTurn = false;
       readiedAction = null;
       readiedEffect = null;
     });
@@ -6199,6 +6265,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       flurryAttacksRemaining = 0;
       steadyAimAttackPending = false;
       attackActionAttacksRemaining = 0;
+      selfRestorationUsedThisTurn = false;
       readiedAction = null;
       readiedEffect = null;
     });
@@ -6472,6 +6539,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       sneakAttackUsedThisTurn: sneakAttackUsedThisTurn,
       onNewSneakAttackTurn: confirmNewSneakAttackTurn,
       onSteadyAim: character.levelInClass('Rogue') >= 3 ? useSteadyAim : null,
+      onSelfRestoration:
+          character.levelInClass('Monk') >= 10 && !selfRestorationUsedThisTurn
+          ? useSelfRestoration
+          : null,
       onFastHands: hasFastHands
           ? () => chooseCombatAction(asBonusAction: true, fastHands: true)
           : null,
