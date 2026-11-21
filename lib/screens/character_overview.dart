@@ -2674,6 +2674,52 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
+  Future<void> useMonkDefense() async {
+    final level = character.levelInClass('Monk');
+    if (level < 1 || activeWildShape != null) return;
+    final dexterity = character.abilityModifierFor(Ability.dexterity);
+    final wisdom = character.abilityModifierFor(Ability.wisdom);
+    final ac = 10 + dexterity + wisdom;
+    final movement = level >= 18
+        ? 30
+        : level >= 14
+        ? 25
+        : level >= 10
+        ? 20
+        : level >= 6
+        ? 15
+        : level >= 2
+        ? 10
+        : 0;
+    final apply = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Monk · Unarmored defense and movement'),
+        content: Text(
+          'Confirm you are wearing no armor and wielding no Shield. Base AC: 10 + $dexterity Dexterity + $wisdom Wisdom = $ac. This replaces your tracked AC; confirm any other AC bonuses separately. Unarmored Movement adds $movement feet to Speed. ${level >= 9 ? 'Acrobatic Movement lets you cross liquids and vertical surfaces on your turn without falling during that movement. ' : ''}Movement is resolved at the table. Recalculate when your equipment or ability scores change.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Unarmored · Apply AC $ac'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || apply != true || activeWildShape != null) return;
+    updateCharacterState(characterState.copyWith(armourClass: ac));
+    recordSessionEvent(
+      SessionEventType.condition,
+      'Monk Unarmored Defense',
+      detail:
+          'AC set to $ac after confirming no armor or Shield · Unarmored Movement +$movement feet. Recalculate after equipment or ability changes.',
+    );
+  }
+
   Future<void> useMonkMovement() async {
     bool canUse() =>
         mounted &&
@@ -6637,6 +6683,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       adjustIncomingDamage: adjustIncomingDamage,
       inventory: inventory,
       onBeginCombat: showBeginCombatPrompt,
+      onMonkDefense:
+          character.levelInClass('Monk') >= 1 && activeWildShape == null
+          ? useMonkDefense
+          : null,
       onWholenessOfBody: wholeness == null
           ? null
           : () => useWholenessOfBody(wholeness),
@@ -6672,6 +6722,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onActionDetails: showActionDetails,
       onAttackRoll: rollAttack,
       onUnarmedStrike: activeWildShape == null ? useUnarmedStrike : null,
+      onMonkDefense:
+          character.levelInClass('Monk') >= 1 && activeWildShape == null
+          ? useMonkDefense
+          : null,
       onStunningStrike: character.levelInClass('Monk') >= 5
           ? useStunningStrike
           : null,

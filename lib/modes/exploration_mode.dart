@@ -23,6 +23,7 @@ class ExplorationModeView extends StatelessWidget {
   final List<InventoryItem> inventory;
   final VoidCallback onBeginCombat;
   final VoidCallback? onWholenessOfBody;
+  final VoidCallback? onMonkDefense;
   final VoidCallback onAddItemFromLibrary;
   final VoidCallback onCreateCustomItem;
   final VoidCallback onRestockItem;
@@ -45,6 +46,7 @@ class ExplorationModeView extends StatelessWidget {
     required this.inventory,
     required this.onBeginCombat,
     this.onWholenessOfBody,
+    this.onMonkDefense,
     required this.onAddItemFromLibrary,
     required this.onCreateCustomItem,
     required this.onRestockItem,
@@ -90,6 +92,11 @@ class ExplorationModeView extends StatelessWidget {
             adjustIncomingDamage: adjustIncomingDamage,
           ),
           const SizedBox(height: 16),
+          if (onMonkDefense != null)
+            OutlinedButton(
+              onPressed: onMonkDefense,
+              child: const Text('Monk · Unarmored defense and movement'),
+            ),
           if (onWholenessOfBody != null)
             OutlinedButton(
               onPressed: onWholenessOfBody,

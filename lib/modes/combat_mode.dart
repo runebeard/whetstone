@@ -52,6 +52,7 @@ class CombatModeView extends StatelessWidget {
   final VoidCallback? onFastHands;
   final VoidCallback? onSteadyAim;
   final VoidCallback? onSelfRestoration;
+  final VoidCallback? onMonkDefense;
   final VoidCallback? onStunningStrike;
   final bool stunningStrikeUsedThisTurn;
   final bool sneakAttackUsedThisTurn;
@@ -102,6 +103,7 @@ class CombatModeView extends StatelessWidget {
     this.onFastHands,
     this.onSteadyAim,
     this.onSelfRestoration,
+    this.onMonkDefense,
     this.onStunningStrike,
     this.stunningStrikeUsedThisTurn = false,
     this.sneakAttackUsedThisTurn = false,
@@ -137,6 +139,11 @@ class CombatModeView extends StatelessWidget {
           OutlinedButton(
             onPressed: onUnarmedStrike,
             child: const Text('Unarmed Strike'),
+          ),
+        if (title == 'Attacks' && onMonkDefense != null)
+          OutlinedButton(
+            onPressed: onMonkDefense,
+            child: const Text('Monk · Unarmored defense and movement'),
           ),
         if (title == 'Attacks' && onSelfRestoration != null)
           OutlinedButton(
@@ -427,3 +434,4 @@ class CombatModeView extends StatelessWidget {
     );
   }
 }
+
