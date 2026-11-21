@@ -586,6 +586,7 @@ class Character {
   SavingThrowCheck savingThrowFor(Ability ability) {
     final proficient =
         savingThrowProficiencies.contains(ability) ||
+        levelInClass('Monk') >= 14 ||
         (levelInClass('Rogue') >= 15 &&
             const {Ability.wisdom, Ability.charisma}.contains(ability));
     final modifier =

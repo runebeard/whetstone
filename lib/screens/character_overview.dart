@@ -1169,17 +1169,29 @@ class _CharacterOverviewState extends State<CharacterOverview>
     }
   }
 
-  void resolveConcentrationSave(int dc) {
+  Future<void> resolveConcentrationSave(int dc) async {
+    final spellId = characterState.concentrationSpellId;
     final save = characterForPhysicalChecks.savingThrowFor(
       Ability.constitution,
     );
-    final roll = rollCheck(
+    final mode = nextRollMode;
+    var roll = rollCheck(
       'Concentration Save',
       save.modifier,
       describe: (roll) => roll.total >= dc
           ? 'DC $dc · Concentration maintained'
+          : character.levelInClass('Monk') >= 14
+          ? 'DC $dc · Failed concentration save'
           : 'DC $dc · Concentration ended',
     );
+    if (roll.total < dc) {
+      roll = await rerollWithDisciplinedSurvivor(
+        roll,
+        mode,
+        knownFailure: true,
+      );
+    }
+    if (!mounted || characterState.concentrationSpellId != spellId) return;
     if (roll.total < dc) {
       updateCharacterState(characterState.copyWith(clearConcentration: true));
     }
@@ -1887,6 +1899,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
         ? nextRollMode.withAdvantage()
         : nextRollMode;
     final roll = rollCheck(label, check.modifier, hasAdvantage: hasAdvantage);
+    if (character.levelInClass('Monk') >= 14) {
+      await rerollWithDisciplinedSurvivor(roll, originalMode);
+      return;
+    }
     final fighterLevel = character.levelInClass('Fighter');
     final resource = character.resources
         .where((resource) => resource.id == indomitableResourceId)
@@ -3724,14 +3740,20 @@ class _CharacterOverviewState extends State<CharacterOverview>
     }
   }
 
-  void rollDeathSave() {
+  Future<void> rollDeathSave() async {
     if (!characterState.canRollDeathSave) return;
     final defyDeath = character.championLevel >= 18;
-    int result(CheckRoll roll) =>
-        defyDeath && roll.naturalRoll >= 18 ? 20 : roll.naturalRoll;
-    final roll = rollCheck(
+    final survivor = character.levelInClass('Monk') >= 14;
+    int result(CheckRoll roll) => defyDeath && roll.naturalRoll >= 18
+        ? 20
+        : roll.naturalRoll == 1 || roll.naturalRoll == 20
+        ? roll.naturalRoll
+        : roll.total >= 10
+        ? 10
+        : 2;
+    var roll = rollCheck(
       'Death Save',
-      0,
+      survivor ? character.proficiencyBonus : 0,
       useSelectedMode: false,
       hasAdvantage: defyDeath,
       criticalThreshold: defyDeath ? 18 : 20,
@@ -3748,7 +3770,63 @@ class _CharacterOverviewState extends State<CharacterOverview>
         };
       },
     );
+    if (result(roll) < 10) {
+      roll = await rerollWithDisciplinedSurvivor(
+        roll,
+        defyDeath ? D20Mode.advantage : D20Mode.normal,
+        knownFailure: true,
+      );
+    }
+    if (!mounted || !characterState.canRollDeathSave) return;
     updateCharacterState(characterState.applyDeathSave(result(roll)));
+  }
+
+  Future<CheckRoll> rerollWithDisciplinedSurvivor(
+    CheckRoll original,
+    D20Mode mode, {
+    bool knownFailure = false,
+  }) async {
+    final focus = character.resources
+        .where((resource) => resource.id == focusResourceId)
+        .firstOrNull;
+    if (character.levelInClass('Monk') < 14 ||
+        focus == null ||
+        remainingUses(focus) < 1) {
+      return original;
+    }
+    final reroll = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Disciplined Survivor'),
+        content: Text(
+          '${original.label} total ${original.total}. ${knownFailure ? 'The save failed.' : 'Confirm that this save failed before rerolling.'} Spend 1 Focus Point to reroll and use the new result, even if lower.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Keep Result'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Spend 1 Focus · Reroll Failed Save'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || reroll != true || remainingUses(focus) < 1) return original;
+    updateCharacterState(
+      characterState.copyWith(
+        resourceValues: {
+          ...characterState.resourceValues,
+          focus.id: remainingUses(focus) - 1,
+        },
+      ),
+    );
+    return rollCheck(
+      '${original.label} · Disciplined Survivor',
+      original.modifier,
+      modeOverride: mode,
+    );
   }
 
   CheckRoll rollCheck(
