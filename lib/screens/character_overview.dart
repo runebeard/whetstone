@@ -118,18 +118,24 @@ class _CharacterOverviewState extends State<CharacterOverview>
   void initState() {
     super.initState();
     character = widget.character;
-    final missingMonkResources = BuiltInClass.monk
-        .classResources(
-          character.levelInClass('Monk'),
-          charismaModifier: 0,
-          wisdomModifier: character.abilityModifierFor(Ability.wisdom),
-          subclass: character.subclasses['Monk'],
-        )
-        .where(
-          (resource) =>
-              !character.resources.any((old) => old.id == resource.id),
-        )
-        .toList();
+    final missingMonkResources =
+        [
+              ...BuiltInClass.wizard.classResources(
+                character.levelInClass('Wizard'),
+                charismaModifier: 0,
+              ),
+              ...BuiltInClass.monk.classResources(
+                character.levelInClass('Monk'),
+                charismaModifier: 0,
+                wisdomModifier: character.abilityModifierFor(Ability.wisdom),
+                subclass: character.subclasses['Monk'],
+              ),
+            ]
+            .where(
+              (resource) =>
+                  !character.resources.any((old) => old.id == resource.id),
+            )
+            .toList();
     if (missingMonkResources.isNotEmpty) {
       character = character.copyWith(
         resources: [...character.resources, ...missingMonkResources],
@@ -4498,6 +4504,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       startRage(resourceValues);
     } else if (resource.id == secondWindResourceId) {
       applySecondWind(resourceValues);
+    } else if (resource.id == arcaneRecoveryResourceId) {
+      await useArcaneRecovery();
     } else if (resource.id == wholenessOfBodyResourceId) {
       await useWholenessOfBody(resource);
     } else if (resource.id == layOnHandsResourceId) {
@@ -5808,14 +5816,62 @@ class _CharacterOverviewState extends State<CharacterOverview>
         (level, resource),
   ];
 
-  Future<void> useNaturalRecovery() async {
-    if (landDruidLevel < 6 || characterState.naturalRecoveryUsed) return;
-    var budget = (landDruidLevel + 1) ~/ 2;
+  Future<void> useArcaneRecovery() async {
+    final resource = character.resources
+        .where((r) => r.id == arcaneRecoveryResourceId)
+        .firstOrNull;
+    final budget = (character.levelInClass('Wizard') + 1) ~/ 2;
+    bool canUse() =>
+        mounted &&
+        currentMode != CharacterMode.combat &&
+        budget > 0 &&
+        resource != null &&
+        remainingUses(resource) > 0 &&
+        naturalRecoverySlots.any(
+          (entry) => entry.$1 <= budget && entry.$2.id == spellSlotId(entry.$1),
+        );
+    if (!canUse()) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Arcane Recovery'),
+        content: Text(
+          'Confirm you just finished a Short Rest studying your spellbook. Recover up to $budget spell slot levels; each slot must be level 5 or lower. Once per Long Rest. Pact Magic and temporary feature-created slots are excluded.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Short Rest finished · Choose slots'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirm != true || !canUse()) return;
+    await useNaturalRecovery(arcane: true);
+  }
+
+  Future<void> useNaturalRecovery({bool arcane = false}) async {
+    final resource = character.resources
+        .where((r) => r.id == arcaneRecoveryResourceId)
+        .firstOrNull;
+    bool used() => arcane
+        ? resource == null || remainingUses(resource) < 1
+        : characterState.naturalRecoveryUsed;
+    final recoveryLevel = arcane
+        ? character.levelInClass('Wizard')
+        : landDruidLevel;
+    if (recoveryLevel < (arcane ? 1 : 6) || used()) return;
+    var budget = (recoveryLevel + 1) ~/ 2;
     final recovered = <String, int>{};
     while (mounted) {
       final available = [
         for (final (level, resource) in naturalRecoverySlots)
-          if (level <= budget &&
+          if ((!arcane || resource.id == spellSlotId(level)) &&
+              level <= budget &&
               remainingUses(resource) + (recovered[resource.id] ?? 0) <
                   resource.maximum)
             (level, resource),
@@ -5824,7 +5880,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       final choice = await showDialog<(int, String)>(
         context: context,
         builder: (context) => SimpleDialog(
-          title: const Text('Natural Recovery'),
+          title: Text(arcane ? 'Arcane Recovery · Slots' : 'Natural Recovery'),
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
@@ -5842,21 +5898,22 @@ class _CharacterOverviewState extends State<CharacterOverview>
           ],
         ),
       );
-      if (!mounted || choice == null || characterState.naturalRecoveryUsed) {
+      if (!mounted || choice == null || used()) {
         return;
       }
       if (choice.$1 == 0) break;
       budget -= choice.$1;
       recovered.update(choice.$2, (count) => count + 1, ifAbsent: () => 1);
     }
-    if (!mounted || recovered.isEmpty || characterState.naturalRecoveryUsed) {
+    if (!mounted || recovered.isEmpty || used()) {
       return;
     }
     updateCharacterState(
       characterState.copyWith(
-        naturalRecoveryUsed: true,
+        naturalRecoveryUsed: arcane ? characterState.naturalRecoveryUsed : true,
         resourceValues: {
           ...characterState.resourceValues,
+          if (arcane) resource!.id: remainingUses(resource) - 1,
           for (final resource in character.resources)
             if (recovered.containsKey(resource.id))
               resource.id: (remainingUses(resource) + recovered[resource.id]!)
@@ -5864,6 +5921,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
         },
       ),
     );
+    if (arcane) {
+      recordSessionEvent(
+        SessionEventType.rest,
+        'Arcane Recovery',
+        detail:
+            'Recovered ${recovered.values.fold<int>(0, (sum, count) => sum + count)} spell slots after a confirmed Short Rest. Once-per-Long-Rest use spent.',
+      );
+    }
   }
 
   // ------------------------------------------------------------
@@ -6789,6 +6854,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
       adjustIncomingDamage: adjustIncomingDamage,
       inventory: inventory,
       onBeginCombat: showBeginCombatPrompt,
+      onArcaneRecovery: character.levelInClass('Wizard') > 0
+          ? useArcaneRecovery
+          : null,
       onMonkDefense:
           character.levelInClass('Monk') >= 1 && activeWildShape == null
           ? useMonkDefense

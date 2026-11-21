@@ -10,6 +10,7 @@ const actionSurgeResourceId = 'whetstone:class:action-surge';
 const focusResourceId = 'whetstone:class:focus';
 const uncannyMetabolismResourceId = 'whetstone:class:uncanny-metabolism';
 const wholenessOfBodyResourceId = 'whetstone:subclass:wholeness-of-body';
+const arcaneRecoveryResourceId = 'whetstone:class:arcane-recovery';
 const wildShapeResourceId = 'whetstone:class:wild-shape';
 const bardicInspirationResourceId = 'whetstone:class:bardic-inspiration';
 const layOnHandsResourceId = 'whetstone:class:lay-on-hands';
@@ -24,6 +25,7 @@ const progressingClassResourceIds = {
   focusResourceId,
   uncannyMetabolismResourceId,
   wholenessOfBodyResourceId,
+  arcaneRecoveryResourceId,
   wildShapeResourceId,
   bardicInspirationResourceId,
   layOnHandsResourceId,
@@ -224,6 +226,14 @@ enum BuiltInClass {
       _ => null,
     };
     return [
+      if (this == wizard)
+        const CharacterResource(
+          id: arcaneRecoveryResourceId,
+          name: 'Arcane Recovery',
+          maximum: 1,
+          initialValue: 1,
+          rechargePeriod: RechargePeriod.longRest,
+        ),
       if (this == monk && level >= 6 && subclass == 'Warrior of the Open Hand')
         CharacterResource(
           id: wholenessOfBodyResourceId,

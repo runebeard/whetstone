@@ -24,6 +24,7 @@ class ExplorationModeView extends StatelessWidget {
   final VoidCallback onBeginCombat;
   final VoidCallback? onWholenessOfBody;
   final VoidCallback? onMonkDefense;
+  final VoidCallback? onArcaneRecovery;
   final VoidCallback onAddItemFromLibrary;
   final VoidCallback onCreateCustomItem;
   final VoidCallback onRestockItem;
@@ -47,6 +48,7 @@ class ExplorationModeView extends StatelessWidget {
     required this.onBeginCombat,
     this.onWholenessOfBody,
     this.onMonkDefense,
+    this.onArcaneRecovery,
     required this.onAddItemFromLibrary,
     required this.onCreateCustomItem,
     required this.onRestockItem,
@@ -96,6 +98,11 @@ class ExplorationModeView extends StatelessWidget {
             OutlinedButton(
               onPressed: onMonkDefense,
               child: const Text('Monk · Unarmored defense and movement'),
+            ),
+          if (onArcaneRecovery != null)
+            OutlinedButton(
+              onPressed: onArcaneRecovery,
+              child: const Text('Arcane Recovery · After Short Rest'),
             ),
           if (onWholenessOfBody != null)
             OutlinedButton(
