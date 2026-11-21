@@ -85,6 +85,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   bool primalStrikeUsedThisTurn = false;
   bool cleaveUsedThisTurn = false;
   bool nickUsedThisTurn = false;
+  bool sneakAttackUsedThisTurn = false;
   int attackActionAttacksRemaining = 0;
   CheckRoll? tacticalMindCheck;
   late final DiceRoller diceRoller;
@@ -124,6 +125,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       primalStrikeUsedThisTurn = widget.initialSession.primalStrikeUsedThisTurn;
       cleaveUsedThisTurn = widget.initialSession.cleaveUsedThisTurn;
       nickUsedThisTurn = widget.initialSession.nickUsedThisTurn;
+      sneakAttackUsedThisTurn = widget.initialSession.sneakAttackUsedThisTurn;
       attackActionAttacksRemaining = widget
           .initialSession
           .attackActionAttacksRemaining
@@ -191,6 +193,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         primalStrikeUsedThisTurn: primalStrikeUsedThisTurn,
         cleaveUsedThisTurn: cleaveUsedThisTurn,
         nickUsedThisTurn: nickUsedThisTurn,
+        sneakAttackUsedThisTurn: sneakAttackUsedThisTurn,
         attackActionAttacksRemaining: attackActionAttacksRemaining,
         timeline: [...timeline],
       ),
@@ -299,9 +302,26 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void handleSkillTap(SkillCheck check) {
-    tacticalMindCheck = rollCheck(
-      check.skill.name,
+    tacticalMindCheck = rollSkillCheck(check);
+  }
+
+  CheckRoll rollSkillCheck(
+    SkillCheck check, {
+    String? label,
+    String Function(CheckRoll)? describe,
+  }) {
+    final reliable =
+        character.levelInClass('Rogue') >= 7 &&
+        (check.proficiency != SkillProficiency.none ||
+            characterForPhysicalChecks.skillModifierMinimums.containsKey(
+              check.skill.id,
+            ));
+    return rollCheck(
+      label ?? check.skill.name,
       check.modifier,
+      minimumRoll: reliable ? 10 : null,
+      minimumRollReason: reliable ? 'Reliable Talent' : null,
+      describe: describe,
       hasAdvantage:
           (characterState.isRaging &&
               check.skill.ability == Ability.strength) ||
@@ -819,6 +839,127 @@ class _CharacterOverviewState extends State<CharacterOverview>
         characterState.copyWith(concentrationTarget: selected),
       );
     }
+  }
+
+  bool get hasEvasion =>
+      characterState.canConcentrate &&
+      (character.levelInClass('Rogue') >= 7 ||
+          character.levelInClass('Monk') >= 7);
+
+  bool get canUseUncannyDodge =>
+      characterState.canConcentrate &&
+      character.levelInClass('Rogue') >= 5 &&
+      (currentMode != CharacterMode.combat ||
+          !usedCombatActions.contains(CombatActionCost.reaction));
+
+  Future<int?> adjustIncomingDamage(int damage) async {
+    if (!hasEvasion && !canUseUncannyDodge) return damage;
+    var save = 'none';
+    var dodge = false;
+    final selection = await showDialog<(String, bool)>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('Damage reduction'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Incoming damage: $damage. Use the amount before Evasion or Uncanny Dodge; '
+                  'resistance is applied afterward. Choose no reduction if these features were already applied.',
+                ),
+                if (hasEvasion)
+                  DropdownButtonFormField<String>(
+                    initialValue: 'none',
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Evasion · Dexterity save',
+                    ),
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'none',
+                        child: Text(
+                          'No Evasion / already applied',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'success',
+                        child: Text(
+                          'Success · half-damage save',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 'failure',
+                        child: Text(
+                          'Failure · half-damage save',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) => update(() {
+                      save = value ?? 'none';
+                      if (save == 'success') dodge = false;
+                    }),
+                  ),
+                if (canUseUncannyDodge)
+                  CheckboxListTile(
+                    title: const Text('Uncanny Dodge'),
+                    subtitle: const Text(
+                      'An attacker you can see hit you with an attack. Use your Reaction to halve its damage.',
+                    ),
+                    value: dodge,
+                    onChanged: save == 'success'
+                        ? null
+                        : (value) => update(() => dodge = value ?? false),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, (save, dodge)),
+              child: const Text('Apply damage'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || selection == null) return null;
+    final (saveResult, useDodge) = selection;
+    if ((saveResult != 'none' && !hasEvasion) ||
+        (useDodge && !canUseUncannyDodge)) {
+      return null;
+    }
+    var amount = damage;
+    if (saveResult != 'none') {
+      amount = saveResult == 'success' ? 0 : amount ~/ 2;
+      recordSessionEvent(
+        SessionEventType.combat,
+        'Evasion',
+        detail:
+            '$damage → $amount damage · Dexterity save ${saveResult == 'success' ? 'succeeded' : 'failed'} against a half-damage effect.',
+      );
+    }
+    if (useDodge && amount > 0) {
+      final before = amount;
+      amount ~/= 2;
+      if (currentMode == CharacterMode.combat) {
+        usedCombatActions.add(CombatActionCost.reaction);
+      }
+      recordSessionEvent(
+        SessionEventType.combat,
+        'Uncanny Dodge',
+        detail: '$before → $amount attack damage · Reaction used.',
+      );
+    }
+    return amount;
   }
 
   Future<void> promptConcentrationAfterDamage(int damage) async {
@@ -2623,6 +2764,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
         critical: attack.naturalRoll >= character.weaponCriticalThreshold,
       );
     }
+    await resolveSneakAttack(
+      weapon,
+      critical: attack.naturalRoll >= character.weaponCriticalThreshold,
+    );
   }
 
   void rollRadiantStrikes({required bool critical}) {
@@ -2639,6 +2784,94 @@ class _CharacterOverviewState extends State<CharacterOverview>
       tone: RollNoticeTone.damage,
       detail:
           'Radiant damage. Apply resistance separately from the strike’s other damage.',
+    );
+  }
+
+  Future<void> resolveSneakAttack(
+    Weapon weapon, {
+    required bool critical,
+  }) async {
+    bool canUse() =>
+        currentMode == CharacterMode.combat &&
+        characterState.canConcentrate &&
+        character.sneakAttackDice > 0 &&
+        weapon.sneakAttackEligible &&
+        !sneakAttackUsedThisTurn;
+    if (!canUse()) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${weapon.name} · Sneak Attack'),
+        content: Text(
+          'After this attack hits one creature, add ${critical ? character.sneakAttackDice * 2 : character.sneakAttackDice}d6 '
+          '${weapon.damageType ?? 'weapon'} damage. Confirm that you had Advantage, '
+          'or an ally able to act was within 5 feet of the target and you did not have Disadvantage. '
+          'Only one Sneak Attack is allowed per turn.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Skip'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Eligible hit · Roll Sneak Attack'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true || !canUse()) return;
+    sneakAttackUsedThisTurn = true;
+    final expression = DiceExpression(
+      diceCount: character.sneakAttackDice * (critical ? 2 : 1),
+      dieSides: 6,
+    );
+    final roll = expression.roll('Sneak Attack', diceRoller);
+    addRollNotice(
+      title: critical ? 'Sneak Attack Critical Damage' : 'Sneak Attack Damage',
+      calculation:
+          '${expression.notation}: ${roll.dice.join(' + ')} = ${roll.total}',
+      total: roll.total,
+      tone: RollNoticeTone.damage,
+      detail:
+          'Add to this hit’s ${weapon.damageType ?? 'weapon'} damage before applying resistance.',
+    );
+  }
+
+  Future<void> confirmNewSneakAttackTurn() async {
+    if (currentMode != CharacterMode.combat || !sneakAttackUsedThisTurn) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Another creature’s turn'),
+        content: const Text(
+          'Confirm that a different creature’s turn has begun since your last Sneak Attack. '
+          'This only refreshes Sneak Attack eligibility. It does not restore your Action, Bonus Action, or Reaction.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Different turn confirmed'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        confirmed != true ||
+        currentMode != CharacterMode.combat ||
+        !sneakAttackUsedThisTurn) {
+      return;
+    }
+    setState(() => sneakAttackUsedThisTurn = false);
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Sneak Attack · New creature turn',
+      detail:
+          'Player confirmed a new turn. Action and Reaction availability are unchanged.',
     );
   }
 
@@ -2886,6 +3119,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
     if (action is Weapon && action.isMelee) {
       rollRadiantStrikes(critical: critical);
     }
+    if (action is Weapon) {
+      await resolveSneakAttack(action, critical: critical);
+    }
   }
 
   void rollDeathSave() {
@@ -2922,6 +3158,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
     bool hasAdvantage = false,
     D20Mode? modeOverride,
     int criticalThreshold = 20,
+    int? minimumRoll,
+    String? minimumRollReason,
     String Function(CheckRoll)? describe,
   }) {
     tacticalMindCheck = null;
@@ -2938,11 +3176,13 @@ class _CharacterOverviewState extends State<CharacterOverview>
       label: label,
       naturalRoll: mode.select(first, second),
       modifier: modifier,
+      minimumRoll: minimumRoll,
     );
+    final minimumApplied = roll.effectiveRoll != roll.naturalRoll;
     final critical = roll.naturalRoll >= criticalThreshold;
     if (critical) {
       HapticFeedback.heavyImpact();
-    } else if (roll.isNaturalOne) {
+    } else if (roll.isNaturalOne && !minimumApplied) {
       HapticFeedback.mediumImpact();
     } else {
       HapticFeedback.selectionClick();
@@ -2952,21 +3192,23 @@ class _CharacterOverviewState extends State<CharacterOverview>
       title: label,
       calculation: [
         if (second != null) '${mode.label}: $first, $second →',
-        'd20 ${roll.naturalRoll} $operator ${modifier.abs()} = ${roll.total}',
+        'd20 ${roll.naturalRoll}${minimumApplied ? ' → ${roll.effectiveRoll}' : ''} $operator ${modifier.abs()} = ${roll.total}',
       ].join(' '),
       total: roll.total,
-      detail:
-          describe?.call(roll) ??
-          (critical
-              ? roll.isNaturalTwenty
-                    ? 'Natural 20'
-                    : 'Critical hit · Natural ${roll.naturalRoll}'
-              : roll.isNaturalOne
-              ? 'Natural 1'
-              : null),
+      detail: minimumApplied
+          ? '${minimumRollReason ?? 'Minimum roll'}: use ${roll.effectiveRoll}'
+                '${describe == null ? '' : ' · ${describe(roll)}'}'
+          : describe?.call(roll) ??
+                (critical
+                    ? roll.isNaturalTwenty
+                          ? 'Natural 20'
+                          : 'Critical hit · Natural ${roll.naturalRoll}'
+                    : roll.isNaturalOne
+                    ? 'Natural 1'
+                    : null),
       tone: critical
           ? RollNoticeTone.criticalSuccess
-          : roll.isNaturalOne
+          : roll.isNaturalOne && !minimumApplied
           ? RollNoticeTone.criticalFailure
           : RollNoticeTone.normal,
     );
@@ -4586,6 +4828,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       primalStrikeUsedThisTurn = false;
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
+      sneakAttackUsedThisTurn = false;
       attackActionAttacksRemaining = 0;
       readiedAction = null;
       readiedEffect = null;
@@ -4682,8 +4925,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
       !usedCombatActions.contains(CombatActionCost.action) ||
       actionSurge == ActionSurgeState.available;
 
-  Future<void> chooseCombatAction() async {
-    if (!characterState.canConcentrate || !canUseNonMagicAction) {
+  Future<void> chooseCombatAction({bool asBonusAction = false}) async {
+    bool canUse() =>
+        characterState.canConcentrate &&
+        (asBonusAction
+            ? character.levelInClass('Rogue') >= 2 &&
+                  !usedCombatActions.contains(CombatActionCost.bonusAction)
+            : canUseNonMagicAction);
+    if (!canUse()) {
       return;
     }
     const actions = {
@@ -4701,17 +4950,19 @@ class _CharacterOverviewState extends State<CharacterOverview>
     final choice = await showDialog<String>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: const Text('Use an Action'),
+        title: Text(asBonusAction ? 'Cunning Action' : 'Use an Action'),
         children: [
           for (final action in actions.entries)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, action.key),
-              child: ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(action.key),
-                subtitle: Text(action.value),
+            if (!asBonusAction ||
+                const {'Dash', 'Disengage', 'Hide'}.contains(action.key))
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, action.key),
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(action.key),
+                  subtitle: Text(action.value),
+                ),
               ),
-            ),
         ],
       ),
     );
@@ -4880,13 +5131,13 @@ class _CharacterOverviewState extends State<CharacterOverview>
       if (!mounted || ready == null) return;
       (plan, readyEffect) = ready;
     }
-    if (currentMode != CharacterMode.combat ||
-        !characterState.canConcentrate ||
-        !canUseNonMagicAction) {
+    if (currentMode != CharacterMode.combat || !canUse()) {
       return;
     }
     setState(() {
-      if (actionSurge == ActionSurgeState.available) {
+      if (asBonusAction) {
+        usedCombatActions.add(CombatActionCost.bonusAction);
+      } else if (actionSurge == ActionSurgeState.available) {
         actionSurge = ActionSurgeState.spent;
       } else {
         usedCombatActions.add(CombatActionCost.action);
@@ -4924,14 +5175,15 @@ class _CharacterOverviewState extends State<CharacterOverview>
     }
     recordSessionEvent(
       SessionEventType.combat,
-      '$choice used',
+      asBonusAction ? 'Cunning Action · $choice' : '$choice used',
       detail: plan ?? actionDetail,
     );
     if (actionSkill != null) {
       final check = characterForPhysicalChecks.checkFor(actionSkill);
-      tacticalMindCheck = rollCheck(
-        '$choice · ${actionSkill.name}',
-        check.modifier,
+      tacticalMindCheck = rollSkillCheck(
+        check,
+        label:
+            '${asBonusAction ? 'Cunning Action · ' : ''}$choice · ${actionSkill.name}',
         describe: choice == 'Hide'
             ? (roll) => roll.total >= 15
                   ? 'Meets DC 15 · Confirm hiding conditions with the GM'
@@ -5013,6 +5265,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       primalStrikeUsedThisTurn = false;
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
+      sneakAttackUsedThisTurn = false;
       attackActionAttacksRemaining = 0;
       readiedAction = null;
       readiedEffect = null;
@@ -5084,6 +5337,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       primalStrikeUsedThisTurn = false;
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
+      sneakAttackUsedThisTurn = false;
       attackActionAttacksRemaining = 0;
       readiedAction = null;
       readiedEffect = null;
@@ -5282,6 +5536,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       formArmourClass: activeWildShape?.armourClass,
       onCharacterStateChanged: updateCharacterState,
       onDamageTaken: promptConcentrationAfterDamage,
+      adjustIncomingDamage: adjustIncomingDamage,
       inventory: inventory,
       onBeginCombat: showBeginCombatPrompt,
       onAddItemFromLibrary: addInventoryItemFromLibrary,
@@ -5310,6 +5565,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       formArmourClass: activeWildShape?.armourClass,
       onCharacterStateChanged: updateCharacterState,
       onDamageTaken: promptConcentrationAfterDamage,
+      adjustIncomingDamage: adjustIncomingDamage,
       resolveDamage: resolveRelentlessRage,
       onActionTap: handleActionTap,
       onActionDetails: showActionDetails,
@@ -5338,6 +5594,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
           : null,
       readiedAction: readiedAction,
       onChooseCombatAction: chooseCombatAction,
+      sneakAttackUsedThisTurn: sneakAttackUsedThisTurn,
+      onNewSneakAttackTurn: confirmNewSneakAttackTurn,
+      onCunningAction: character.levelInClass('Rogue') >= 2
+          ? () => chooseCombatAction(asBonusAction: true)
+          : null,
       onTriggerReadiedAction: triggerReadiedAction,
       combatInitiative: combatInitiative,
       onInitiativeRecorded: recordCombatInitiative,

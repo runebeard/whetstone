@@ -424,6 +424,8 @@ class Character {
     return action.rollModifier;
   }
 
+  int get sneakAttackDice => (levelInClass('Rogue') + 1) ~/ 2;
+
   int get attacksPerAction {
     final fighter = levelInClass('Fighter');
     if (fighter >= 20) return 4;
@@ -574,7 +576,10 @@ class Character {
   }
 
   SavingThrowCheck savingThrowFor(Ability ability) {
-    final proficient = savingThrowProficiencies.contains(ability);
+    final proficient =
+        savingThrowProficiencies.contains(ability) ||
+        (levelInClass('Rogue') >= 15 &&
+            const {Ability.wisdom, Ability.charisma}.contains(ability));
     final modifier =
         abilityModifierFor(ability) + (proficient ? proficiencyBonus : 0);
     final minimum = saveModifierMinimums[ability];

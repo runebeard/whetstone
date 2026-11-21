@@ -21,6 +21,7 @@ class CombatModeView extends StatelessWidget {
   final ValueChanged<CharacterState> onCharacterStateChanged;
   final ValueChanged<int>? onDamageTaken;
   final CharacterState Function(CharacterState, int)? resolveDamage;
+  final Future<int?> Function(int)? adjustIncomingDamage;
   final ValueChanged<CharacterAction> onActionTap;
   final ValueChanged<CharacterAction> onActionDetails;
   final ValueChanged<CharacterAction> onAttackRoll;
@@ -42,6 +43,9 @@ class CombatModeView extends StatelessWidget {
   final VoidCallback? onRageEnemySave;
   final String? readiedAction;
   final VoidCallback? onChooseCombatAction;
+  final VoidCallback? onCunningAction;
+  final bool sneakAttackUsedThisTurn;
+  final VoidCallback? onNewSneakAttackTurn;
   final VoidCallback? onTriggerReadiedAction;
   final ValueChanged<CharacterAction> onTogglePinned;
   final ValueChanged<SavingThrowCheck> onSavingThrowTap;
@@ -57,6 +61,7 @@ class CombatModeView extends StatelessWidget {
     required this.onCharacterStateChanged,
     this.onDamageTaken,
     this.resolveDamage,
+    this.adjustIncomingDamage,
     required this.onActionTap,
     required this.onActionDetails,
     required this.onAttackRoll,
@@ -78,6 +83,9 @@ class CombatModeView extends StatelessWidget {
     this.onRageEnemySave,
     this.readiedAction,
     this.onChooseCombatAction,
+    this.onCunningAction,
+    this.sneakAttackUsedThisTurn = false,
+    this.onNewSneakAttackTurn,
     this.onTriggerReadiedAction,
     required this.onTogglePinned,
     required this.onSavingThrowTap,
@@ -175,6 +183,7 @@ class CombatModeView extends StatelessWidget {
             onChanged: onCharacterStateChanged,
             onDamageTaken: onDamageTaken,
             resolveDamage: resolveDamage,
+            adjustIncomingDamage: adjustIncomingDamage,
             onDeathSaveRoll: onDeathSaveRoll,
             onInitiativeRecorded: onInitiativeRecorded,
             rollD20: rollD20,
@@ -248,6 +257,25 @@ class CombatModeView extends StatelessWidget {
                   ? null
                   : onChooseCombatAction,
               child: const Text('Use an Action'),
+            ),
+          if (character.sneakAttackDice > 0) ...[
+            Text(
+              'Sneak Attack: ${character.sneakAttackDice}d6 · ${sneakAttackUsedThisTurn ? 'used this turn' : 'available after an eligible hit'}',
+            ),
+            if (sneakAttackUsedThisTurn && onNewSneakAttackTurn != null)
+              OutlinedButton(
+                onPressed: onNewSneakAttackTurn,
+                child: const Text('Track another creature’s turn'),
+              ),
+          ],
+          if (onCunningAction != null)
+            OutlinedButton(
+              onPressed:
+                  !characterState.canConcentrate ||
+                      usedCombatActions.contains(CombatActionCost.bonusAction)
+                  ? null
+                  : onCunningAction,
+              child: const Text('Cunning Action'),
             ),
           if (readiedAction case final plan?)
             ListTile(

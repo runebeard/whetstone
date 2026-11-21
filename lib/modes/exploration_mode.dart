@@ -19,6 +19,7 @@ class ExplorationModeView extends StatelessWidget {
   final int? formArmourClass;
   final ValueChanged<CharacterState> onCharacterStateChanged;
   final ValueChanged<int>? onDamageTaken;
+  final Future<int?> Function(int)? adjustIncomingDamage;
   final List<InventoryItem> inventory;
   final VoidCallback onBeginCombat;
   final VoidCallback onAddItemFromLibrary;
@@ -39,6 +40,7 @@ class ExplorationModeView extends StatelessWidget {
     this.formArmourClass,
     required this.onCharacterStateChanged,
     this.onDamageTaken,
+    this.adjustIncomingDamage,
     required this.inventory,
     required this.onBeginCombat,
     required this.onAddItemFromLibrary,
@@ -83,6 +85,7 @@ class ExplorationModeView extends StatelessWidget {
             additionalResistance: characterState.landResistanceFor(character),
             onChanged: onCharacterStateChanged,
             onDamageTaken: onDamageTaken,
+            adjustIncomingDamage: adjustIncomingDamage,
           ),
           const SizedBox(height: 16),
           FilledButton.icon(

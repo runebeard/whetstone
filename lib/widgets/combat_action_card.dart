@@ -141,32 +141,44 @@ class CombatActionCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 6),
-              if (onAttack != null)
-                OutlinedButton(
-                  key: ValueKey('attack-$controlKeyPrefix-${action.actionKey}'),
-                  onPressed: onAttack,
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(0, 40),
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  child: Text(hitLabel),
+              Expanded(
+                flex: 2,
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    if (onAttack != null)
+                      OutlinedButton(
+                        key: ValueKey(
+                          'attack-$controlKeyPrefix-${action.actionKey}',
+                        ),
+                        onPressed: onAttack,
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 40),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        child: Text(hitLabel),
+                      ),
+                    if (onDamage != null)
+                      FilledButton.tonal(
+                        key: ValueKey(
+                          'damage-$controlKeyPrefix-${action.actionKey}',
+                        ),
+                        onPressed: onDamage,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(0, 40),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        child: Text(damageLabel),
+                      ),
+                  ],
                 ),
-              if (onAttack != null && onDamage != null)
-                const SizedBox(width: 6),
-              if (onDamage != null)
-                FilledButton.tonal(
-                  key: ValueKey('damage-$controlKeyPrefix-${action.actionKey}'),
-                  onPressed: onDamage,
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(0, 40),
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  child: Text(damageLabel),
-                ),
+              ),
             ],
           ),
         ),

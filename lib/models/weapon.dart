@@ -112,6 +112,32 @@ class Weapon extends CharacterAction {
   final int? normalRange;
   final int? longRange;
 
+  bool get sneakAttackEligible =>
+      properties.any((value) => value.trim().toLowerCase() == 'finesse') ||
+      const {
+        'dagger',
+        'dart',
+        'rapier',
+        'scimitar',
+        'shortsword',
+        'whip',
+      }.contains(WeaponMastery.weaponType(name)) ||
+      category == WeaponCategory.simpleRanged ||
+      category == WeaponCategory.martialRanged ||
+      (category == null &&
+          const {
+            'dart',
+            'light crossbow',
+            'shortbow',
+            'sling',
+            'blowgun',
+            'hand crossbow',
+            'heavy crossbow',
+            'longbow',
+            'pistol',
+            'musket',
+          }.contains(WeaponMastery.weaponType(name)));
+
   bool get isMelee => switch (category) {
     WeaponCategory.simpleMelee || WeaponCategory.martialMelee => true,
     WeaponCategory.simpleRanged || WeaponCategory.martialRanged => false,

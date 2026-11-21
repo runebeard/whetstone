@@ -20,6 +20,7 @@ class CombatSummary extends StatefulWidget {
   final ValueChanged<CharacterState> onChanged;
   final ValueChanged<int>? onDamageTaken;
   final CharacterState Function(CharacterState, int)? resolveDamage;
+  final Future<int?> Function(int)? adjustIncomingDamage;
   final int Function()? rollD20;
   final D20Mode initiativeMode;
 
@@ -36,6 +37,7 @@ class CombatSummary extends StatefulWidget {
     required this.onChanged,
     this.onDamageTaken,
     this.resolveDamage,
+    this.adjustIncomingDamage,
     this.rollD20,
     this.initiativeMode = D20Mode.normal,
   });
@@ -95,13 +97,20 @@ class _CombatSummaryState extends State<CombatSummary> {
     }
   }
 
-  void applyDamage(
+  Future<void> applyDamage(
     int damage,
     IncomingDamageType type, {
     bool critical = false,
-  }) {
+  }) async {
+    var amount = damage;
+    final adjust = widget.adjustIncomingDamage;
+    if (adjust != null) {
+      final adjusted = await adjust(damage);
+      if (!mounted || adjusted == null) return;
+      amount = adjusted;
+    }
     final applied = characterState.damageAfterResistance(
-      damage,
+      amount,
       type,
       additionalResistance: widget.additionalResistance,
     );

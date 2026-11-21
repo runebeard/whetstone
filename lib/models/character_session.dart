@@ -29,6 +29,7 @@ class CharacterSession {
   final bool primalStrikeUsedThisTurn;
   final bool cleaveUsedThisTurn;
   final bool nickUsedThisTurn;
+  final bool sneakAttackUsedThisTurn;
   final int attackActionAttacksRemaining;
   final List<SessionEvent> timeline;
 
@@ -47,6 +48,7 @@ class CharacterSession {
     this.primalStrikeUsedThisTurn = false,
     this.cleaveUsedThisTurn = false,
     this.nickUsedThisTurn = false,
+    this.sneakAttackUsedThisTurn = false,
     this.attackActionAttacksRemaining = 0,
     this.timeline = const [],
   });
@@ -76,6 +78,8 @@ class CharacterSession {
         'primalStrikeUsedThisTurn': true,
       if (isInCombat && cleaveUsedThisTurn) 'cleaveUsedThisTurn': true,
       if (isInCombat && nickUsedThisTurn) 'nickUsedThisTurn': true,
+      if (isInCombat && sneakAttackUsedThisTurn)
+        'sneakAttackUsedThisTurn': true,
       if (isInCombat && attackActionAttacksRemaining > 0)
         'attackActionAttacksRemaining': attackActionAttacksRemaining,
       if (isInCombat) 'combatInitiative': ?combatInitiative,
@@ -111,6 +115,8 @@ class CharacterSession {
           json['primalStrikeUsedThisTurn'] as bool? ?? false,
       cleaveUsedThisTurn: json['cleaveUsedThisTurn'] as bool? ?? false,
       nickUsedThisTurn: json['nickUsedThisTurn'] as bool? ?? false,
+      sneakAttackUsedThisTurn:
+          json['sneakAttackUsedThisTurn'] as bool? ?? false,
       attackActionAttacksRemaining:
           ((json['attackActionAttacksRemaining'] as int?) ?? 0).clamp(0, 3),
       actionSurge: ActionSurgeState.values

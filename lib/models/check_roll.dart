@@ -22,14 +22,18 @@ class CheckRoll {
   final String label;
   final int naturalRoll;
   final int modifier;
+  final int? minimumRoll;
 
   const CheckRoll({
     required this.label,
     required this.naturalRoll,
     required this.modifier,
+    this.minimumRoll,
   });
 
-  int get total => naturalRoll + modifier;
+  int get effectiveRoll =>
+      minimumRoll == null ? naturalRoll : max(naturalRoll, minimumRoll!);
+  int get total => effectiveRoll + modifier;
   bool get isNaturalOne => naturalRoll == 1;
   bool get isNaturalTwenty => naturalRoll == 20;
 
