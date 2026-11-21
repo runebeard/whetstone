@@ -8,6 +8,7 @@ const secondWindResourceId = 'whetstone:class:second-wind';
 const indomitableResourceId = 'whetstone:class:indomitable';
 const actionSurgeResourceId = 'whetstone:class:action-surge';
 const focusResourceId = 'whetstone:class:focus';
+const uncannyMetabolismResourceId = 'whetstone:class:uncanny-metabolism';
 const wildShapeResourceId = 'whetstone:class:wild-shape';
 const bardicInspirationResourceId = 'whetstone:class:bardic-inspiration';
 const layOnHandsResourceId = 'whetstone:class:lay-on-hands';
@@ -20,6 +21,7 @@ const progressingClassResourceIds = {
   indomitableResourceId,
   actionSurgeResourceId,
   focusResourceId,
+  uncannyMetabolismResourceId,
   wildShapeResourceId,
   bardicInspirationResourceId,
   layOnHandsResourceId,
@@ -218,6 +220,14 @@ enum BuiltInClass {
       _ => null,
     };
     return [
+      if (this == monk && level >= 2)
+        const CharacterResource(
+          id: uncannyMetabolismResourceId,
+          name: 'Uncanny Metabolism',
+          maximum: 1,
+          initialValue: 1,
+          rechargePeriod: RechargePeriod.longRest,
+        ),
       if (this == monk && level >= 2)
         CharacterResource(
           id: focusResourceId,

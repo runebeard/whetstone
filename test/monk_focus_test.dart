@@ -15,7 +15,12 @@ void main() {
         level,
         charismaModifier: 0,
       );
-      expect(resources.single.maximum, level);
+      expect(
+        resources
+            .firstWhere((resource) => resource.id == focusResourceId)
+            .maximum,
+        level,
+      );
       final monk = seedCharacters.first.copyWith(
         characterClass: 'Monk',
         level: level,
@@ -72,7 +77,12 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(monk.resources.single.id, focusResourceId);
+      expect(
+        monk.resources
+            .firstWhere((resource) => resource.id == focusResourceId)
+            .id,
+        focusResourceId,
+      );
       final button = find.widgetWithText(
         OutlinedButton,
         'Monk’s Focus · Movement and defense',
@@ -171,4 +181,3 @@ void main() {
     expect(session.characterState.activeConditions, contains(dashingCondition));
   });
 }
-

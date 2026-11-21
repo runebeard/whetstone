@@ -114,18 +114,16 @@ class _CharacterOverviewState extends State<CharacterOverview>
   void initState() {
     super.initState();
     character = widget.character;
-    if (character.levelInClass('Monk') >= 2 &&
-        !character.resources.any(
-          (resource) => resource.id == focusResourceId,
-        )) {
+    final missingMonkResources = BuiltInClass.monk
+        .classResources(character.levelInClass('Monk'), charismaModifier: 0)
+        .where(
+          (resource) =>
+              !character.resources.any((old) => old.id == resource.id),
+        )
+        .toList();
+    if (missingMonkResources.isNotEmpty) {
       character = character.copyWith(
-        resources: [
-          ...character.resources,
-          ...BuiltInClass.monk.classResources(
-            character.levelInClass('Monk'),
-            charismaModifier: 0,
-          ),
-        ],
+        resources: [...character.resources, ...missingMonkResources],
       );
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) widget.onCharacterChanged(character);
@@ -5449,6 +5447,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       'Initiative recorded',
       detail: '$total',
     );
+    if (firstInitiative) await recoverMonkOnInitiative();
+    if (!mounted || currentMode != CharacterMode.combat) return;
     final inspiration = character.resources
         .where((resource) => resource.id == bardicInspirationResourceId)
         .firstOrNull;
@@ -5523,6 +5523,77 @@ class _CharacterOverviewState extends State<CharacterOverview>
         },
       ),
     );
+  }
+
+  Future<void> recoverMonkOnInitiative() async {
+    final level = character.levelInClass('Monk');
+    final focus = character.resources
+        .where((resource) => resource.id == focusResourceId)
+        .firstOrNull;
+    final metabolism = character.resources
+        .where((resource) => resource.id == uncannyMetabolismResourceId)
+        .firstOrNull;
+    if (level < 2 || focus == null) return;
+    if (metabolism != null && remainingUses(metabolism) > 0) {
+      final recover = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Uncanny Metabolism'),
+          content: Text(
+            'Recover all expended Focus Points and heal 1d${character.martialArtsDieSides} + $level HP. Once per Long Rest. ${level >= 15 ? 'If you skip, Perfect Focus restores your Focus to 4 when below 4.' : ''}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Skip'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Recover Focus and HP'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || currentMode != CharacterMode.combat) return;
+      if (recover == true && remainingUses(metabolism) > 0) {
+        final die = diceRoller.rollDie(character.martialArtsDieSides);
+        final hp = (characterState.currentHp + level + die).clamp(
+          0,
+          characterState.maxHp,
+        );
+        final healed = hp - characterState.currentHp;
+        updateCharacterState(
+          characterState.copyWith(
+            currentHp: hp,
+            resourceValues: {
+              ...characterState.resourceValues,
+              focus.id: focus.maximum,
+              metabolism.id: remainingUses(metabolism) - 1,
+            },
+          ),
+        );
+        recordSessionEvent(
+          SessionEventType.combat,
+          'Uncanny Metabolism',
+          detail:
+              'Focus restored to ${focus.maximum} · 1d${character.martialArtsDieSides} ($die) + $level = ${die + level} healing, $healed HP recovered.',
+        );
+        return;
+      }
+    }
+    if (level >= 15 && remainingUses(focus) < 4) {
+      updateCharacterState(
+        characterState.copyWith(
+          resourceValues: {...characterState.resourceValues, focus.id: 4},
+        ),
+      );
+      recordSessionEvent(
+        SessionEventType.combat,
+        'Perfect Focus',
+        detail:
+            'Focus restored to 4 on initiative; Uncanny Metabolism was not used.',
+      );
+    }
   }
 
   bool get canUseNonMagicAction =>
