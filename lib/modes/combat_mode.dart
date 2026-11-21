@@ -26,6 +26,9 @@ class CombatModeView extends StatelessWidget {
   final ValueChanged<CharacterAction> onActionDetails;
   final ValueChanged<CharacterAction> onAttackRoll;
   final VoidCallback? onUnarmedStrike;
+  final VoidCallback? onFlurry;
+  final int flurryAttacksRemaining;
+  final bool canStartFlurry;
   final VoidCallback? onMonkMovement;
   final VoidCallback? onBonusUnarmedStrike;
   final String? Function(CharacterAction)? ammunitionLabel;
@@ -70,6 +73,9 @@ class CombatModeView extends StatelessWidget {
     required this.onActionDetails,
     required this.onAttackRoll,
     this.onUnarmedStrike,
+    this.onFlurry,
+    this.flurryAttacksRemaining = 0,
+    this.canStartFlurry = false,
     this.onMonkMovement,
     this.onBonusUnarmedStrike,
     this.ammunitionLabel,
@@ -134,6 +140,23 @@ class CombatModeView extends StatelessWidget {
                 ? null
                 : onBonusUnarmedStrike,
             child: const Text('Martial Arts · Bonus Unarmed Strike'),
+          ),
+        if (title == 'Attacks' && onFlurry != null)
+          OutlinedButton(
+            onPressed:
+                !characterState.canConcentrate ||
+                    (flurryAttacksRemaining == 0 &&
+                        (!canStartFlurry ||
+                            usedCombatActions.contains(
+                              CombatActionCost.bonusAction,
+                            )))
+                ? null
+                : onFlurry,
+            child: Text(
+              flurryAttacksRemaining > 0
+                  ? 'Flurry of Blows · $flurryAttacksRemaining strikes remaining'
+                  : 'Flurry of Blows (1 Focus)',
+            ),
           ),
         if (title == 'Attacks' && onMonkMovement != null)
           OutlinedButton(

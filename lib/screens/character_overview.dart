@@ -89,6 +89,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   bool nickUsedThisTurn = false;
   bool sneakAttackUsedThisTurn = false;
   bool steadyAimAttackPending = false;
+  int flurryAttacksRemaining = 0;
   int attackActionAttacksRemaining = 0;
   CheckRoll? tacticalMindCheck;
   late final DiceRoller diceRoller;
@@ -146,6 +147,15 @@ class _CharacterOverviewState extends State<CharacterOverview>
       cleaveUsedThisTurn = widget.initialSession.cleaveUsedThisTurn;
       nickUsedThisTurn = widget.initialSession.nickUsedThisTurn;
       sneakAttackUsedThisTurn = widget.initialSession.sneakAttackUsedThisTurn;
+      flurryAttacksRemaining = widget.initialSession.flurryAttacksRemaining
+          .clamp(
+            0,
+            character.levelInClass('Monk') >= 10
+                ? 3
+                : character.levelInClass('Monk') >= 2
+                ? 2
+                : 0,
+          );
       steadyAimAttackPending =
           widget.initialSession.steadyAimAttackPending &&
           characterState.activeConditions.contains(steadyAimCondition);
@@ -218,6 +228,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         nickUsedThisTurn: nickUsedThisTurn,
         sneakAttackUsedThisTurn: sneakAttackUsedThisTurn,
         steadyAimAttackPending: steadyAimAttackPending,
+        flurryAttacksRemaining: flurryAttacksRemaining,
         attackActionAttacksRemaining: attackActionAttacksRemaining,
         timeline: [...timeline],
       ),
@@ -231,6 +242,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void updateCharacterState(CharacterState updatedState) {
+    if (!updatedState.canConcentrate) flurryAttacksRemaining = 0;
     if (!updatedState.activeConditions.contains(steadyAimCondition)) {
       steadyAimAttackPending = false;
     }
@@ -2323,6 +2335,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   void beginAnotherCreatureTurn() {
     sneakAttackUsedThisTurn = false;
+    flurryAttacksRemaining = 0;
     steadyAimAttackPending = false;
     updateCharacterState(
       characterState.copyWith(
@@ -2419,14 +2432,152 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
-  Future<void> useUnarmedStrike({bool asBonusAction = false}) async {
+  Future<void> useFlurry() async {
+    if (flurryAttacksRemaining > 0) {
+      await useUnarmedStrike(asFlurry: true);
+      return;
+    }
+    final focus = character.resources
+        .where((resource) => resource.id == focusResourceId)
+        .firstOrNull;
+    bool canUse() =>
+        mounted &&
+        currentMode == CharacterMode.combat &&
+        activeWildShape == null &&
+        character.levelInClass('Monk') >= 2 &&
+        characterState.canConcentrate &&
+        focus != null &&
+        remainingUses(focus) > 0 &&
+        !usedCombatActions.contains(CombatActionCost.bonusAction);
+    if (!canUse()) return;
+    final strikes = character.levelInClass('Monk') >= 10 ? 3 : 2;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Flurry of Blows'),
+        content: Text(
+          'Spend 1 Focus Point and your Bonus Action to make $strikes Unarmed Strikes this turn. Resolve each strike separately; your Attack action is preserved.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Spend 1 Focus · Begin Flurry'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !canUse()) return;
+    flurryAttacksRemaining = strikes;
+    usedCombatActions.add(CombatActionCost.bonusAction);
+    updateCharacterState(
+      characterState.copyWith(
+        resourceValues: {
+          ...characterState.resourceValues,
+          focus!.id: remainingUses(focus) - 1,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Flurry of Blows',
+      detail:
+          '$strikes Unarmed Strikes available this turn · 1 Focus Point and Bonus Action spent.',
+    );
+  }
+
+  Future<void> resolveOpenHandTechnique() async {
+    if (character.levelInClass('Monk') < 3 ||
+        character.subclasses['Monk'] != 'Warrior of the Open Hand') {
+      return;
+    }
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Open Hand Technique'),
+        children: [
+          for (final effect in ['Addle', 'Push', 'Topple'])
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, effect),
+              child: Text(effect),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Skip'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'Addle') {
+      recordSessionEvent(
+        SessionEventType.combat,
+        'Open Hand · Addle',
+        detail:
+            'Target cannot make opportunity attacks until the start of its next turn. Apply at the table.',
+      );
+      return;
+    }
+    final ability = choice == 'Push' ? 'Strength' : 'Dexterity';
+    final dc =
+        8 +
+        character.proficiencyBonus +
+        character.abilityModifierFor(Ability.wisdom);
+    final effect = choice == 'Push'
+        ? 'Push target up to 15 feet away.'
+        : 'Target falls Prone.';
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Open Hand · $choice attempt',
+      detail: 'DC $dc $ability save. On failure: $effect',
+    );
+    final failed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Open Hand · $choice'),
+        content: Text(
+          'Target makes a DC $dc $ability save. On failure: $effect Target rolls, immunity, movement and conditions are resolved at the table.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Resolve later'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Save succeeded'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Save failed'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || failed == null) return;
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Open Hand · $choice ${failed ? 'failed save' : 'successful save'}',
+      detail: failed ? effect : 'Target avoids the effect.',
+    );
+  }
+
+  Future<void> useUnarmedStrike({
+    bool asBonusAction = false,
+    bool asFlurry = false,
+  }) async {
     final monk = character.martialArtsDieSides > 0;
     bool canUse() =>
         mounted &&
         currentMode == CharacterMode.combat &&
         activeWildShape == null &&
         characterState.canConcentrate &&
-        (asBonusAction
+        (asFlurry
+            ? flurryAttacksRemaining > 0
+            : asBonusAction
             ? monk && !usedCombatActions.contains(CombatActionCost.bonusAction)
             : canUseAttackAction);
     if (!canUse()) {
@@ -2496,7 +2647,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       ),
     );
     if (!mounted || choice == null || !canUse()) return;
-    if (asBonusAction) {
+    if (asFlurry) {
+      setState(() => flurryAttacksRemaining--);
+      publishSession();
+    } else if (asBonusAction) {
       setState(() => usedCombatActions.add(CombatActionCost.bonusAction));
       publishSession();
     } else {
@@ -2571,6 +2725,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       rollRadiantStrikes(
         critical: attack.naturalRoll >= character.weaponCriticalThreshold,
       );
+      if (asFlurry) await resolveOpenHandTechnique();
       return;
     }
     final dc = 8 + modifier + character.proficiencyBonus;
@@ -5134,6 +5289,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
       sneakAttackUsedThisTurn = false;
+      flurryAttacksRemaining = 0;
       steadyAimAttackPending = false;
       attackActionAttacksRemaining = 0;
       readiedAction = null;
@@ -5674,6 +5830,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
       sneakAttackUsedThisTurn = false;
+      flurryAttacksRemaining = 0;
       steadyAimAttackPending = false;
       attackActionAttacksRemaining = 0;
       readiedAction = null;
@@ -5748,6 +5905,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
       sneakAttackUsedThisTurn = false;
+      flurryAttacksRemaining = 0;
       steadyAimAttackPending = false;
       attackActionAttacksRemaining = 0;
       readiedAction = null;
@@ -5982,6 +6140,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onActionDetails: showActionDetails,
       onAttackRoll: rollAttack,
       onUnarmedStrike: activeWildShape == null ? useUnarmedStrike : null,
+      flurryAttacksRemaining: flurryAttacksRemaining,
+      canStartFlurry: character.resources.any(
+        (resource) =>
+            resource.id == focusResourceId && remainingUses(resource) > 0,
+      ),
+      onFlurry: activeWildShape == null && character.levelInClass('Monk') >= 2
+          ? useFlurry
+          : null,
       onMonkMovement: character.levelInClass('Monk') >= 2
           ? useMonkMovement
           : null,

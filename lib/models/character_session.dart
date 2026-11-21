@@ -31,6 +31,7 @@ class CharacterSession {
   final bool nickUsedThisTurn;
   final bool sneakAttackUsedThisTurn;
   final bool steadyAimAttackPending;
+  final int flurryAttacksRemaining;
   final int attackActionAttacksRemaining;
   final List<SessionEvent> timeline;
 
@@ -51,6 +52,7 @@ class CharacterSession {
     this.nickUsedThisTurn = false,
     this.sneakAttackUsedThisTurn = false,
     this.steadyAimAttackPending = false,
+    this.flurryAttacksRemaining = 0,
     this.attackActionAttacksRemaining = 0,
     this.timeline = const [],
   });
@@ -83,6 +85,8 @@ class CharacterSession {
       if (isInCombat && sneakAttackUsedThisTurn)
         'sneakAttackUsedThisTurn': true,
       if (isInCombat && steadyAimAttackPending) 'steadyAimAttackPending': true,
+      if (isInCombat && flurryAttacksRemaining > 0)
+        'flurryAttacksRemaining': flurryAttacksRemaining,
       if (isInCombat && attackActionAttacksRemaining > 0)
         'attackActionAttacksRemaining': attackActionAttacksRemaining,
       if (isInCombat) 'combatInitiative': ?combatInitiative,
@@ -121,6 +125,8 @@ class CharacterSession {
       sneakAttackUsedThisTurn:
           json['sneakAttackUsedThisTurn'] as bool? ?? false,
       steadyAimAttackPending: json['steadyAimAttackPending'] as bool? ?? false,
+      flurryAttacksRemaining: ((json['flurryAttacksRemaining'] as int?) ?? 0)
+          .clamp(0, 3),
       attackActionAttacksRemaining:
           ((json['attackActionAttacksRemaining'] as int?) ?? 0).clamp(0, 3),
       actionSurge: ActionSurgeState.values
