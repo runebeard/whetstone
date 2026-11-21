@@ -117,7 +117,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
     super.initState();
     character = widget.character;
     final missingMonkResources = BuiltInClass.monk
-        .classResources(character.levelInClass('Monk'), charismaModifier: 0)
+        .classResources(
+          character.levelInClass('Monk'),
+          charismaModifier: 0,
+          wisdomModifier: character.abilityModifierFor(Ability.wisdom),
+          subclass: character.subclasses['Monk'],
+        )
         .where(
           (resource) =>
               !character.resources.any((old) => old.id == resource.id),
@@ -4267,6 +4272,64 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
+  Future<void> useWholenessOfBody(CharacterResource resource) async {
+    bool canUse() =>
+        mounted &&
+        character.levelInClass('Monk') >= 6 &&
+        character.subclasses['Monk'] == 'Warrior of the Open Hand' &&
+        characterState.canConcentrate &&
+        remainingUses(resource) > 0 &&
+        (currentMode != CharacterMode.combat ||
+            !usedCombatActions.contains(CombatActionCost.bonusAction));
+    if (!canUse()) return;
+    final wisdom = character.abilityModifierFor(Ability.wisdom);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Wholeness of Body'),
+        content: Text(
+          'Use one Wholeness of Body and ${currentMode == CharacterMode.combat ? 'your Bonus Action' : 'a Bonus Action'} to heal 1d${character.martialArtsDieSides} + $wisdom Wisdom (minimum 1 HP). Uses recover on a Long Rest. Focus Points are not spent.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Use Wholeness · Heal yourself'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true || !canUse()) return;
+    final die = diceRoller.rollDie(character.martialArtsDieSides);
+    final healing = (die + wisdom).clamp(1, 999999);
+    final hp = (characterState.currentHp + healing).clamp(
+      0,
+      characterState.maxHp,
+    );
+    final gained = hp - characterState.currentHp;
+    if (currentMode == CharacterMode.combat) {
+      usedCombatActions.add(CombatActionCost.bonusAction);
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        currentHp: hp,
+        resourceValues: {
+          ...characterState.resourceValues,
+          resource.id: remainingUses(resource) - 1,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Wholeness of Body',
+      detail:
+          '1d${character.martialArtsDieSides} ($die) + $wisdom Wisdom = $healing healing · $gained HP recovered. One use spent.',
+    );
+  }
+
   Future<void> spendResource(CharacterResource resource) async {
     final currentValue =
         characterState.resourceValues[resource.id] ?? resource.initialValue;
@@ -4289,6 +4352,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       startRage(resourceValues);
     } else if (resource.id == secondWindResourceId) {
       applySecondWind(resourceValues);
+    } else if (resource.id == wholenessOfBodyResourceId) {
+      await useWholenessOfBody(resource);
     } else if (resource.id == layOnHandsResourceId) {
       await useLayOnHands(resource);
     } else if (resource.id == paladinChannelDivinityId &&
@@ -6560,6 +6625,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   Widget buildExplorationMode() {
+    final wholeness = character.resources
+        .where((resource) => resource.id == wholenessOfBodyResourceId)
+        .firstOrNull;
     return ExplorationModeView(
       character: characterForPhysicalChecks,
       characterState: characterState,
@@ -6569,6 +6637,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
       adjustIncomingDamage: adjustIncomingDamage,
       inventory: inventory,
       onBeginCombat: showBeginCombatPrompt,
+      onWholenessOfBody: wholeness == null
+          ? null
+          : () => useWholenessOfBody(wholeness),
       onAddItemFromLibrary: addInventoryItemFromLibrary,
       onCreateCustomItem: showNewItemForm,
       onRestockItem: showRestockItems,

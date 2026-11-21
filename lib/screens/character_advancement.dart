@@ -308,12 +308,21 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
     final primaryLevel =
         level - allocation.values.fold<int>(0, (sum, value) => sum + value);
     final charisma = ((improvedScore(Ability.charisma) - 10) / 2).floor();
+    final wisdom = ((improvedScore(Ability.wisdom) - 10) / 2).floor();
     final generated = [
-      ...primary.classResources(primaryLevel, charismaModifier: charisma),
+      ...primary.classResources(
+        primaryLevel,
+        charismaModifier: charisma,
+        wisdomModifier: wisdom,
+        subclass: subclasses[primary.label],
+      ),
       for (final entry in allocation.entries)
-        ...BuiltInClass.named(
-          entry.key,
-        )!.classResources(entry.value, charismaModifier: charisma),
+        ...BuiltInClass.named(entry.key)!.classResources(
+          entry.value,
+          charismaModifier: charisma,
+          wisdomModifier: wisdom,
+          subclass: subclasses[entry.key],
+        ),
     ].where((resource) => progressingClassResourceIds.contains(resource.id));
     return [
       for (final resource in slotsAndResources)

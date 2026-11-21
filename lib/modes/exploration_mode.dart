@@ -22,6 +22,7 @@ class ExplorationModeView extends StatelessWidget {
   final Future<int?> Function(int)? adjustIncomingDamage;
   final List<InventoryItem> inventory;
   final VoidCallback onBeginCombat;
+  final VoidCallback? onWholenessOfBody;
   final VoidCallback onAddItemFromLibrary;
   final VoidCallback onCreateCustomItem;
   final VoidCallback onRestockItem;
@@ -43,6 +44,7 @@ class ExplorationModeView extends StatelessWidget {
     this.adjustIncomingDamage,
     required this.inventory,
     required this.onBeginCombat,
+    this.onWholenessOfBody,
     required this.onAddItemFromLibrary,
     required this.onCreateCustomItem,
     required this.onRestockItem,
@@ -88,6 +90,11 @@ class ExplorationModeView extends StatelessWidget {
             adjustIncomingDamage: adjustIncomingDamage,
           ),
           const SizedBox(height: 16),
+          if (onWholenessOfBody != null)
+            OutlinedButton(
+              onPressed: onWholenessOfBody,
+              child: const Text('Wholeness of Body'),
+            ),
           FilledButton.icon(
             onPressed: onBeginCombat,
             icon: const Icon(Icons.shield_outlined),
