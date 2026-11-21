@@ -99,11 +99,6 @@ class ExplorationModeView extends StatelessWidget {
               onPressed: onMonkDefense,
               child: const Text('Monk · Unarmored defense and movement'),
             ),
-          if (onArcaneRecovery != null)
-            OutlinedButton(
-              onPressed: onArcaneRecovery,
-              child: const Text('Arcane Recovery · After Short Rest'),
-            ),
           if (onWholenessOfBody != null)
             OutlinedButton(
               onPressed: onWholenessOfBody,
@@ -114,6 +109,11 @@ class ExplorationModeView extends StatelessWidget {
             icon: const Icon(Icons.shield_outlined),
             label: const Text('Combat'),
           ),
+          if (onArcaneRecovery != null)
+            OutlinedButton(
+              onPressed: onArcaneRecovery,
+              child: const Text('Arcane Recovery · After Short Rest'),
+            ),
           const SizedBox(height: 24),
           const Text(
             'Skills',
