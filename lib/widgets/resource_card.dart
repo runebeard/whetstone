@@ -22,7 +22,7 @@ class ResourceCard extends StatelessWidget {
       button: true,
       label:
           '${resource.name}, $currentValue of ${resource.maximum} remaining, '
-          '${resource.rechargePeriod.label}. Tap to spend one. Long press to '
+          '${resource.rechargePeriod.label}. Tap to use. Long press to '
           'adjust.',
       child: Card(
         key: ValueKey('resource-${resource.id}-$currentValue'),
@@ -51,31 +51,37 @@ class ResourceCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        for (
-                          var index = 0;
-                          index < resource.maximum;
-                          index++
-                        ) ...[
-                          if (index > 0) const SizedBox(width: 3),
-                          Container(
-                            width: 10,
-                            height: 10,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: index < currentValue
-                                  ? Theme.of(context).colorScheme.primary
-                                  : Colors.transparent,
-                              border: Border.all(
-                                color: Theme.of(context).colorScheme.outline,
+                    if (resource.maximum > 6)
+                      Text(
+                        '$currentValue/${resource.maximum}',
+                        style: const TextStyle(fontSize: 13),
+                      )
+                    else
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (
+                            var index = 0;
+                            index < resource.maximum;
+                            index++
+                          ) ...[
+                            if (index > 0) const SizedBox(width: 3),
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: index < currentValue
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Colors.transparent,
+                                border: Border.all(
+                                  color: Theme.of(context).colorScheme.outline,
+                                ),
                               ),
                             ),
-                          ),
+                          ],
                         ],
-                      ],
-                    ),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 2),

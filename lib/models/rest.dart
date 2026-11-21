@@ -126,6 +126,10 @@ class RestPlan {
   }) {
     final changes = <String>[];
     final resourceValues = {...currentState.resourceValues};
+    final restConditions = {...currentState.activeConditions}
+      ..removeAll({divineSenseCondition, ragingCondition});
+    final ended = currentState.activeConditions.difference(restConditions);
+    if (ended.isNotEmpty) changes.add('Ended ${ended.join(', ')}');
 
     for (final resource in character.resources) {
       final currentValue = resourceValues[resource.id] ?? resource.initialValue;
@@ -200,6 +204,7 @@ class RestPlan {
     return RestPlan(
       type: type,
       updatedState: currentState.copyWith(
+        activeConditions: restConditions,
         currentHp: currentHp,
         hitDiceSpent: type == RestType.longRest
             ? 0

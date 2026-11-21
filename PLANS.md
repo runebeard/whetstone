@@ -164,6 +164,10 @@ Run `flutter analyze` and the relevant Flutter tests after each implementation i
 - [x] Add elapsed-minute tracking from the Druid features menu, sharing the combat duration and automatically reverting at expiry. The focused test verified partial duration and final reversion.
 - [x] Roll Ice Storm's two damage types separately, including slot scaling for bludgeoning and half damage on a successful save.
 - [x] Preserve full spell casting metadata when copying Library spells, including components needed for Beast Spells checks.
+- [x] Apply the Paladin Aura of Protection bonus to personal saving throws and concentration saves from Paladin level 6, using Charisma with a minimum of +1. Disable it while incapacitated, apply it after any Beast save minimum, and show the 10-foot/30-foot range at levels 6/18. Keep this derived modifier out of saved character definitions to prevent stacking on reload. Analysis and seven focused aura tests passed. Reconstructed from the 2024 Basic Rules; allied creatures remain table-tracked.
+- [x] Restore Paladin Restoring Touch from level 14: combine healing and one or more condition removals in a single Lay on Hands Bonus Action. Charge five pool points per condition, validate total cost and self healing, preserve cancellation, and record ally effects for table resolution. Use compact counts for large resource pools so healing points fit narrow cards. Three Restoring Touch tests and three narrow-card tests passed. Mechanics reconstructed from the 2024 Basic Rules.
+- [x] Restore Paladin Radiant Strikes at level 11 on Melee weapon and basic Unarmed Strike damage. Roll Radiant dice separately, double them on critical hits, and include confirmed Nick/Cleave extra hits. Infer standard legacy weapon names and respect explicit categories; unknown weapons must be categorized as Melee for automation. Analysis and all nine focused Radiant Strikes tests passed. Name confirmed in the APK; mechanics reconstructed from the 2024 Basic Rules.
+- [x] Restore Divine Sense through Paladin Channel Divinity as a Bonus Action, with a saved ten-minute combat timer and incapacitation cleanup. Restore Abjure Foes at level 9 using one Channel Divinity and a Magic Action, Charisma-based target limits and save DC, optional outcome counts, and Rage extension. Action Surge cannot pay the Magic action. Five focused Channel Divinity tests passed. Divine Sense and Rage end on a completed Short or Long Rest, with Channel Divinity recovering the appropriate amount. Target detection, immunity, and conditions remain table-resolved; outside-combat elapsed time is table-tracked. Mechanics reconstructed from the 2024 Basic Rules.
 - [ ] Restore other built-in initiative, rest, and resource-triggered class effects confirmed by the APK. Barbarian Feral Instinct and Danger Sense use the 2024 rules. Both names appear in the APK and the focused initiative and Dexterity save widget test passed.
 
 ## 12. Mixed Hit Dice pools
@@ -173,7 +177,7 @@ Run `flutter analyze` and the relevant Flutter tests after each implementation i
 
 ## Release verification
 
-- [ ] Run the final Flutter suite, build an Android debug APK, and exercise the restored flows and older device backups on Android. All 189 Flutter tests passed after attack-budget, basic unarmed, and Rage recovery; analysis reported no issues. The earlier Android build could not download the Flutter Android artifacts. On 21 November 2026, Android Studio Java was present but the default Android SDK path and android/local.properties were still absent. Android build and device verification remain open.
+- [ ] Run the final Flutter suite, build an Android debug APK, and exercise the restored flows and older device backups on Android. All 216 Flutter tests passed after Paladin aura, healing, Radiant Strikes, Channel Divinity, and resource-layout recovery; analysis reported no issues. The earlier Android build could not download the Flutter Android artifacts. On 21 November 2026, Android Studio Java was present but the default Android SDK path and android/local.properties were still absent. Android build and device verification remain open.
 - [x] Verify older character and vault compatibility with representative version-one fixtures. All 20 persistence tests passed. Importing actual Beta 5 device backups remains part of Android release verification.
 
 ### Reconstruction sources
@@ -186,3 +190,5 @@ These sources support reconstructed mechanics; they do not establish identical B
 - Class progression and Rage: https://www.dndbeyond.com/sources/dnd/br-2024/character-classes
 
 - Basic Unarmed Strike, Grapple and Shove: https://www.dndbeyond.com/sources/dnd/br-2024/rules-glossary#UnarmedStrike
+
+- Preserved original Beta 5 APK: `../beta5-evidence/Whetstone-0.1.0-beta.5-android.apk`; original SHA-256 and size are recorded in `recovery/Beta5-APK-Evidence.json`. The binary is preserved locally outside the Git checkout.

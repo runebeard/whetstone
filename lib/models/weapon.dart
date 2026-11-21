@@ -112,6 +112,41 @@ class Weapon extends CharacterAction {
   final int? normalRange;
   final int? longRange;
 
+  bool get isMelee => switch (category) {
+    WeaponCategory.simpleMelee || WeaponCategory.martialMelee => true,
+    WeaponCategory.simpleRanged || WeaponCategory.martialRanged => false,
+    null => const {
+      'club',
+      'dagger',
+      'greatclub',
+      'handaxe',
+      'javelin',
+      'light hammer',
+      'mace',
+      'quarterstaff',
+      'sickle',
+      'spear',
+      'battleaxe',
+      'flail',
+      'glaive',
+      'greataxe',
+      'greatsword',
+      'halberd',
+      'lance',
+      'longsword',
+      'maul',
+      'morningstar',
+      'pike',
+      'rapier',
+      'scimitar',
+      'shortsword',
+      'trident',
+      'war pick',
+      'warhammer',
+      'whip',
+    }.contains(WeaponMastery.weaponType(name)),
+  };
+
   const Weapon({
     required this.id,
     required this.name,

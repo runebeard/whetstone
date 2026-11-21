@@ -184,6 +184,10 @@ class CombatModeView extends StatelessWidget {
                 ? D20Mode.advantage
                 : D20Mode.normal,
           ),
+          if (character.savingThrowBonus > 0)
+            Text(
+              'Aura of Protection +${character.savingThrowBonus} to saves · ${character.levelInClass('Paladin') >= 18 ? 30 : 10}-foot Emanation. Track allies at the table.',
+            ),
           const SizedBox(height: 20),
           if (onNextTurn != null) ...[
             Wrap(

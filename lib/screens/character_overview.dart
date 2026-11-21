@@ -205,6 +205,13 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   void updateCharacterState(CharacterState updatedState) {
     if (!updatedState.canConcentrate &&
+        updatedState.activeConditions.contains(divineSenseCondition)) {
+      updatedState = updatedState.copyWith(
+        activeConditions: {...updatedState.activeConditions}
+          ..remove(divineSenseCondition),
+      );
+    }
+    if (!updatedState.canConcentrate &&
         updatedState.activeConditions.contains(naturesSanctuaryCondition)) {
       updatedState = updatedState.copyWith(
         activeConditions: {...updatedState.activeConditions}
@@ -2178,6 +2185,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
         tone: RollNoticeTone.damage,
         detail: 'bludgeoning',
       );
+      rollRadiantStrikes(
+        critical: attack.naturalRoll >= character.weaponCriticalThreshold,
+      );
       return;
     }
     final dc = 8 + strength + character.proficiencyBonus;
@@ -2608,6 +2618,28 @@ class _CharacterOverviewState extends State<CharacterOverview>
       tone: RollNoticeTone.damage,
       detail: weapon.damageType,
     );
+    if (weapon.isMelee) {
+      rollRadiantStrikes(
+        critical: attack.naturalRoll >= character.weaponCriticalThreshold,
+      );
+    }
+  }
+
+  void rollRadiantStrikes({required bool critical}) {
+    if (character.levelInClass('Paladin') < 11) return;
+    final expression = DiceExpression(diceCount: critical ? 2 : 1, dieSides: 8);
+    final roll = expression.roll('Radiant Strikes', diceRoller);
+    addRollNotice(
+      title: critical
+          ? 'Radiant Strikes Critical Damage'
+          : 'Radiant Strikes Damage',
+      calculation:
+          '${expression.notation}: ${roll.dice.join(' + ')} = ${roll.total}',
+      total: roll.total,
+      tone: RollNoticeTone.damage,
+      detail:
+          'Radiant damage. Apply resistance separately from the strike’s other damage.',
+    );
   }
 
   Future<void> rollDamage(
@@ -2851,6 +2883,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
           : '${action.damageType} damage',
       tone: RollNoticeTone.damage,
     );
+    if (action is Weapon && action.isMelee) {
+      rollRadiantStrikes(critical: critical);
+    }
   }
 
   void rollDeathSave() {
@@ -3172,6 +3207,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
       applySecondWind(resourceValues);
     } else if (resource.id == layOnHandsResourceId) {
       await useLayOnHands(resource);
+    } else if (resource.id == paladinChannelDivinityId &&
+        character.levelInClass('Paladin') >= 3) {
+      await usePaladinChannelDivinity(resource);
     } else if (resource.id == wildShapeResourceId) {
       await useWildShape(resource);
     } else if (resource.id == actionSurgeResourceId) {
@@ -3196,6 +3234,152 @@ class _CharacterOverviewState extends State<CharacterOverview>
       );
     }
     HapticFeedback.selectionClick();
+  }
+
+  Future<void> usePaladinChannelDivinity(CharacterResource resource) async {
+    bool canUse(String choice) =>
+        characterState.canConcentrate &&
+        remainingUses(resource) > 0 &&
+        (choice != 'abjure' || character.levelInClass('Paladin') >= 9) &&
+        (currentMode != CharacterMode.combat ||
+            choice == 'manual' ||
+            !usedCombatActions.contains(
+              choice == 'sense'
+                  ? CombatActionCost.bonusAction
+                  : CombatActionCost.action,
+            ));
+    if (!canUse('manual')) return;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Paladin Channel Divinity'),
+        children: [
+          if (canUse('sense'))
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, 'sense'),
+              child: const Text('Divine Sense · Bonus Action'),
+            ),
+          if (canUse('abjure'))
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, 'abjure'),
+              child: const Text('Abjure Foes · Magic Action'),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 'manual'),
+            child: const Text(
+              'Spend one use · Resolve another effect at the table',
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null || !canUse(choice)) return;
+    final maximum = character.abilityModifierFor(Ability.charisma).clamp(1, 99);
+    var targets = 0;
+    if (choice == 'abjure') {
+      final count = await showDialog<int>(
+        context: context,
+        builder: (context) => const StatEditDialog(
+          title: 'Visible foes within 60 feet',
+          initialValue: 1,
+        ),
+      );
+      if (!mounted || count == null || !canUse(choice)) return;
+      if (count < 1 || count > maximum) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Choose 1 to $maximum targets.')),
+        );
+        return;
+      }
+      targets = count;
+    }
+    if (currentMode == CharacterMode.combat && choice != 'manual') {
+      usedCombatActions.add(
+        choice == 'sense'
+            ? CombatActionCost.bonusAction
+            : CombatActionCost.action,
+      );
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        resourceValues: {
+          ...characterState.resourceValues,
+          resource.id: remainingUses(resource) - 1,
+        },
+        activeConditions: choice == 'sense'
+            ? {...characterState.activeConditions, divineSenseCondition}
+            : null,
+        conditionTurns: choice == 'sense'
+            ? {...characterState.conditionTurns, divineSenseCondition: 100}
+            : null,
+      ),
+    );
+    if (choice == 'sense') {
+      recordSessionEvent(
+        SessionEventType.combat,
+        'Divine Sense',
+        detail:
+            'For 10 minutes, detect Celestial, Fiend and Undead locations and types within 60 feet, '
+            'plus consecrated or desecrated places and objects. Ends if incapacitated. Resolve detection at the table.',
+      );
+      return;
+    }
+    if (choice == 'manual') {
+      recordSessionEvent(
+        SessionEventType.resource,
+        'Paladin Channel Divinity used',
+        detail: 'Resolve the chosen effect and its action cost at the table.',
+      );
+      return;
+    }
+    if (characterState.isRaging && currentMode == CharacterMode.combat) {
+      extendRage();
+    }
+    final dc =
+        8 +
+        character.abilityModifierFor(Ability.charisma) +
+        character.proficiencyBonus;
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Abjure Foes',
+      detail:
+          '$targets targets · DC $dc Wisdom save. Failed targets are Frightened for 1 minute or until damaged. '
+          'While affected, each can only move, take an action, or take a Bonus Action on its turn. Track targets at the table.',
+    );
+    final failed = await showDialog<int>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Abjure Foes saving throws'),
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              '$targets targets · DC $dc Wisdom save. How many failed?',
+            ),
+          ),
+          for (var i = 0; i <= targets; i++)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, i),
+              child: Text('$i failed ${i == 1 ? 'save' : 'saves'}'),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Resolve later'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || failed == null) return;
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Abjure Foes results',
+      detail:
+          '$failed of $targets targets Frightened; the others saved. Apply immunity and effects at the table.',
+    );
   }
 
   bool get canUseWildShape =>
@@ -3795,6 +3979,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   Future<void> useLayOnHands(CharacterResource resource) async {
+    if (character.levelInClass('Paladin') >= 14) {
+      await useRestoringTouch(resource);
+      return;
+    }
     bool canUse() =>
         characterState.canConcentrate &&
         (currentMode != CharacterMode.combat ||
@@ -3885,6 +4073,150 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
+  Future<void> useRestoringTouch(CharacterResource resource) async {
+    bool canUse() =>
+        characterState.canConcentrate &&
+        remainingUses(resource) > 0 &&
+        (currentMode != CharacterMode.combat ||
+            !usedCombatActions.contains(CombatActionCost.bonusAction));
+    if (!canUse()) return;
+    var self = true;
+    var healingText = '';
+    final selected = <String>{};
+    const conditions = [
+      'Poisoned',
+      'Blinded',
+      'Charmed',
+      'Deafened',
+      'Frightened',
+      'Paralyzed',
+      'Stunned',
+    ];
+    final result = await showDialog<(bool, int, Set<String>)>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) {
+          final healing = int.tryParse(healingText.isEmpty ? '0' : healingText);
+          final cost = (healing ?? 0) + selected.length * 5;
+          final valid =
+              healing != null &&
+              healing >= 0 &&
+              cost > 0 &&
+              cost <= remainingUses(resource) &&
+              (!self ||
+                  healing <= characterState.maxHp - characterState.currentHp);
+          return AlertDialog(
+            title: const Text('Lay on Hands · Restoring Touch'),
+            content: SizedBox(
+              width: 360,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    DropdownButtonFormField<bool>(
+                      initialValue: true,
+                      decoration: const InputDecoration(labelText: 'Target'),
+                      items: const [
+                        DropdownMenuItem(value: true, child: Text('Yourself')),
+                        DropdownMenuItem(value: false, child: Text('An ally')),
+                      ],
+                      onChanged: (value) => update(() {
+                        self = value ?? true;
+                        selected.clear();
+                      }),
+                    ),
+                    TextField(
+                      decoration: const InputDecoration(
+                        labelText: 'HP to restore',
+                        helperText: 'Each condition costs 5 additional points.',
+                      ),
+                      keyboardType: TextInputType.number,
+                      onChanged: (value) =>
+                          update(() => healingText = value.trim()),
+                    ),
+                    for (final condition in conditions)
+                      CheckboxListTile(
+                        title: Text(condition),
+                        subtitle: const Text('5 points'),
+                        value: selected.contains(condition),
+                        onChanged:
+                            self &&
+                                !characterState.activeConditions.contains(
+                                  condition,
+                                )
+                            ? null
+                            : (checked) => update(() {
+                                if (checked == true) {
+                                  selected.add(condition);
+                                } else {
+                                  selected.remove(condition);
+                                }
+                              }),
+                      ),
+                    Text('Cost: $cost / ${remainingUses(resource)} points'),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: !valid
+                    ? null
+                    : () => Navigator.pop(context, (
+                        self,
+                        healing,
+                        Set<String>.of(selected),
+                      )),
+                child: const Text('Apply Lay on Hands'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (!mounted || result == null || !canUse()) return;
+    final (targetSelf, healing, removed) = result;
+    final cost = healing + removed.length * 5;
+    if (cost <= 0 ||
+        cost > remainingUses(resource) ||
+        healing < 0 ||
+        (targetSelf &&
+            (healing > characterState.maxHp - characterState.currentHp ||
+                !removed.every(characterState.activeConditions.contains)))) {
+      return;
+    }
+    if (currentMode == CharacterMode.combat) {
+      usedCombatActions.add(CombatActionCost.bonusAction);
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        currentHp: targetSelf ? characterState.currentHp + healing : null,
+        activeConditions: targetSelf
+            ? ({...characterState.activeConditions}..removeAll(removed))
+            : null,
+        resourceValues: {
+          ...characterState.resourceValues,
+          resource.id: remainingUses(resource) - cost,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Lay on Hands · Restoring Touch',
+      detail:
+          'Spent $cost points · $healing HP healing · '
+          '${removed.isEmpty
+              ? 'No conditions removed.'
+              : targetSelf
+              ? 'Removed ${removed.join(', ')}.'
+              : 'Apply removal of ${removed.join(', ')} to the ally at the table.'}',
+    );
+  }
+
   bool get hasPersistentRage => character.levelInClass('Barbarian') >= 15;
 
   CharacterState resolveRelentlessRage(CharacterState damaged, int damage) {
@@ -3904,7 +4236,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     final hp = (2 * barbarianLevel).clamp(1, damaged.maxHp);
     final roll = rollCheck(
       'Relentless Rage',
-      character.savingThrowFor(Ability.constitution).modifier,
+      characterForPhysicalChecks.savingThrowFor(Ability.constitution).modifier,
       describe: (roll) => roll.total >= dc
           ? 'DC $dc · Remain conscious at $hp HP'
           : 'DC $dc · Failed save',
@@ -4917,8 +5249,13 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   Character get characterForPhysicalChecks {
     final form = activeWildShape;
-    if (form == null) return character;
-    return character.copyWith(
+    final aura =
+        character.levelInClass('Paladin') >= 6 && characterState.canConcentrate
+        ? character.abilityModifierFor(Ability.charisma).clamp(1, 999)
+        : 0;
+    final base = character.copyWith(savingThrowBonus: aura);
+    if (form == null) return base;
+    return base.copyWith(
       skillModifierMinimums: form.skillModifiers,
       saveModifierMinimums: form.saveModifiers,
       abilityScores: {

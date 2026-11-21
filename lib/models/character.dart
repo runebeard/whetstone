@@ -36,6 +36,8 @@ class Character {
   final Set<String> druidCantripIds;
   final Map<String, int> skillModifierMinimums;
   final Map<Ability, int> saveModifierMinimums;
+  // Derived live bonuses are not part of the saved character definition.
+  final int savingThrowBonus;
   // Keep recovered class rules intact until their format can be decoded.
   final Object? savedClassRules;
   final int level;
@@ -68,6 +70,7 @@ class Character {
     this.druidCantripIds = const {},
     this.skillModifierMinimums = const {},
     this.saveModifierMinimums = const {},
+    this.savingThrowBonus = 0,
     this.savedClassRules,
     required this.level,
     required this.currentHp,
@@ -102,6 +105,7 @@ class Character {
     Set<String>? druidCantripIds,
     Map<String, int>? skillModifierMinimums,
     Map<Ability, int>? saveModifierMinimums,
+    int? savingThrowBonus,
     int? level,
     int? currentHp,
     int? maxHp,
@@ -135,6 +139,7 @@ class Character {
       skillModifierMinimums:
           skillModifierMinimums ?? this.skillModifierMinimums,
       saveModifierMinimums: saveModifierMinimums ?? this.saveModifierMinimums,
+      savingThrowBonus: savingThrowBonus ?? this.savingThrowBonus,
       savedClassRules: savedClassRules,
       level: level ?? this.level,
       currentHp: currentHp ?? this.currentHp,
@@ -575,7 +580,9 @@ class Character {
     final minimum = saveModifierMinimums[ability];
     return SavingThrowCheck(
       ability: ability,
-      modifier: minimum != null && minimum > modifier ? minimum : modifier,
+      modifier:
+          (minimum != null && minimum > modifier ? minimum : modifier) +
+          savingThrowBonus,
       proficient: proficient || minimum != null,
     );
   }
