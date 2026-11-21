@@ -127,7 +127,12 @@ class RestPlan {
     final changes = <String>[];
     final resourceValues = {...currentState.resourceValues};
     final restConditions = {...currentState.activeConditions}
-      ..removeAll({divineSenseCondition, ragingCondition, steadyAimCondition});
+      ..removeAll({
+        divineSenseCondition,
+        ragingCondition,
+        steadyAimCondition,
+        superiorDefenseCondition,
+      });
     final ended = currentState.activeConditions.difference(restConditions);
     if (ended.isNotEmpty) changes.add('Ended ${ended.join(', ')}');
 

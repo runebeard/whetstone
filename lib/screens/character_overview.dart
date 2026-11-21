@@ -253,6 +253,13 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void updateCharacterState(CharacterState updatedState) {
+    if (!updatedState.canConcentrate &&
+        updatedState.activeConditions.contains(superiorDefenseCondition)) {
+      updatedState = updatedState.copyWith(
+        activeConditions: {...updatedState.activeConditions}
+          ..remove(superiorDefenseCondition),
+      );
+    }
     if (!updatedState.canConcentrate) flurryAttacksRemaining = 0;
     if (!updatedState.activeConditions.contains(steadyAimCondition)) {
       steadyAimAttackPending = false;
@@ -2671,6 +2678,63 @@ class _CharacterOverviewState extends State<CharacterOverview>
       'New creature turn confirmed',
       detail:
           'Sneak Attack refreshed and Steady Aim ended. Action, Bonus Action and Reaction are unchanged.',
+    );
+  }
+
+  Future<void> useSuperiorDefense() async {
+    final focus = character.resources
+        .where((resource) => resource.id == focusResourceId)
+        .firstOrNull;
+    bool canUse() =>
+        mounted &&
+        currentMode == CharacterMode.combat &&
+        character.levelInClass('Monk') >= 18 &&
+        characterState.canConcentrate &&
+        focus != null &&
+        remainingUses(focus) >= 3 &&
+        !characterState.activeConditions.contains(superiorDefenseCondition);
+    if (!canUse()) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Superior Defense'),
+        content: const Text(
+          'Confirm this is the start of your turn. Spend 3 Focus Points for Resistance to all damage except Force for 1 minute or until Incapacitated. No action is spent. Choose a specific damage type when recording damage; unspecified damage is not reduced automatically.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Start of turn · Spend 3 Focus'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true || !canUse()) return;
+    updateCharacterState(
+      characterState.copyWith(
+        activeConditions: {
+          ...characterState.activeConditions,
+          superiorDefenseCondition,
+        },
+        conditionTurns: {
+          ...characterState.conditionTurns,
+          superiorDefenseCondition: 10,
+        },
+        resourceValues: {
+          ...characterState.resourceValues,
+          focus!.id: remainingUses(focus) - 3,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Superior Defense',
+      detail:
+          '3 Focus Points spent · Resistance to typed damage except Force for 10 combat turns, ending on Incapacitation. Start-of-turn timing confirmed at the table.',
     );
   }
 
@@ -6722,6 +6786,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onActionDetails: showActionDetails,
       onAttackRoll: rollAttack,
       onUnarmedStrike: activeWildShape == null ? useUnarmedStrike : null,
+      onSuperiorDefense: character.levelInClass('Monk') >= 18
+          ? useSuperiorDefense
+          : null,
       onMonkDefense:
           character.levelInClass('Monk') >= 1 && activeWildShape == null
           ? useMonkDefense

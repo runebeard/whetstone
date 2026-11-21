@@ -255,6 +255,9 @@ class _CombatSummaryState extends State<CombatSummary> {
                     maxHp: characterState.maxHp,
                     temporaryHp: characterState.temporaryHp,
                     showDamageType:
+                        characterState.activeConditions.contains(
+                          superiorDefenseCondition,
+                        ) ||
                         characterState.isRaging ||
                         widget.additionalResistance != null,
                     onDamage: applyDamage,

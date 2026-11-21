@@ -8,6 +8,7 @@ const naturesSanctuaryCondition = 'Nature’s Sanctuary';
 const freedomOfMovementCondition = 'Freedom of Movement';
 const divineSenseCondition = 'Divine Sense';
 const steadyAimCondition = 'Steady Aim';
+const superiorDefenseCondition = 'Superior Defense';
 
 enum IncomingDamageType {
   other('Other or unspecified'),
@@ -17,7 +18,13 @@ enum IncomingDamageType {
   fire('Fire'),
   cold('Cold'),
   lightning('Lightning'),
-  poison('Poison');
+  poison('Poison'),
+  acid('Acid'),
+  force('Force'),
+  necrotic('Necrotic'),
+  psychic('Psychic'),
+  radiant('Radiant'),
+  thunder('Thunder');
 
   const IncomingDamageType(this.label);
   final String label;
@@ -275,6 +282,10 @@ class CharacterState {
     IncomingDamageType? additionalResistance,
   }) =>
       type == additionalResistance ||
+          (canConcentrate &&
+              activeConditions.contains(superiorDefenseCondition) &&
+              type != IncomingDamageType.force &&
+              type != IncomingDamageType.other) ||
           (isRaging &&
               const {
                 IncomingDamageType.bludgeoning,
