@@ -891,11 +891,20 @@ class _CharacterOverviewState extends State<CharacterOverview>
       (currentMode != CharacterMode.combat ||
           !usedCombatActions.contains(CombatActionCost.reaction));
 
+  bool get canUseMonkReaction =>
+      characterState.canConcentrate &&
+      character.levelInClass('Monk') >= 3 &&
+      (currentMode != CharacterMode.combat ||
+          !usedCombatActions.contains(CombatActionCost.reaction));
+
   Future<int?> adjustIncomingDamage(int damage) async {
-    if (!hasEvasion && !canUseUncannyDodge) return damage;
+    if (!hasEvasion && !canUseUncannyDodge && !canUseMonkReaction) {
+      return damage;
+    }
     var save = 'none';
     var dodge = false;
-    final selection = await showDialog<(String, bool)>(
+    var monkReduction = 0;
+    final selection = await showDialog<(String, bool, int)>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, update) => AlertDialog(
@@ -905,12 +914,13 @@ class _CharacterOverviewState extends State<CharacterOverview>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Incoming damage: $damage. Use the amount before Evasion or Uncanny Dodge; '
+                  'Incoming damage: $damage. Use the amount before class reductions; '
                   'resistance is applied afterward. Choose no reduction if these features were already applied.',
                 ),
                 if (hasEvasion)
                   DropdownButtonFormField<String>(
-                    initialValue: 'none',
+                    key: ValueKey('evasion-$save'),
+                    initialValue: save,
                     isExpanded: true,
                     decoration: const InputDecoration(
                       labelText: 'Evasion · Dexterity save',
@@ -940,6 +950,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
                     ],
                     onChanged: (value) => update(() {
                       save = value ?? 'none';
+                      if (save != 'none') monkReduction = 0;
                       if (save == 'success') dodge = false;
                     }),
                   ),
@@ -952,7 +963,58 @@ class _CharacterOverviewState extends State<CharacterOverview>
                     value: dodge,
                     onChanged: save == 'success'
                         ? null
-                        : (value) => update(() => dodge = value ?? false),
+                        : (value) => update(() {
+                            dodge = value ?? false;
+                            if (dodge) monkReduction = 0;
+                          }),
+                  ),
+                if (canUseMonkReaction)
+                  DropdownButtonFormField<int>(
+                    key: ValueKey('monk-reduction-$monkReduction'),
+                    initialValue: monkReduction,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Monk · Reaction reduction',
+                    ),
+                    items: [
+                      const DropdownMenuItem(
+                        value: 0,
+                        child: Text(
+                          'No Monk reduction / already applied',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: 1,
+                        child: Text(
+                          character.levelInClass('Monk') >= 13
+                              ? 'Deflect Energy · attack hit'
+                              : 'Deflect Attacks · hit includes physical damage',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (character.levelInClass('Monk') >= 4)
+                        const DropdownMenuItem(
+                          value: 2,
+                          child: Text(
+                            'Slow Fall · falling damage',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: (value) => update(() {
+                      monkReduction = value ?? 0;
+                      if (monkReduction != 0) {
+                        save = 'none';
+                        dodge = false;
+                      }
+                    }),
+                  ),
+                if (canUseMonkReaction)
+                  Text(
+                    character.levelInClass('Monk') >= 13
+                        ? 'Deflect Energy requires an attack hit of any damage type. Slow Fall requires falling damage. Confirm the trigger at the table; each uses one Reaction.'
+                        : 'Deflect Attacks requires an attack hit whose damage includes Bludgeoning, Piercing or Slashing. Confirm the trigger at the table; each Monk reduction uses one Reaction.',
                   ),
               ],
             ),
@@ -963,7 +1025,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: () => Navigator.pop(context, (save, dodge)),
+              onPressed: () =>
+                  Navigator.pop(context, (save, dodge, monkReduction)),
               child: const Text('Apply damage'),
             ),
           ],
@@ -971,12 +1034,36 @@ class _CharacterOverviewState extends State<CharacterOverview>
       ),
     );
     if (!mounted || selection == null) return null;
-    final (saveResult, useDodge) = selection;
+    final (saveResult, useDodge, monkChoice) = selection;
     if ((saveResult != 'none' && !hasEvasion) ||
-        (useDodge && !canUseUncannyDodge)) {
+        (useDodge && !canUseUncannyDodge) ||
+        (monkChoice != 0 &&
+            (!canUseMonkReaction ||
+                (monkChoice == 2 && character.levelInClass('Monk') < 4)))) {
       return null;
     }
     var amount = damage;
+    if (monkChoice != 0) {
+      final level = character.levelInClass('Monk');
+      final roll = monkChoice == 1 ? diceRoller.rollDie(10) : null;
+      final dexterity = character.abilityModifierFor(Ability.dexterity);
+      final reduction = roll == null ? 5 * level : roll + dexterity + level;
+      amount = (damage - reduction).clamp(0, damage);
+      if (currentMode == CharacterMode.combat) {
+        usedCombatActions.add(CombatActionCost.reaction);
+      }
+      recordSessionEvent(
+        SessionEventType.combat,
+        monkChoice == 2
+            ? 'Slow Fall'
+            : level >= 13
+            ? 'Deflect Energy'
+            : 'Deflect Attacks',
+        detail:
+            '$damage → $amount damage · ${roll == null ? '5 × $level = $reduction' : '1d10 ($roll) + $dexterity Dexterity + $level Monk = $reduction'} reduction · Reaction used.',
+      );
+      if (monkChoice == 1 && amount == 0) await redirectDeflectedAttack();
+    }
     if (saveResult != 'none') {
       amount = saveResult == 'success' ? 0 : amount ~/ 2;
       recordSessionEvent(
@@ -999,6 +1086,61 @@ class _CharacterOverviewState extends State<CharacterOverview>
       );
     }
     return amount;
+  }
+
+  Future<void> redirectDeflectedAttack() async {
+    final focus = character.resources
+        .where((resource) => resource.id == focusResourceId)
+        .firstOrNull;
+    if (focus == null || remainingUses(focus) < 1) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Redirect deflected attack'),
+        content: const Text(
+          'Spend 1 Focus Point to redirect the fully deflected attack. For a melee hit, choose a creature you can see within 5 feet. For a ranged hit, choose one you can see within 60 feet without Total Cover. Confirm eligibility and the original damage type at the table.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Keep Focus'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Spend 1 Focus · Redirect'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        confirmed != true ||
+        !characterState.canConcentrate ||
+        remainingUses(focus) < 1) {
+      return;
+    }
+    final roll = DiceExpression(
+      diceCount: 2,
+      dieSides: character.martialArtsDieSides,
+      modifier: character.abilityModifierFor(Ability.dexterity),
+    ).roll('Deflected attack', diceRoller);
+    updateCharacterState(
+      characterState.copyWith(
+        resourceValues: {
+          ...characterState.resourceValues,
+          focus.id: remainingUses(focus) - 1,
+        },
+      ),
+    );
+    final dc =
+        8 +
+        character.proficiencyBonus +
+        character.abilityModifierFor(Ability.wisdom);
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Deflected attack redirected',
+      detail:
+          'Target makes a DC $dc Dexterity save. On failure: ${roll.total.clamp(0, 999999)} damage (${roll.dice.join(' + ')} + ${roll.expression.modifier} Dexterity), of the original attack’s damage type. On success: no damage. Resolve the target save, immunity and damage at the table.',
+    );
   }
 
   Future<void> promptConcentrationAfterDamage(int damage) async {
