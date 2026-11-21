@@ -86,10 +86,12 @@ Run `flutter analyze` and the relevant Flutter tests after each implementation i
 ## 9. Combat action availability
 
 - [ ] Extend the current spell and universal-action checks to attacks, class features, and other actions supported in Beta 5. Account for extra attacks and features that change action availability.
+- [x] Spend an Action for weapon attacks, persist the remaining attacks, and reset at turn/encounter transitions. Apply class-based Extra Attack (Fighter 5/11/20 and Barbarian, Monk, Paladin, Ranger 5) without multiclass stacking; Action Surge grants another Attack action. Ready Reactions and Nick/Cleave attacks do not consume or grant these attacks. Missing ammunition and damage-only rolls preserve Actions. Show the live attack budget. Analysis and all 179 Flutter tests passed. Extra Attack names were confirmed in the APK; mechanics reconstructed from the 2024 Basic Rules. Pact weapon invocations and other special attack features remain open.
 - [x] Verify that canceling spell-slot selection preserves the Action and slot, a cast spends each once, and turn and encounter transitions reset action use. The combat widget test passed.
 
 ## 10. Universal and Readied Actions
 
+- [x] Add basic Strength-based Unarmed Strike damage, Grapple, and both Shove outcomes to combat. Share the Attack action/Extra Attack budget with weapons, allow cancellation before spending an attack, use fixed damage (including Rage) without critical dice, and record target-selected Strength/Dexterity saves and outcomes. All 15 focused unarmed/attack-budget tests passed and analysis is clean. Feature names occur in the APK; mechanics reconstructed from the 2024 Basic Rules glossary. Target eligibility, rolls, immunity and conditions remain table-confirmed; Monk-specific options and readied unarmed effects remain open.
 - [ ] Restore the remaining Beta 5 universal actions and effect automation. Confirm the original action list and compare outcomes with the APK.
 - [x] Roll and log the Hide action's Stealth check and show whether it meets DC 15. The player and GM confirm whether hiding is possible and apply the result.
 - [x] Let the player choose and roll a Wisdom skill for Search. Closing the skill picker leaves the Action available.
@@ -114,6 +116,7 @@ Run `flutter analyze` and the relevant Flutter tests after each implementation i
 - [x] Apply Rage resistance to selected bludgeoning, piercing, or slashing damage before temporary HP. Dart analysis and the focused Rage widget assertions passed. Flutter returned a nonzero process exit after reporting success.
 - [x] Apply Rage advantage to Strength skill checks and saving throws, canceling selected disadvantage. Add a Bonus Action to extend Rage. Dart analysis and focused dice and Rage tests passed.
 - [x] Apply level-scaled Rage damage to weapons marked as using Strength, including versatile damage. Analysis and all nine portable character tests passed.
+- [x] Record a confirmed enemy saving throw on the current turn to extend Rage without a Bonus Action. Preserve cancellation and save elapsed Rage rounds across reloads; repeated extensions stop at 100 combat rounds. Ending Rage clears its elapsed counter. Analysis and all 20 focused Rage/rest tests passed. Reconstructed from the 2024 Basic Rules; elapsed time outside combat remains table-tracked.
 - [ ] Restore the remaining Rage extension triggers and higher-level features. Reconstructed Persistent Rage duration and its optional once-per-long-rest initiative recovery, plus automatic Relentless Rage saves, increasing DC, and rest reset. The names appear in the APK and the focused Rage tests passed. Other extension triggers and higher-level interactions remain open.
 - [x] Restore Wild Shape selection, resource expenditure, active form tracking, and reversion. Supports the four suggested forms and manual entry for another known Beast. The table tracks eligible known forms, duration, Beast statistics, and Beast Spells material restrictions.
 - [x] Apply Druid Wild Shape use progression, one-use short rest recovery, long-rest refill and reversion, and Evergreen Wild Shape initiative recovery at level 20. Focused widget and rest tests passed.
@@ -170,7 +173,7 @@ Run `flutter analyze` and the relevant Flutter tests after each implementation i
 
 ## Release verification
 
-- [ ] Run the final Flutter suite, build an Android debug APK, and exercise the restored flows and older device backups on Android. All 171 Flutter tests passed after the mastery and Beast form recovery; analysis reported no issues. The Android build could not download the Flutter Android artifacts, and the default Android SDK path was absent.
+- [ ] Run the final Flutter suite, build an Android debug APK, and exercise the restored flows and older device backups on Android. All 189 Flutter tests passed after attack-budget, basic unarmed, and Rage recovery; analysis reported no issues. The earlier Android build could not download the Flutter Android artifacts. On 21 November 2026, Android Studio Java was present but the default Android SDK path and android/local.properties were still absent. Android build and device verification remain open.
 - [x] Verify older character and vault compatibility with representative version-one fixtures. All 20 persistence tests passed. Importing actual Beta 5 device backups remains part of Android release verification.
 
 ### Reconstruction sources
@@ -179,3 +182,7 @@ Run `flutter analyze` and the relevant Flutter tests after each implementation i
 - Suggested Beast form statistics: https://www.dndbeyond.com/sources/dnd/br-2024/creature-stat-blocks
 
 These sources support reconstructed mechanics; they do not establish identical Beta 5 UI or full feature parity.
+
+- Class progression and Rage: https://www.dndbeyond.com/sources/dnd/br-2024/character-classes
+
+- Basic Unarmed Strike, Grapple and Shove: https://www.dndbeyond.com/sources/dnd/br-2024/rules-glossary#UnarmedStrike

@@ -93,6 +93,7 @@ class CharacterState {
   );
   final bool persistentRageRecoveryUsed;
   final int relentlessRageAttempts;
+  final int rageTurnsElapsed;
   final String? concentrationSpellId;
   final Map<String, String> spellSummons;
   final int? concentrationSlotLevel;
@@ -121,6 +122,7 @@ class CharacterState {
     this.hitDiceSpentBySize = const {},
     this.persistentRageRecoveryUsed = false,
     this.relentlessRageAttempts = 0,
+    this.rageTurnsElapsed = 0,
     this.concentrationSpellId,
     this.spellSummons = const {},
     this.concentrationSlotLevel,
@@ -171,6 +173,8 @@ class CharacterState {
           (size, count) => MapEntry('$size', count),
         ),
       if (persistentRageRecoveryUsed) 'persistentRageRecoveryUsed': true,
+      if (isRaging && rageTurnsElapsed > 0)
+        'rageTurnsElapsed': rageTurnsElapsed,
       if (relentlessRageAttempts > 0)
         'relentlessRageAttempts': relentlessRageAttempts,
       'concentrationSpellId': ?concentrationSpellId,
@@ -216,6 +220,7 @@ class CharacterState {
       persistentRageRecoveryUsed:
           json['persistentRageRecoveryUsed'] as bool? ?? false,
       relentlessRageAttempts: json['relentlessRageAttempts'] as int? ?? 0,
+      rageTurnsElapsed: ((json['rageTurnsElapsed'] as int?) ?? 0).clamp(0, 100),
       concentrationSpellId: json['concentrationSpellId'] as String?,
       spellSummons:
           (json['spellSummons'] as Map<String, Object?>?)
@@ -313,8 +318,9 @@ class CharacterState {
   }
 
   CharacterState advanceConditionTurn() {
-    if (conditionTurns.isEmpty) return this;
-    return copyWith(
+    if (conditionTurns.isEmpty && !isRaging) return this;
+    final updated = copyWith(
+      rageTurnsElapsed: isRaging ? rageTurnsElapsed + 1 : 0,
       activeConditions: {
         for (final condition in activeConditions)
           if (conditionTurns[condition] != 1) condition,
@@ -324,6 +330,9 @@ class CharacterState {
           if (entry.value > 1) entry.key: entry.value - 1,
       },
     );
+    return updated.isRaging && updated.rageTurnsElapsed >= 100
+        ? updated.endRage()
+        : updated;
   }
 
   CharacterState advanceConcentrationTurn() {
@@ -352,6 +361,7 @@ class CharacterState {
     Map<int, int>? hitDiceSpentBySize,
     bool? persistentRageRecoveryUsed,
     int? relentlessRageAttempts,
+    int? rageTurnsElapsed,
     String? concentrationSpellId,
     Map<String, String>? spellSummons,
     int? concentrationSlotLevel,
@@ -390,6 +400,10 @@ class CharacterState {
           persistentRageRecoveryUsed ?? this.persistentRageRecoveryUsed,
       relentlessRageAttempts:
           relentlessRageAttempts ?? this.relentlessRageAttempts,
+      rageTurnsElapsed:
+          (activeConditions ?? this.activeConditions).contains(ragingCondition)
+          ? (rageTurnsElapsed ?? this.rageTurnsElapsed)
+          : 0,
       concentrationSpellId: clearConcentration
           ? null
           : concentrationSpellId ?? this.concentrationSpellId,

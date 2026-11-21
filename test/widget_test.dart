@@ -171,7 +171,7 @@ void main() {
       await tester.tap(find.text('Hit · Roll Nick Damage'));
       await tester.pumpAndSettle();
       expect(session.timeline.first.title, 'Dagger Nick Damage: 4');
-      expect(session.usedCombatActions, isEmpty);
+      expect(session.usedCombatActions, {CombatActionCost.action});
       expect(
         CharacterSession.fromJson(session.toJson()).nickUsedThisTurn,
         isTrue,
@@ -250,7 +250,7 @@ void main() {
     await tester.tap(find.text('Hit · Roll Nick Damage'));
     await tester.pumpAndSettle();
     expect(session.timeline.first.title, 'Dagger Nick Damage: 6');
-    expect(session.usedCombatActions, isEmpty);
+    expect(session.usedCombatActions, {CombatActionCost.action});
     expect(
       CharacterSession.fromJson(session.toJson()).nickUsedThisTurn,
       isTrue,
@@ -332,7 +332,7 @@ void main() {
       await tester.tap(find.text('Nick · Dagger'));
       await tester.pumpAndSettle();
       expect(session.nickUsedThisTurn, isTrue);
-      expect(session.usedCombatActions, isEmpty);
+      expect(session.usedCombatActions, {CombatActionCost.action});
       expect(find.text('Hit · Roll Nick Damage'), findsNothing);
     },
   );
@@ -986,7 +986,10 @@ void main() {
     await tester.ensureVisible(attack);
     await tester.tap(attack);
     await tester.pumpAndSettle();
-    expect(find.textContaining('Action is already spent'), findsOneWidget);
+    expect(
+      find.textContaining('No Attack action attacks remaining'),
+      findsOneWidget,
+    );
     expect(find.text('Pack Tactics'), findsNothing);
     expect(druid.weapons.first.name, 'Quarterstaff');
     await tester.tap(find.text('End Combat'));
@@ -2458,6 +2461,7 @@ void main() {
   ) async {
     final fighter = seedCharacters.first.copyWith(
       characterClass: 'Fighter',
+      level: 11,
       abilityScores: {
         ...seedCharacters.first.abilityScores,
         Ability.strength: 16,
@@ -2810,6 +2814,7 @@ void main() {
     tester,
   ) async {
     final archer = seedCharacters.first.copyWith(
+      characterClass: 'Fighter',
       weapons: const [
         Weapon(
           id: 'bow',

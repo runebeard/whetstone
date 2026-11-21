@@ -85,6 +85,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   bool primalStrikeUsedThisTurn = false;
   bool cleaveUsedThisTurn = false;
   bool nickUsedThisTurn = false;
+  int attackActionAttacksRemaining = 0;
   CheckRoll? tacticalMindCheck;
   late final DiceRoller diceRoller;
   String? pendingCriticalActionKey;
@@ -123,6 +124,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       primalStrikeUsedThisTurn = widget.initialSession.primalStrikeUsedThisTurn;
       cleaveUsedThisTurn = widget.initialSession.cleaveUsedThisTurn;
       nickUsedThisTurn = widget.initialSession.nickUsedThisTurn;
+      attackActionAttacksRemaining = widget
+          .initialSession
+          .attackActionAttacksRemaining
+          .clamp(0, character.attacksPerAction - 1);
     }
     usedCombatActions = widget.initialSession.isInCombat
         ? {...widget.initialSession.usedCombatActions}
@@ -186,6 +191,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         primalStrikeUsedThisTurn: primalStrikeUsedThisTurn,
         cleaveUsedThisTurn: cleaveUsedThisTurn,
         nickUsedThisTurn: nickUsedThisTurn,
+        attackActionAttacksRemaining: attackActionAttacksRemaining,
         timeline: [...timeline],
       ),
     );
@@ -2064,6 +2070,160 @@ class _CharacterOverviewState extends State<CharacterOverview>
     ),
   );
 
+  bool get canUseAttackAction =>
+      characterState.canConcentrate &&
+      (attackActionAttacksRemaining > 0 || canUseNonMagicAction);
+
+  void spendAttackActionAttack() {
+    setState(() {
+      if (attackActionAttacksRemaining == 0) {
+        if (actionSurge == ActionSurgeState.available) {
+          actionSurge = ActionSurgeState.spent;
+        } else {
+          usedCombatActions.add(CombatActionCost.action);
+        }
+        attackActionAttacksRemaining = character.attacksPerAction;
+      }
+      attackActionAttacksRemaining--;
+    });
+    publishSession();
+  }
+
+  Future<void> useUnarmedStrike() async {
+    bool canUse() =>
+        mounted &&
+        currentMode == CharacterMode.combat &&
+        activeWildShape == null &&
+        canUseAttackAction;
+    if (!canUse()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No Attack action attacks remaining.')),
+      );
+      return;
+    }
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Unarmed Strike'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'Choose an effect against a target within 5 feet. Grapple needs a free hand. '
+              'Grapple and Shove require a target no more than one size larger than you. '
+              'Confirm eligibility at the table. These are basic Strength-based options.',
+            ),
+          ),
+          for (final option in [
+            'Damage',
+            'Grapple',
+            'Shove · Prone',
+            'Shove · Push',
+          ])
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, option),
+              child: Text(option),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null || !canUse()) return;
+    spendAttackActionAttack();
+    if (characterState.isRaging) extendRage();
+    final strength = character.abilityModifierFor(Ability.strength);
+    if (choice == 'Damage') {
+      final attack = rollCheck(
+        'Unarmed Strike Attack',
+        strength + character.proficiencyBonus,
+        criticalThreshold: character.weaponCriticalThreshold,
+      );
+      if (attack.isNaturalOne) return;
+      if (attack.naturalRoll >= character.weaponCriticalThreshold &&
+          character.championLevel >= 3) {
+        recordSessionEvent(
+          SessionEventType.combat,
+          'Remarkable Athlete',
+          detail:
+              'You can move up to half your Speed without provoking opportunity attacks.',
+        );
+      }
+      final hit = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Unarmed Strike result'),
+          content: Text('Attack total ${attack.total}. Did the strike hit?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Miss'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Hit · Apply unarmed damage'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || hit != true) return;
+      final rage = characterState.isRaging ? character.rageDamageBonus : 0;
+      final damage = (1 + strength + rage).clamp(0, 999999);
+      addRollNotice(
+        title: 'Unarmed Strike Damage',
+        calculation: '1 + $strength Strength modifier + $rage Rage = $damage',
+        total: damage,
+        tone: RollNoticeTone.damage,
+        detail: 'bludgeoning',
+      );
+      return;
+    }
+    final dc = 8 + strength + character.proficiencyBonus;
+    final effect = choice == 'Grapple'
+        ? 'Target Grappled (escape DC $dc).'
+        : choice == 'Shove · Prone'
+        ? 'Target falls Prone.'
+        : 'Push the target 5 feet away.';
+    recordSessionEvent(
+      SessionEventType.combat,
+      '$choice attempt',
+      detail:
+          'Target chooses a DC $dc Strength or Dexterity save. On failure: $effect',
+    );
+    final failed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('$choice saving throw'),
+        content: Text(
+          'The target chooses a DC $dc Strength or Dexterity save. '
+          'On failure: $effect Resolve target rolls, immunities and conditions at the table.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Resolve later'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Save succeeded'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Save failed'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || failed == null) return;
+    recordSessionEvent(
+      SessionEventType.combat,
+      '$choice · ${failed ? 'failed save' : 'successful save'}',
+      detail: failed ? effect : 'The target avoids the effect.',
+    );
+  }
+
   Future<void> rollAttack(
     CharacterAction action, {
     bool asRitual = false,
@@ -2077,13 +2237,26 @@ class _CharacterOverviewState extends State<CharacterOverview>
         : character.attackModifierFor(action);
     if (modifier == null) return;
     final beastAttack = action.id.startsWith('wild-shape-');
+    final ownWeaponAttack =
+        action is Weapon && !asReaction && currentMode == CharacterMode.combat;
+    bool canMakeWeaponAttack() => !ownWeaponAttack || canUseAttackAction;
+    if (!canMakeWeaponAttack()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No Attack action attacks remaining. Use another available Action or advance the turn.',
+          ),
+        ),
+      );
+      return;
+    }
     bool canUseBeastAttack() =>
         !beastAttack ||
         (activeWildShape?.combatAttack.id == action.id &&
             characterState.canConcentrate &&
             (currentMode != CharacterMode.combat ||
                 asReaction ||
-                canUseNonMagicAction));
+                canMakeWeaponAttack()));
     if (!canUseBeastAttack()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -2105,16 +2278,6 @@ class _CharacterOverviewState extends State<CharacterOverview>
       packTactics = advantage;
     }
     if (!canUseBeastAttack()) return;
-    if (beastAttack && !asReaction && currentMode == CharacterMode.combat) {
-      setState(() {
-        if (actionSurge == ActionSurgeState.available) {
-          actionSurge = ActionSurgeState.spent;
-        } else {
-          usedCombatActions.add(CombatActionCost.action);
-        }
-      });
-      publishSession();
-    }
     int? slotLevel;
     if (action is Spell) {
       if (!canSpendSpellAction(action, fromScroll: scrollName != null)) return;
@@ -2146,6 +2309,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
         : (action.actionKey, slotLevel);
     if (action case Weapon(ammunitionName: final name?)) {
       if (!spendInventoryItem(name)) return;
+    }
+    if (ownWeaponAttack) {
+      if (!canMakeWeaponAttack()) return;
+      spendAttackActionAttack();
     }
     if (action is Weapon && characterState.isRaging && !asReaction) {
       extendRage();
@@ -3764,6 +3931,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     updateCharacterState(
       characterState.copyWith(
         resourceValues: resourceValues,
+        rageTurnsElapsed: 0,
         activeConditions: {...characterState.activeConditions, ragingCondition},
         conditionTurns: {
           ...characterState.conditionTurns,
@@ -3771,6 +3939,47 @@ class _CharacterOverviewState extends State<CharacterOverview>
         },
         clearConcentration: true,
       ),
+    );
+  }
+
+  Future<void> recordRageEnemySave() async {
+    if (!characterState.isRaging ||
+        hasPersistentRage ||
+        currentMode != CharacterMode.combat) {
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Record enemy saving throw'),
+        content: const Text(
+          'Did you force an enemy to make a saving throw on your turn? '
+          'Resolve the effect and its costs at the table. This records Rage extension only.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Enemy forced to save'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        confirmed != true ||
+        !characterState.isRaging ||
+        hasPersistentRage ||
+        currentMode != CharacterMode.combat) {
+      return;
+    }
+    extendRage();
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Rage extended by enemy save',
+      detail: 'An enemy was forced to make a saving throw on your turn.',
     );
   }
 
@@ -4045,6 +4254,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       primalStrikeUsedThisTurn = false;
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
+      attackActionAttacksRemaining = 0;
       readiedAction = null;
       readiedEffect = null;
     });
@@ -4471,6 +4681,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       primalStrikeUsedThisTurn = false;
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
+      attackActionAttacksRemaining = 0;
       readiedAction = null;
       readiedEffect = null;
     });
@@ -4508,6 +4719,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       if (used) {
         usedCombatActions.add(cost);
       } else {
+        if (cost == CombatActionCost.action) attackActionAttacksRemaining = 0;
         usedCombatActions.remove(cost);
       }
     });
@@ -4540,6 +4752,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       primalStrikeUsedThisTurn = false;
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
+      attackActionAttacksRemaining = 0;
       readiedAction = null;
       readiedEffect = null;
     });
@@ -4750,6 +4963,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
   Widget buildCombatMode() {
     return CombatModeView(
       character: characterInCombat,
+      attackActionStatus:
+          'Attack action: ${attackActionAttacksRemaining > 0
+              ? '$attackActionAttacksRemaining attacks remaining'
+              : canUseNonMagicAction
+              ? 'available'
+              : 'spent'} · ${character.attacksPerAction} per action',
       characterState: characterState,
       formArmourClass: activeWildShape?.armourClass,
       onCharacterStateChanged: updateCharacterState,
@@ -4758,6 +4977,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onActionTap: handleActionTap,
       onActionDetails: showActionDetails,
       onAttackRoll: rollAttack,
+      onUnarmedStrike: activeWildShape == null ? useUnarmedStrike : null,
       ammunitionLabel: ammunitionLabel,
       onDamageRoll: rollDamage,
       onDeathSaveRoll: rollDeathSave,
@@ -4770,6 +4990,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
       },
       onCombatActionChanged: setCombatActionUsed,
       onNextTurn: advanceCombatTurn,
+      onRageEnemySave: characterState.isRaging && !hasPersistentRage
+          ? recordRageEnemySave
+          : null,
       onExtendRage: characterState.isRaging && !hasPersistentRage
           ? extendRageWithBonusAction
           : null,

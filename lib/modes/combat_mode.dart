@@ -17,12 +17,14 @@ class CombatModeView extends StatelessWidget {
   final Character character;
   final CharacterState characterState;
   final int? formArmourClass;
+  final String? attackActionStatus;
   final ValueChanged<CharacterState> onCharacterStateChanged;
   final ValueChanged<int>? onDamageTaken;
   final CharacterState Function(CharacterState, int)? resolveDamage;
   final ValueChanged<CharacterAction> onActionTap;
   final ValueChanged<CharacterAction> onActionDetails;
   final ValueChanged<CharacterAction> onAttackRoll;
+  final VoidCallback? onUnarmedStrike;
   final String? Function(CharacterAction)? ammunitionLabel;
   final ValueChanged<CharacterAction> onDamageRoll;
   final VoidCallback? onDeathSaveRoll;
@@ -37,6 +39,7 @@ class CombatModeView extends StatelessWidget {
   final VoidCallback? onNextTurn;
   final VoidCallback? onEndRage;
   final VoidCallback? onExtendRage;
+  final VoidCallback? onRageEnemySave;
   final String? readiedAction;
   final VoidCallback? onChooseCombatAction;
   final VoidCallback? onTriggerReadiedAction;
@@ -50,12 +53,14 @@ class CombatModeView extends StatelessWidget {
     required this.character,
     required this.characterState,
     this.formArmourClass,
+    this.attackActionStatus,
     required this.onCharacterStateChanged,
     this.onDamageTaken,
     this.resolveDamage,
     required this.onActionTap,
     required this.onActionDetails,
     required this.onAttackRoll,
+    this.onUnarmedStrike,
     this.ammunitionLabel,
     required this.onDamageRoll,
     this.onDeathSaveRoll,
@@ -70,6 +75,7 @@ class CombatModeView extends StatelessWidget {
     this.onNextTurn,
     this.onEndRage,
     this.onExtendRage,
+    this.onRageEnemySave,
     this.readiedAction,
     this.onChooseCombatAction,
     this.onTriggerReadiedAction,
@@ -88,7 +94,7 @@ class CombatModeView extends StatelessWidget {
     List<CharacterAction> actions, {
     bool showRollControls = false,
   }) {
-    if (actions.isEmpty) {
+    if (actions.isEmpty && (title != 'Attacks' || onUnarmedStrike == null)) {
       return const SizedBox.shrink();
     }
 
@@ -99,6 +105,13 @@ class CombatModeView extends StatelessWidget {
           title,
           style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
+        if (title == 'Attacks' && onUnarmedStrike != null)
+          OutlinedButton(
+            onPressed: onUnarmedStrike,
+            child: const Text('Unarmed Strike'),
+          ),
+        if (title == 'Attacks' && attackActionStatus != null)
+          Text(attackActionStatus!),
         const SizedBox(height: 8),
         for (final action in actions)
           if (showRollControls &&
@@ -215,6 +228,11 @@ class CombatModeView extends StatelessWidget {
                   ? null
                   : onExtendRage,
               child: const Text('Extend Rage'),
+            ),
+          if (onRageEnemySave != null)
+            OutlinedButton(
+              onPressed: onRageEnemySave,
+              child: const Text('Record enemy save'),
             ),
           if (onEndRage != null)
             OutlinedButton(onPressed: onEndRage, child: const Text('End Rage')),

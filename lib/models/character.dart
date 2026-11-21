@@ -419,6 +419,22 @@ class Character {
     return action.rollModifier;
   }
 
+  int get attacksPerAction {
+    final fighter = levelInClass('Fighter');
+    if (fighter >= 20) return 4;
+    if (fighter >= 11) return 3;
+    if ([
+      'Fighter',
+      'Barbarian',
+      'Monk',
+      'Paladin',
+      'Ranger',
+    ].any((name) => levelInClass(name) >= 5)) {
+      return 2;
+    }
+    return 1;
+  }
+
   int get championLevel =>
       subclasses['Fighter'] == 'Champion' ? levelInClass('Fighter') : 0;
 
@@ -445,6 +461,10 @@ class Character {
 
   int rageDamageBonusFor(CharacterAction action) {
     if (action is! Weapon || !action.usesStrength) return 0;
+    return rageDamageBonus;
+  }
+
+  int get rageDamageBonus {
     final barbarianLevel = levelInClass('Barbarian');
     return switch (barbarianLevel == 0 ? level : barbarianLevel) {
       >= 16 => 4,
