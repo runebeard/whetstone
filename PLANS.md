@@ -181,7 +181,7 @@ Run `flutter analyze` and the relevant Flutter tests after each implementation i
 
 ## Release verification
 
-- [ ] Complete Android device testing and original Beta 5 backup import checks. All 216 Flutter tests passed and analysis was clean after the Paladin recovery. Android debug APK compilation and signature/package checks now pass; full device and Beta 5 parity verification remain open. No authorized Android device was connected on 21 November 2026.
+- [ ] Complete Android device testing and original Beta 5 backup import checks. All 237 Flutter tests passed and analysis was clean after the Rogue and damage-defense recovery. The updated Recovery APK built successfully, passed signature/package checks, and was backed up with milestone/rogue-2026-11-21. Android debug APK compilation and signature/package checks now pass; full device and Beta 5 parity verification remain open. No authorized Android device was connected on 21 November 2026.
 - [x] Provision a workspace-local Android SDK/NDK and Flutter Android artifacts, regenerate missing plugin metadata to fix JNI registration, and build a signed debug APK. Verify its separate `com.runebeard.whetstone.recovery` package and Whetstone Recovery launcher label. Preserve the original Beta 5 APK with a verified SHA-256.
 - [x] Add a repeatable Android build script using local toolchains and caches, restoring the caller environment on exit. Its dependency-refresh and cached build paths both produced verified APKs.
 - [x] Verify older character and vault compatibility with representative version-one fixtures. All 20 persistence tests passed. Importing actual Beta 5 device backups remains part of Android release verification.
@@ -198,3 +198,5 @@ These sources support reconstructed mechanics; they do not establish identical B
 - Basic Unarmed Strike, Grapple and Shove: https://www.dndbeyond.com/sources/dnd/br-2024/rules-glossary#UnarmedStrike
 
 - Preserved original Beta 5 APK: `../beta5-evidence/Whetstone-0.1.0-beta.5-android.apk`; original SHA-256 and size are recorded in `recovery/Beta5-APK-Evidence.json`. The binary is preserved locally outside the Git checkout.
+
+- Rogue milestone verification: `780eb88`, 237 tests passing, analysis clean, Android debug APK built and signature checked. Feature names for Reliable Talent, Slippery Mind, Cunning Action, Sneak Attack, Uncanny Dodge and Evasion were confirmed in the preserved Beta 5 APK; behavior was reconstructed from the 2024 Basic Rules.
