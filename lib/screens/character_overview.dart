@@ -385,12 +385,18 @@ class _CharacterOverviewState extends State<CharacterOverview>
             characterForPhysicalChecks.skillModifierMinimums.containsKey(
               check.skill.id,
             ));
+    final jackBonus = characterForPhysicalChecks.jackOfAllTradesBonusFor(
+      check.skill,
+    );
     return rollCheck(
       label ?? check.skill.name,
       check.modifier,
       minimumRoll: reliable ? 10 : null,
       minimumRollReason: reliable ? 'Reliable Talent' : null,
-      describe: describe,
+      describe: jackBonus > 0
+          ? (roll) =>
+                '${describe == null ? '' : '${describe(roll)} · '}Jack of All Trades +$jackBonus'
+          : describe,
       hasAdvantage:
           (characterState.isRaging &&
               check.skill.ability == Ability.strength) ||
@@ -7098,6 +7104,116 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
+  int? get pendingBardExpertise {
+    for (final milestone in [2, 9]) {
+      if (character.levelInClass('Bard') >= milestone &&
+          !character.features.any(
+            (feature) =>
+                feature.id == 'whetstone:class:bard-expertise:$milestone',
+          )) {
+        return milestone;
+      }
+    }
+    return null;
+  }
+
+  Future<void> chooseBardExpertise() async {
+    final milestone = pendingBardExpertise;
+    if (milestone == null) return;
+    final skills = standardSkills
+        .where(
+          (skill) =>
+              character.proficiencyFor(skill) == SkillProficiency.proficient,
+        )
+        .toList();
+    final selected = <String>{};
+    final choices = await showDialog<Set<String>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: Text('Bard Expertise · Level $milestone'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Choose two skills in which you already have proficiency. Existing Expertise does not stack. If an older save already includes this grant, review its proficiencies before making another choice.',
+                ),
+                if (skills.length < 2)
+                  const Text(
+                    'Two eligible proficient skills are required. Review your skill proficiencies first.',
+                  ),
+                for (final skill in skills)
+                  CheckboxListTile(
+                    title: Text(skill.name),
+                    value: selected.contains(skill.id),
+                    onChanged:
+                        !selected.contains(skill.id) && selected.length == 2
+                        ? null
+                        : (value) => update(() {
+                            if (value == true) {
+                              selected.add(skill.id);
+                            } else {
+                              selected.remove(skill.id);
+                            }
+                          }),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: selected.length == 2
+                  ? () => Navigator.pop(context, {...selected})
+                  : null,
+              child: const Text('Confirm two Expertise skills'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted ||
+        choices == null ||
+        choices.length != 2 ||
+        pendingBardExpertise != milestone ||
+        !choices.every(
+          (id) =>
+              character.skillProficiencies[id] == SkillProficiency.proficient,
+        )) {
+      return;
+    }
+    final names = standardSkills
+        .where((skill) => choices.contains(skill.id))
+        .map((skill) => skill.name)
+        .join(', ');
+    final updated = character.copyWith(
+      skillProficiencies: {
+        ...character.skillProficiencies,
+        for (final id in choices) id: SkillProficiency.expertise,
+      },
+      features: [
+        ...character.features,
+        Feature(
+          id: 'whetstone:class:bard-expertise:$milestone',
+          name: 'Bard Expertise · Level $milestone',
+          summary:
+              'Expertise applied to $names. The skill proficiencies have already been updated.',
+        ),
+      ],
+    );
+    setState(() => character = updated);
+    widget.onCharacterChanged(updated);
+    recordSessionEvent(
+      SessionEventType.condition,
+      'Bard Expertise chosen',
+      detail: 'Level $milestone · $names',
+    );
+  }
+
   Future<void> chooseScholar() async {
     bool canChoose() =>
         mounted &&
@@ -7189,6 +7305,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onFeatureTap: handleActionTap,
       onManageFeature: manageFeature,
       onAddFeature: addFeature,
+      onBardExpertise: pendingBardExpertise == null
+          ? null
+          : chooseBardExpertise,
       onScholar:
           character.levelInClass('Wizard') >= 2 &&
               !character.features.any(

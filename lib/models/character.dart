@@ -601,6 +601,13 @@ class Character {
     );
   }
 
+  int jackOfAllTradesBonusFor(Skill skill) =>
+      levelInClass('Bard') >= 2 &&
+          proficiencyFor(skill) == SkillProficiency.none &&
+          !skillModifierMinimums.containsKey(skill.id)
+      ? proficiencyBonus ~/ 2
+      : 0;
+
   int modifierFor(Skill skill) {
     final abilityModifier = abilityModifierFor(skill.ability);
     final proficiencyMultiplier = switch (proficiencyFor(skill)) {
@@ -619,6 +626,7 @@ class Character {
     final modifier =
         abilityModifier +
         (proficiencyBonus * proficiencyMultiplier) +
+        jackOfAllTradesBonusFor(skill) +
         primalBonus;
     final minimum = skillModifierMinimums[skill.id];
     return minimum != null && minimum > modifier ? minimum : modifier;
