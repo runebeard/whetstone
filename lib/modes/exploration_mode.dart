@@ -28,6 +28,7 @@ class ExplorationModeView extends StatelessWidget {
   final VoidCallback? onArcaneRecovery;
   final VoidCallback? onMemorizeSpell;
   final VoidCallback? onMagicalCunning;
+  final VoidCallback? onFiendishResilience;
   final VoidCallback? onDarkOnesBlessing;
   final bool darkOnesBlessingAvailable;
   final bool magicalCunningAvailable;
@@ -62,6 +63,7 @@ class ExplorationModeView extends StatelessWidget {
     this.onArcaneRecovery,
     this.onMemorizeSpell,
     this.onMagicalCunning,
+    this.onFiendishResilience,
     this.onDarkOnesBlessing,
     this.darkOnesBlessingAvailable = false,
     this.magicalCunningAvailable = false,
@@ -142,6 +144,19 @@ class ExplorationModeView extends StatelessWidget {
                     ? 'Eldritch Master · Magical Cunning'
                     : 'Magical Cunning · Pact slots',
               ),
+            ),
+          if (onFiendishResilience != null)
+            OutlinedButton(
+              onPressed:
+                  characterState.fiendishResilienceAvailable &&
+                      characterState.canConcentrate
+                  ? onFiendishResilience
+                  : null,
+              child: const Text('Fiendish Resilience · After Rest'),
+            ),
+          if (characterState.fiendishResistance != null)
+            Text(
+              'Fiendish Resilience: ${characterState.fiendishResistance!.label} Resistance',
             ),
           if (onDarkOnesBlessing != null)
             OutlinedButton(

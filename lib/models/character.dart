@@ -433,6 +433,8 @@ class Character {
     >= 1 => 6,
     _ => 0,
   };
+  bool get hasFiendishResilience =>
+      levelInClass('Warlock') >= 10 && subclasses['Warlock'] == 'Fiend Patron';
 
   int get martialArtsDieSides => switch (levelInClass('Monk')) {
     >= 17 => 12,

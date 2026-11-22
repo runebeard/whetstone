@@ -91,6 +91,8 @@ class CharacterState {
   final String? wildCompanion;
   final bool naturalRecoveryUsed;
   final bool memorizeSpellAvailable;
+  final IncomingDamageType? fiendishResistance;
+  final bool fiendishResilienceAvailable;
   final bool naturalRecoveryCastUsed;
   final DruidLand? druidLand;
   final int armourClass;
@@ -126,6 +128,8 @@ class CharacterState {
     this.wildCompanion,
     this.naturalRecoveryUsed = false,
     this.memorizeSpellAvailable = false,
+    this.fiendishResistance,
+    this.fiendishResilienceAvailable = false,
     this.naturalRecoveryCastUsed = false,
     this.druidLand,
     required this.armourClass,
@@ -153,6 +157,7 @@ class CharacterState {
       currentHp: character.currentHp,
       maxHp: character.maxHp,
       temporaryHp: 0,
+      fiendishResilienceAvailable: character.hasFiendishResilience,
       armourClass: character.armourClass,
       initiativeModifier: character.initiativeModifier,
       deathSaveSuccesses: 0,
@@ -171,6 +176,8 @@ class CharacterState {
       'currentHp': currentHp,
       'maxHp': maxHp,
       'temporaryHp': temporaryHp,
+      'fiendishResistance': ?fiendishResistance?.name,
+      if (fiendishResilienceAvailable) 'fiendishResilienceAvailable': true,
       'wildShapeForm': ?wildShapeForm,
       'wildShapeTurnsRemaining': ?wildShapeTurnsRemaining,
       'wildCompanion': ?wildCompanion,
@@ -213,6 +220,16 @@ class CharacterState {
       currentHp: json['currentHp'] as int,
       maxHp: json['maxHp'] as int,
       temporaryHp: json['temporaryHp'] as int,
+      fiendishResistance: IncomingDamageType.values
+          .where(
+            (type) =>
+                type.name == json['fiendishResistance'] &&
+                type != IncomingDamageType.force &&
+                type != IncomingDamageType.other,
+          )
+          .firstOrNull,
+      fiendishResilienceAvailable:
+          json['fiendishResilienceAvailable'] as bool? ?? false,
       wildShapeForm: json['wildShapeForm'] as String?,
       wildShapeTurnsRemaining: json['wildShapeTurnsRemaining'] as int?,
       wildCompanion: json['wildCompanion'] as String?,
@@ -287,6 +304,10 @@ class CharacterState {
     IncomingDamageType? additionalResistance,
   }) =>
       type == additionalResistance ||
+          (fiendishResistance != null &&
+              fiendishResistance != IncomingDamageType.force &&
+              fiendishResistance != IncomingDamageType.other &&
+              type == fiendishResistance) ||
           (canConcentrate &&
               activeConditions.contains(superiorDefenseCondition) &&
               type != IncomingDamageType.force &&
@@ -362,6 +383,9 @@ class CharacterState {
   }
 
   CharacterState copyWith({
+    IncomingDamageType? fiendishResistance,
+    bool clearFiendishResistance = false,
+    bool? fiendishResilienceAvailable,
     int? currentHp,
     int? maxHp,
     int? temporaryHp,
@@ -395,6 +419,11 @@ class CharacterState {
     Map<String, int>? resourceValues,
   }) {
     return CharacterState(
+      fiendishResistance: clearFiendishResistance
+          ? null
+          : fiendishResistance ?? this.fiendishResistance,
+      fiendishResilienceAvailable:
+          fiendishResilienceAvailable ?? this.fiendishResilienceAvailable,
       currentHp: currentHp ?? this.currentHp,
       maxHp: maxHp ?? this.maxHp,
       temporaryHp: temporaryHp ?? this.temporaryHp,

@@ -259,6 +259,7 @@ class _CombatSummaryState extends State<CombatSummary> {
                           superiorDefenseCondition,
                         ) ||
                         characterState.isRaging ||
+                        characterState.fiendishResistance != null ||
                         widget.additionalResistance != null,
                     onDamage: applyDamage,
                     onCriticalDamage: (damage, type) =>

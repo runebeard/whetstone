@@ -244,6 +244,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       });
     }
     if (!characterState.canConcentrate ||
+        characterState.fiendishResistance != null ||
+        characterState.fiendishResilienceAvailable ||
         characterState.activeConditions.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) updateCharacterState(characterState);
@@ -301,6 +303,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void updateCharacterState(CharacterState updatedState) {
+    if (!character.hasFiendishResilience &&
+        (updatedState.fiendishResistance != null ||
+            updatedState.fiendishResilienceAvailable)) {
+      updatedState = updatedState.copyWith(
+        clearFiendishResistance: true,
+        fiendishResilienceAvailable: false,
+      );
+    }
     if (!updatedState.canConcentrate &&
         updatedState.activeConditions.contains(superiorDefenseCondition)) {
       updatedState = updatedState.copyWith(
@@ -6761,6 +6771,61 @@ class _CharacterOverviewState extends State<CharacterOverview>
     await useNaturalRecovery(arcane: true);
   }
 
+  Future<void> chooseFiendishResilience() async {
+    bool eligible() =>
+        character.hasFiendishResilience &&
+        currentMode == CharacterMode.exploration &&
+        characterState.canConcentrate &&
+        characterState.fiendishResilienceAvailable;
+    if (!eligible()) return;
+    final choice = await showDialog<IncomingDamageType>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Fiendish Resilience · After Rest'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'Choose one damage type after finishing a Short or Long Rest. Force cannot be chosen. The resistance lasts until you choose a different type after another rest. Incoming damage must specify its type; resistances do not stack.',
+            ),
+          ),
+          for (final type in IncomingDamageType.values.where(
+            (type) =>
+                type != IncomingDamageType.force &&
+                type != IncomingDamageType.other,
+          ))
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, type),
+              child: Text(type.label),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        choice == null ||
+        !eligible() ||
+        choice == IncomingDamageType.force ||
+        choice == IncomingDamageType.other) {
+      return;
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        fiendishResistance: choice,
+        fiendishResilienceAvailable: false,
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.condition,
+      'Fiendish Resilience',
+      detail:
+          '${choice.label} Resistance chosen after rest. No action or resource spent; select another type after your next Short or Long Rest.',
+    );
+  }
+
   bool get hasDarkOnesBlessing =>
       character.levelInClass('Warlock') >= 3 &&
       character.subclasses['Warlock'] == 'Fiend Patron';
@@ -7938,6 +8003,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
           : null,
       onMagicalCunning: character.levelInClass('Warlock') >= 2
           ? useMagicalCunning
+          : null,
+      onFiendishResilience: character.hasFiendishResilience
+          ? chooseFiendishResilience
           : null,
       onDarkOnesBlessing: hasDarkOnesBlessing ? useDarkOnesBlessing : null,
       darkOnesBlessingAvailable: darkOnesBlessingAvailable,

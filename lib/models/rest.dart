@@ -210,9 +210,14 @@ class RestPlan {
     if (type == RestType.shortRest && character.levelInClass('Wizard') >= 5) {
       changes.add('Memorize Spell available');
     }
+    if (character.hasFiendishResilience) {
+      changes.add('Fiendish Resilience choice available');
+    }
     return RestPlan(
       type: type,
       updatedState: currentState.copyWith(
+        fiendishResilienceAvailable: character.hasFiendishResilience,
+        clearFiendishResistance: !character.hasFiendishResilience,
         memorizeSpellAvailable:
             type == RestType.shortRest && character.levelInClass('Wizard') >= 5,
         activeConditions: restConditions,

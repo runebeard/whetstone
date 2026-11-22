@@ -470,6 +470,10 @@ class CombatModeView extends StatelessWidget {
               onPressed: darkOnesBlessingAvailable ? onDarkOnesBlessing : null,
               child: const Text('Dark One’s Blessing'),
             ),
+          if (characterState.fiendishResistance != null)
+            Text(
+              'Fiendish Resilience: ${characterState.fiendishResistance!.label} Resistance',
+            ),
           if (onRecklessAttack != null)
             OutlinedButton(
               onPressed: recklessAttackAvailable ? onRecklessAttack : null,

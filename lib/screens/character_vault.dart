@@ -387,7 +387,12 @@ class _CharacterVaultState extends State<CharacterVault> {
       resourceValues: updatedResourceValues,
     );
     final updatedSession = CharacterSession(
-      characterState: updatedState,
+      characterState: updated.hasFiendishResilience
+          ? updatedState
+          : updatedState.copyWith(
+              clearFiendishResistance: true,
+              fiendishResilienceAvailable: false,
+            ),
       inventory: updated.initialInventory,
       archivedInventory: session.archivedInventory,
       isInCombat: session.isInCombat,
