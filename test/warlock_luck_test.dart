@@ -296,6 +296,7 @@ void main() {
     await tester.enterText(find.byType(TextField), '4');
     await tap(tester, find.text('🗡 Damage'));
     await tap(tester, find.text('Roll Save'));
+    await tap(tester, find.text('Keep save result'));
     expect(session.characterState.concentrationSpellId, isNull);
     expect(
       tester

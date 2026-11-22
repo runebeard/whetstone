@@ -1332,7 +1332,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       save.modifier,
       describe: (roll) => roll.total >= dc
           ? 'DC $dc · Concentration maintained'
-          : character.levelInClass('Monk') >= 14
+          : character.levelInClass('Monk') >= 14 || hasDarkOnesOwnLuck
           ? 'DC $dc · Failed concentration save'
           : 'DC $dc · Concentration ended',
     );
@@ -1343,6 +1343,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
         knownFailure: true,
       );
     }
+    if (!mounted || characterState.concentrationSpellId != spellId) return;
+    roll = await boostFailedSaveWithDarkLuck(roll, dc: dc);
     if (!mounted || characterState.concentrationSpellId != spellId) return;
     if (roll.total < dc) {
       updateCharacterState(characterState.copyWith(clearConcentration: true));
@@ -4618,6 +4620,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       );
     }
     if (!mounted || !characterState.canRollDeathSave) return;
+    if (result(roll) < 10 && !roll.isNaturalOne) {
+      roll = await boostFailedSaveWithDarkLuck(roll, dc: 10);
+    }
+    if (!mounted || !characterState.canRollDeathSave) return;
     updateCharacterState(characterState.applyDeathSave(result(roll)));
   }
 
@@ -5099,6 +5105,67 @@ class _CharacterOverviewState extends State<CharacterOverview>
       );
     }
     HapticFeedback.selectionClick();
+  }
+
+  Future<CheckRoll> boostFailedSaveWithDarkLuck(
+    CheckRoll original, {
+    required int dc,
+  }) async {
+    final resource = resourceWithId(darkOnesOwnLuckResourceId);
+    bool eligible() =>
+        mounted &&
+        hasDarkOnesOwnLuck &&
+        resource != null &&
+        remainingUses(resource) > 0 &&
+        original.total < dc &&
+        !(characterState.currentHp == 0 &&
+            characterState.deathSaveFailures >= 3);
+    if (!eligible()) return original;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Dark One’s Own Luck · Failed save'),
+        content: Text(
+          '${original.label}: ${original.total} against DC $dc. Spend one use to add 1d10 before the save outcome is applied. Other offered rerolls have already been resolved. The original d20 is unchanged and the use is spent even if the save still fails.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Keep save result'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Spend use · Boost save'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        confirmed != true ||
+        !eligible() ||
+        !spendCastResource(resource!.id)) {
+      return original;
+    }
+    darkLuckRoll = null;
+    peerlessSkillRoll = null;
+    tacticalMindCheck = null;
+    final bonus = diceRoller.rollDie(10);
+    final boosted = CheckRoll(
+      label: original.label,
+      naturalRoll: original.naturalRoll,
+      modifier: original.modifier + bonus,
+      minimumRoll: original.minimumRoll,
+      minimumTotal: original.minimumTotal,
+    );
+    addRollNotice(
+      title: '${original.label} · Dark One’s Own Luck',
+      calculation: '${original.total} + 1d10 ($bonus) = ${boosted.total}',
+      total: boosted.total,
+      tone: RollNoticeTone.normal,
+      detail:
+          'DC $dc · ${boosted.total >= dc ? 'Success' : 'Failed'} · One use spent. Original d20 ${original.naturalRoll} unchanged.',
+    );
+    return boosted;
   }
 
   bool get hasDarkOnesOwnLuck =>
