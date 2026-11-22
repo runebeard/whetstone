@@ -6994,6 +6994,90 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
+  Future<void> chooseScholar() async {
+    bool canChoose() =>
+        mounted &&
+        character.levelInClass('Wizard') >= 2 &&
+        !character.features.any(
+          (feature) =>
+              feature.id == 'whetstone:class:scholar' ||
+              feature.name.trim().toLowerCase() == 'scholar',
+        );
+    if (!canChoose()) return;
+    const eligibleIds = {
+      'arcana',
+      'history',
+      'investigation',
+      'medicine',
+      'nature',
+      'religion',
+    };
+    final skills = standardSkills
+        .where(
+          (skill) =>
+              eligibleIds.contains(skill.id) &&
+              character.proficiencyFor(skill) == SkillProficiency.proficient,
+        )
+        .toList();
+    final selected = await showDialog<Skill>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Scholar · Choose Expertise'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'Choose one listed skill in which you already have proficiency. Scholar grants Expertise; it does not grant a new skill proficiency.',
+            ),
+          ),
+          if (skills.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'No eligible proficient skill without Expertise. Review your skill proficiencies before choosing.',
+              ),
+            ),
+          for (final skill in skills)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, skill),
+              child: Text('Expertise · ${skill.name}'),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (selected == null ||
+        !canChoose() ||
+        character.proficiencyFor(selected) != SkillProficiency.proficient) {
+      return;
+    }
+    final updated = character.copyWith(
+      skillProficiencies: {
+        ...character.skillProficiencies,
+        selected.id: SkillProficiency.expertise,
+      },
+      features: [
+        ...character.features,
+        Feature(
+          id: 'whetstone:class:scholar',
+          name: 'Scholar',
+          summary:
+              'Expertise in ${selected.name}. The skill proficiency has already been updated.',
+        ),
+      ],
+    );
+    setState(() => character = updated);
+    widget.onCharacterChanged(updated);
+    recordSessionEvent(
+      SessionEventType.condition,
+      'Scholar chosen',
+      detail: 'Expertise in ${selected.name}.',
+    );
+  }
+
   Widget buildProfileMode() {
     return ProfileModeView(
       character: character,
@@ -7001,6 +7085,15 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onFeatureTap: handleActionTap,
       onManageFeature: manageFeature,
       onAddFeature: addFeature,
+      onScholar:
+          character.levelInClass('Wizard') >= 2 &&
+              !character.features.any(
+                (feature) =>
+                    feature.id == 'whetstone:class:scholar' ||
+                    feature.name.trim().toLowerCase() == 'scholar',
+              )
+          ? chooseScholar
+          : null,
       onAdvanceCharacter: advanceCharacter,
       onAbilityLongPress: handleAbilityLongPress,
       onExitCharacter: requestExitCharacter,

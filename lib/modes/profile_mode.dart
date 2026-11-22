@@ -17,6 +17,7 @@ class ProfileModeView extends StatelessWidget {
   final ValueChanged<Feature> onManageFeature;
   final VoidCallback onAddFeature;
   final VoidCallback onAdvanceCharacter;
+  final VoidCallback? onScholar;
 
   const ProfileModeView({
     super.key,
@@ -28,6 +29,7 @@ class ProfileModeView extends StatelessWidget {
     required this.onManageFeature,
     required this.onAddFeature,
     required this.onAdvanceCharacter,
+    this.onScholar,
   });
 
   String get displayProficiencyBonus {
@@ -142,6 +144,11 @@ class ProfileModeView extends StatelessWidget {
             onAbilityLongPress: onAbilityLongPress,
           ),
           const SizedBox(height: 28),
+          if (onScholar != null)
+            OutlinedButton(
+              onPressed: onScholar,
+              child: const Text('Scholar · Choose Expertise'),
+            ),
           OutlinedButton.icon(
             onPressed: onExitCharacter,
             icon: const Icon(Icons.logout),
