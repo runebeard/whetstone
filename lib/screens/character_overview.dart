@@ -96,6 +96,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   int flurryAttacksRemaining = 0;
   int attackActionAttacksRemaining = 0;
   CheckRoll? tacticalMindCheck;
+  CheckRoll? peerlessSkillRoll;
   late final DiceRoller diceRoller;
   String? pendingCriticalActionKey;
   (String, int)? pendingAttackSlot;
@@ -397,6 +398,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     return rollCheck(
       label ?? check.skill.name,
       check.modifier,
+      peerlessEligible: true,
       minimumRoll: reliable ? 10 : null,
       minimumRollReason: reliable ? 'Reliable Talent' : null,
       describe: jackBonus > 0
@@ -3153,6 +3155,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       final attack = rollCheck(
         'Unarmed Strike Attack',
         modifier + character.proficiencyBonus,
+        peerlessEligible: true,
+        attackRoll: true,
         criticalThreshold: character.weaponCriticalThreshold,
         hasAdvantage: consumeSteadyAimAdvantage(),
       );
@@ -3357,6 +3361,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
     final roll = rollCheck(
       '${action.name} Attack',
       modifier,
+      peerlessEligible: true,
+      attackRoll: true,
       criticalThreshold: threshold,
       hasAdvantage: packTactics || aimed,
     );
@@ -3599,6 +3605,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
     final attack = rollCheck(
       '${weapon.name} $mastery Attack',
       weapon.attackModifier,
+      peerlessEligible: true,
+      attackRoll: true,
       criticalThreshold: character.weaponCriticalThreshold,
       hasAdvantage: consumeSteadyAimAdvantage(),
     );
@@ -4166,6 +4174,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
     String label,
     int modifier, {
     bool useSelectedMode = true,
+    bool peerlessEligible = false,
+    bool attackRoll = false,
     bool hasAdvantage = false,
     D20Mode? modeOverride,
     int criticalThreshold = 20,
@@ -4174,6 +4184,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     String Function(CheckRoll)? describe,
   }) {
     tacticalMindCheck = null;
+    peerlessSkillRoll = null;
     final selectedMode = useSelectedMode ? nextRollMode : D20Mode.normal;
     final mode =
         modeOverride ??
@@ -4190,6 +4201,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
       minimumRoll: minimumRoll,
     );
     final minimumApplied = roll.effectiveRoll != roll.naturalRoll;
+    if (hasPeerlessSkill &&
+        peerlessEligible &&
+        (!attackRoll ||
+            (!roll.isNaturalOne && roll.naturalRoll < criticalThreshold))) {
+      peerlessSkillRoll = roll;
+    }
     final critical = roll.naturalRoll >= criticalThreshold;
     if (critical) {
       HapticFeedback.heavyImpact();
@@ -4424,6 +4441,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     }
     tacticalMindCheck = null;
     final bonus = diceRoller.rollDie(10);
+    peerlessSkillRoll = null;
     final total = check.total + bonus;
     final success = total >= dc;
     if (success) spendCastResource(resource.id);
@@ -4549,6 +4567,57 @@ class _CharacterOverviewState extends State<CharacterOverview>
       );
     }
     HapticFeedback.selectionClick();
+  }
+
+  bool get hasPeerlessSkill =>
+      character.levelInClass('Bard') >= 14 &&
+      character.subclasses['Bard'] == 'College of Lore';
+
+  bool get peerlessSkillAvailable =>
+      hasPeerlessSkill &&
+      peerlessSkillRoll != null &&
+      characterState.canConcentrate &&
+      character.resources.any(
+        (resource) =>
+            resource.id == bardicInspirationResourceId &&
+            remainingUses(resource) > 0,
+      );
+
+  Future<void> usePeerlessSkill() async {
+    if (!peerlessSkillAvailable) return;
+    final roll = peerlessSkillRoll!;
+    final dc = await showDialog<int>(
+      context: context,
+      builder: (context) => StatEditDialog(
+        title:
+            'Peerless Skill · ${roll.label} ${roll.total} · Enter failed DC or AC',
+        initialValue: (roll.total + 1).clamp(1, 999),
+      ),
+    );
+    if (!mounted ||
+        dc == null ||
+        dc <= roll.total ||
+        !identical(roll, peerlessSkillRoll) ||
+        !peerlessSkillAvailable) {
+      return;
+    }
+    peerlessSkillRoll = null;
+    // A die can be applied only once to this roll, even when the use is retained.
+    tacticalMindCheck = null;
+    final die = diceRoller.rollDie(character.bardicInspirationDieSides);
+    final total = roll.total + die;
+    final success = total >= dc;
+    if (success) spendCastResource(bardicInspirationResourceId);
+    addRollNotice(
+      title: 'Peerless Skill · ${roll.label}',
+      calculation:
+          '${roll.total} + d${character.bardicInspirationDieSides} $die = $total',
+      total: total,
+      detail:
+          'DC/AC $dc · ${success ? 'Success · One Inspiration spent' : 'Failed · Inspiration retained'}. '
+          'No extra action spent. Resolve the resulting check or hit at the table.',
+      tone: RollNoticeTone.normal,
+    );
   }
 
   bool get bardicInspirationAvailable =>
@@ -6014,6 +6083,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
           countsBySize: counts,
           roller: diceRoller,
         );
+    peerlessSkillRoll = null;
     updateCharacterState(plan.updatedState);
     recordSessionEvent(
       SessionEventType.rest,
@@ -6275,6 +6345,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       currentMode = CharacterMode.combat;
       combatRound = 1;
       combatInitiative = null;
+      peerlessSkillRoll = null;
       usedCombatActions.clear();
       actionSurge = null;
       wildResurgenceUsedThisTurn = false;
@@ -6888,6 +6959,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   void advanceCombatTurn() {
     tacticalMindCheck = null;
+    peerlessSkillRoll = null;
     pendingAttackSlot = null;
     pendingCriticalActionKey = null;
     setState(() {
@@ -6972,6 +7044,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       currentMode = CharacterMode.exploration;
       combatRound = 1;
       combatInitiative = null;
+      peerlessSkillRoll = null;
       usedCombatActions.clear();
       actionSurge = null;
       wildResurgenceUsedThisTurn = false;
@@ -7196,6 +7269,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
           ? grantBardicInspiration
           : null,
       bardicInspirationAvailable: bardicInspirationAvailable,
+      onPeerlessSkill: hasPeerlessSkill ? usePeerlessSkill : null,
+      peerlessSkillAvailable: peerlessSkillAvailable,
       onArcaneRecovery: character.levelInClass('Wizard') > 0
           ? useArcaneRecovery
           : null,
@@ -7239,6 +7314,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onAttackRoll: rollAttack,
       onUnarmedStrike: activeWildShape == null ? useUnarmedStrike : null,
       onCuttingWords: hasCuttingWords ? useCuttingWords : null,
+      onPeerlessSkill: hasPeerlessSkill ? usePeerlessSkill : null,
+      peerlessSkillAvailable: peerlessSkillAvailable,
       onBardicInspiration: character.levelInClass('Bard') >= 1
           ? grantBardicInspiration
           : null,

@@ -52,6 +52,8 @@ class CombatModeView extends StatelessWidget {
   final VoidCallback? onCuttingWords;
   final VoidCallback? onCountercharm;
   final VoidCallback? onBardicInspiration;
+  final VoidCallback? onPeerlessSkill;
+  final bool peerlessSkillAvailable;
   final bool bardicInspirationAvailable;
   final bool cuttingWordsAvailable;
   final VoidCallback? onFastHands;
@@ -113,6 +115,8 @@ class CombatModeView extends StatelessWidget {
     this.onCuttingWords,
     this.onCountercharm,
     this.onBardicInspiration,
+    this.onPeerlessSkill,
+    this.peerlessSkillAvailable = false,
     this.bardicInspirationAvailable = false,
     this.cuttingWordsAvailable = true,
     this.onFastHands,
@@ -423,6 +427,11 @@ class CombatModeView extends StatelessWidget {
                   ? null
                   : onCountercharm,
               child: const Text('Countercharm · Reaction'),
+            ),
+          if (onPeerlessSkill != null)
+            OutlinedButton(
+              onPressed: peerlessSkillAvailable ? onPeerlessSkill : null,
+              child: const Text('Peerless Skill · Last check or attack'),
             ),
           if (onSteadyAim != null)
             OutlinedButton(

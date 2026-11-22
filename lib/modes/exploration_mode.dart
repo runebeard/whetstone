@@ -27,6 +27,8 @@ class ExplorationModeView extends StatelessWidget {
   final VoidCallback? onArcaneRecovery;
   final VoidCallback? onMemorizeSpell;
   final VoidCallback? onBardicInspiration;
+  final VoidCallback? onPeerlessSkill;
+  final bool peerlessSkillAvailable;
   final bool bardicInspirationAvailable;
   final VoidCallback onAddItemFromLibrary;
   final VoidCallback onCreateCustomItem;
@@ -54,6 +56,8 @@ class ExplorationModeView extends StatelessWidget {
     this.onArcaneRecovery,
     this.onMemorizeSpell,
     this.onBardicInspiration,
+    this.onPeerlessSkill,
+    this.peerlessSkillAvailable = false,
     this.bardicInspirationAvailable = false,
     required this.onAddItemFromLibrary,
     required this.onCreateCustomItem,
@@ -126,6 +130,11 @@ class ExplorationModeView extends StatelessWidget {
                   ? onBardicInspiration
                   : null,
               child: const Text('Grant Bardic Inspiration'),
+            ),
+          if (onPeerlessSkill != null)
+            OutlinedButton(
+              onPressed: peerlessSkillAvailable ? onPeerlessSkill : null,
+              child: const Text('Peerless Skill · Last check or attack'),
             ),
           if (onArcaneRecovery != null)
             OutlinedButton(
