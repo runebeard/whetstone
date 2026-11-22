@@ -29,6 +29,8 @@ class ExplorationModeView extends StatelessWidget {
   final VoidCallback? onMemorizeSpell;
   final VoidCallback? onMagicalCunning;
   final VoidCallback? onSlotToSorceryPoints;
+  final VoidCallback? onInnateSorcery;
+  final bool innateSorceryAvailable;
   final VoidCallback? onCreateFontSlot;
   final bool createFontSlotAvailable;
   final bool slotToSorceryPointsAvailable;
@@ -72,6 +74,8 @@ class ExplorationModeView extends StatelessWidget {
     this.onMemorizeSpell,
     this.onMagicalCunning,
     this.onSlotToSorceryPoints,
+    this.onInnateSorcery,
+    this.innateSorceryAvailable = false,
     this.onCreateFontSlot,
     this.createFontSlotAvailable = false,
     this.slotToSorceryPointsAvailable = false,
@@ -147,6 +151,19 @@ class ExplorationModeView extends StatelessWidget {
             icon: const Icon(Icons.shield_outlined),
             label: const Text('Combat'),
           ),
+          if (onInnateSorcery != null)
+            OutlinedButton(
+              onPressed: innateSorceryAvailable ? onInnateSorcery : null,
+              child: Text(
+                character.innateSorceryActive
+                    ? 'End Innate Sorcery'
+                    : 'Innate Sorcery',
+              ),
+            ),
+          if (character.innateSorceryActive)
+            const Text(
+              'Innate Sorcery active · Track elapsed time at the table',
+            ),
           if (onSlotToSorceryPoints != null)
             OutlinedButton(
               onPressed: slotToSorceryPointsAvailable

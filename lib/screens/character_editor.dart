@@ -276,6 +276,13 @@ class _CharacterEditorState extends State<CharacterEditor> {
       elementalFury: previousClass == BuiltInClass.named(className)
           ? previous?.elementalFury
           : null,
+      sorcererSpellIds: previousClass == BuiltInClass.named(className)
+          ? {
+              for (final spell in spells)
+                if (previous?.sorcererSpellIds.contains(spell.id) ?? false)
+                  spell.id,
+            }
+          : const {},
       druidCantripIds: previousClass == BuiltInClass.named(className)
           ? {
               for (final spell in spells)

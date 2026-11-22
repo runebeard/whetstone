@@ -70,6 +70,8 @@ class CombatModeView extends StatelessWidget {
   final VoidCallback? onRecklessAttack;
   final VoidCallback? onDarkOnesBlessing;
   final VoidCallback? onSlotToSorceryPoints;
+  final VoidCallback? onInnateSorcery;
+  final bool innateSorceryAvailable;
   final VoidCallback? onCreateFontSlot;
   final bool createFontSlotAvailable;
   final bool slotToSorceryPointsAvailable;
@@ -155,6 +157,8 @@ class CombatModeView extends StatelessWidget {
     this.onRecklessAttack,
     this.onDarkOnesBlessing,
     this.onSlotToSorceryPoints,
+    this.onInnateSorcery,
+    this.innateSorceryAvailable = false,
     this.onCreateFontSlot,
     this.createFontSlotAvailable = false,
     this.slotToSorceryPointsAvailable = false,
@@ -497,6 +501,19 @@ class CombatModeView extends StatelessWidget {
             OutlinedButton(
               onPressed: darkOnesBlessingAvailable ? onDarkOnesBlessing : null,
               child: const Text('Dark One’s Blessing'),
+            ),
+          if (onInnateSorcery != null)
+            OutlinedButton(
+              onPressed: innateSorceryAvailable ? onInnateSorcery : null,
+              child: Text(
+                character.innateSorceryActive
+                    ? 'End Innate Sorcery'
+                    : 'Innate Sorcery',
+              ),
+            ),
+          if (character.innateSorceryActive)
+            Text(
+              'Innate Sorcery · ${characterState.conditionTurns[innateSorceryCondition] ?? 0} turns remaining',
             ),
           if (onSlotToSorceryPoints != null)
             OutlinedButton(

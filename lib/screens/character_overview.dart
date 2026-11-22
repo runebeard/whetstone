@@ -136,7 +136,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
                   .where(
                     (resource) =>
                         resource.id == sorceryPointsResourceId ||
-                        resource.id == sorcerousRestorationResourceId,
+                        resource.id == sorcerousRestorationResourceId ||
+                        resource.id == innateSorceryResourceId,
                   ),
               ...BuiltInClass.warlock
                   .classResources(
@@ -193,6 +194,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
     }
     diceRoller = widget.diceRoller ?? RandomDiceRoller();
     characterState = widget.initialSession.characterState;
+    if (character.levelInClass('Sorcerer') < 1) {
+      characterState = characterState.copyWith(
+        activeConditions: {...characterState.activeConditions}
+          ..remove(innateSorceryCondition),
+      );
+    }
     combatRound = widget.initialSession.isInCombat
         ? widget.initialSession.combatRound
         : 1;
@@ -328,6 +335,13 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void updateCharacterState(CharacterState updatedState) {
+    if (character.levelInClass('Sorcerer') < 1 &&
+        updatedState.activeConditions.contains(innateSorceryCondition)) {
+      updatedState = updatedState.copyWith(
+        activeConditions: {...updatedState.activeConditions}
+          ..remove(innateSorceryCondition),
+      );
+    }
     if (!character.hasFiendishResilience &&
         (updatedState.fiendishResistance != null ||
             updatedState.fiendishResilienceAvailable)) {
@@ -956,7 +970,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       return;
     }
     if (action == 'target-save') {
-      await resolveCircleControlSave(spell, character.spellSaveDc(spell));
+      await resolveCircleControlSave(
+        spell,
+        characterForPhysicalChecks.spellSaveDc(spell),
+      );
       return;
     }
     if (action == 'duration') {
@@ -1478,6 +1495,16 @@ class _CharacterOverviewState extends State<CharacterOverview>
                   title: const Text('Remove Spell'),
                   onTap: () => Navigator.pop(context, 'remove'),
                 ),
+              if (!spell.isCircleGrant &&
+                  character.levelInClass('Sorcerer') >= 1)
+                ListTile(
+                  title: Text(
+                    character.sorcererSpellIds.contains(spell.id)
+                        ? 'Unmark as Sorcerer Spell'
+                        : 'Mark as Sorcerer Spell',
+                  ),
+                  onTap: () => Navigator.pop(context, 'sorcerer-spell'),
+                ),
               const Divider(),
               ListTile(
                 leading: const Icon(Icons.close),
@@ -1504,6 +1531,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
         final ids = {...character.druidCantripIds};
         if (!ids.remove(spell.id)) ids.add(spell.id);
         final updated = character.copyWith(druidCantripIds: ids);
+        setState(() => character = updated);
+        widget.onCharacterChanged(updated);
+      case 'sorcerer-spell':
+        final ids = {...character.sorcererSpellIds};
+        if (!ids.remove(spell.id)) ids.add(spell.id);
+        final updated = character.copyWith(sorcererSpellIds: ids);
         setState(() => character = updated);
         widget.onCharacterChanged(updated);
       case 'scroll':
@@ -1759,6 +1792,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
           if (!removedFreeCastIds.contains(resource.id)) resource,
       ],
       spells: spells,
+      sorcererSpellIds: {
+        for (final spell in spells)
+          if (character.sorcererSpellIds.contains(spell.id)) spell.id,
+      },
       druidCantripIds: {
         for (final spell in spells)
           if (spell.isCantrip && character.druidCantripIds.contains(spell.id))
@@ -2143,7 +2180,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
       context: context,
       builder: (context) => ActionDetailsDialog(
         action: action,
-        spellSaveDc: action is Spell ? character.spellSaveDc(action) : null,
+        spellSaveDc: action is Spell
+            ? characterForPhysicalChecks.spellSaveDc(action)
+            : null,
         spellRange: action is Spell ? character.rangeForSpell(action) : null,
         spellDamageFormula: action is Spell
             ? character.damageFormulaFor(action)
@@ -2473,7 +2512,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         await resolveCircleControlSave(
           spell,
           scrollName == null
-              ? character.spellSaveDc(spell)
+              ? characterForPhysicalChecks.spellSaveDc(spell)
               : spell.scrollSaveDc,
         );
       } else if (spell.isCircleGrant) {
@@ -3882,7 +3921,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
       peerlessEligible: true,
       attackRoll: true,
       criticalThreshold: threshold,
-      hasAdvantage: packTactics || aimed,
+      hasAdvantage:
+          packTactics ||
+          aimed ||
+          (scrollName == null &&
+              action is Spell &&
+              characterForPhysicalChecks.benefitsFromInnateSorcery(action)),
     );
     final critical = roll.naturalRoll >= threshold;
     pendingCriticalActionKey =
@@ -4444,7 +4488,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       damageFormula: final formula?,
     ) when formula.isNotEmpty && character.attackModifierFor(action) == null) {
       final dc = scrollName == null
-          ? (action.isCircleGrant ? character.spellSaveDc(action) : null)
+          ? (action.isCircleGrant ||
+                    characterForPhysicalChecks.benefitsFromInnateSorcery(action)
+                ? characterForPhysicalChecks.spellSaveDc(action)
+                : null)
           : action.scrollSaveDc;
       final result = await showDialog<bool>(
         context: context,
@@ -7253,6 +7300,109 @@ class _CharacterOverviewState extends State<CharacterOverview>
         : character.levelInClass('Sorcerer').clamp(0, points.maximum);
   }
 
+  bool get innateSorceryActive =>
+      character.levelInClass('Sorcerer') >= 1 &&
+      characterState.activeConditions.contains(innateSorceryCondition);
+
+  bool get innateSorceryAvailable {
+    if (innateSorceryActive) return true;
+    if (character.levelInClass('Sorcerer') < 1 ||
+        !characterState.canConcentrate ||
+        (currentMode == CharacterMode.combat &&
+            usedCombatActions.contains(CombatActionCost.bonusAction))) {
+      return false;
+    }
+    final use = resourceWithId(innateSorceryResourceId);
+    final points = resourceWithId(sorceryPointsResourceId);
+    return (use != null && remainingUses(use) > 0) ||
+        (character.levelInClass('Sorcerer') >= 7 &&
+            points != null &&
+            remainingUses(points) >= 2);
+  }
+
+  Future<void> toggleInnateSorcery() async {
+    if (!innateSorceryAvailable) return;
+    final ending = innateSorceryActive;
+    final use = resourceWithId(innateSorceryResourceId);
+    final pointCost = use == null || remainingUses(use) <= 0;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          ending ? 'End Innate Sorcery?' : 'Activate Innate Sorcery?',
+        ),
+        content: Text(
+          ending
+              ? 'Record that the effect has ended or its minute elapsed at the table. No action or resource is spent.'
+              : 'Spend ${pointCost ? '2 Sorcery Points using Sorcery Incarnate' : 'one Innate Sorcery use'}${currentMode == CharacterMode.combat ? ' and your Bonus Action' : ''}. '
+                    'For 1 minute, marked Sorcerer spells gain +1 to their save DC and Advantage on attack rolls. Mark eligible spells in their Spellbook menu. '
+                    'The effect lasts 10 tracked turns; track elapsed time outside combat at the table. It does not require concentration. '
+                    '${character.levelInClass('Sorcerer') >= 7 ? 'While active, Sorcery Incarnate permits two Metamagic options on a spell; resolve those options at the table.' : ''}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(ending ? 'End effect' : 'Activate effect'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        confirmed != true ||
+        !innateSorceryAvailable ||
+        innateSorceryActive != ending) {
+      return;
+    }
+    if (ending) {
+      updateCharacterState(
+        characterState.copyWith(
+          activeConditions: {...characterState.activeConditions}
+            ..remove(innateSorceryCondition),
+        ),
+      );
+      recordSessionEvent(
+        SessionEventType.combat,
+        'Innate Sorcery ended',
+        detail: 'Effect ended at the table.',
+      );
+      return;
+    }
+    final resource = pointCost
+        ? resourceWithId(sorceryPointsResourceId)
+        : resourceWithId(innateSorceryResourceId);
+    final cost = pointCost ? 2 : 1;
+    if (resource == null || remainingUses(resource) < cost) return;
+    if (currentMode == CharacterMode.combat) {
+      usedCombatActions.add(CombatActionCost.bonusAction);
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        resourceValues: {
+          ...characterState.resourceValues,
+          resource.id: remainingUses(resource) - cost,
+        },
+        activeConditions: {
+          ...characterState.activeConditions,
+          innateSorceryCondition,
+        },
+        conditionTurns: {
+          ...characterState.conditionTurns,
+          innateSorceryCondition: 10,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Innate Sorcery activated',
+      detail:
+          '${pointCost ? '2 Sorcery Points' : 'One use'} spent · 1 minute. Marked Sorcerer spells: +1 save DC and attack Advantage.',
+    );
+  }
+
   List<int> get fontSlotCreationChoices {
     final points = resourceWithId(sorceryPointsResourceId);
     final level = character.levelInClass('Sorcerer');
@@ -7298,7 +7448,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
         ],
       ),
     );
-    if (!mounted || chosen == null || !fontSlotCreationChoices.contains(chosen)) {
+    if (!mounted ||
+        chosen == null ||
+        !fontSlotCreationChoices.contains(chosen)) {
       return;
     }
     final points = resourceWithId(sorceryPointsResourceId)!;
@@ -8493,7 +8645,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
         character.levelInClass('Paladin') >= 6 && characterState.canConcentrate
         ? character.abilityModifierFor(Ability.charisma).clamp(1, 999)
         : 0;
-    final base = character.copyWith(savingThrowBonus: aura);
+    final base = character.copyWith(
+      savingThrowBonus: aura,
+      innateSorceryActive: innateSorceryActive,
+    );
     if (form == null) return base;
     return base.copyWith(
       skillModifierMinimums: form.skillModifiers,
@@ -8545,6 +8700,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
           ? convertSlotToSorceryPoints
           : null,
       slotToSorceryPointsAvailable: slotToSorceryPointsAvailable,
+      onInnateSorcery: character.levelInClass('Sorcerer') >= 1
+          ? toggleInnateSorcery
+          : null,
+      innateSorceryAvailable: innateSorceryAvailable,
       onCreateFontSlot: character.levelInClass('Sorcerer') >= 2
           ? createFontOfMagicSlot
           : null,
@@ -8617,6 +8776,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
           ? convertSlotToSorceryPoints
           : null,
       slotToSorceryPointsAvailable: slotToSorceryPointsAvailable,
+      onInnateSorcery: character.levelInClass('Sorcerer') >= 1
+          ? toggleInnateSorcery
+          : null,
+      innateSorceryAvailable: innateSorceryAvailable,
       onCreateFontSlot: character.levelInClass('Sorcerer') >= 2
           ? createFontOfMagicSlot
           : null,
@@ -8743,7 +8906,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   Widget buildSpellbookMode() {
     return SpellbookModeView(
-      character: character,
+      character: characterForPhysicalChecks,
       characterState: characterState,
       onSpellTap: handleActionTap,
       onManageSpell: manageSpell,

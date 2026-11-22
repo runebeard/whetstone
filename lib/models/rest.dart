@@ -179,6 +179,7 @@ class RestPlan {
         recklessAttackCondition,
         steadyAimCondition,
         superiorDefenseCondition,
+        innateSorceryCondition,
       });
     final ended = currentState.activeConditions.difference(restConditions);
     if (ended.isNotEmpty) changes.add('Ended ${ended.join(', ')}');

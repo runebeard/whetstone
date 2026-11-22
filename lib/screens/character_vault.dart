@@ -7,6 +7,7 @@ import '../models/character.dart';
 import '../models/app_settings.dart';
 import '../models/check_roll.dart';
 import '../models/character_session.dart';
+import '../models/character_state.dart' show innateSorceryCondition;
 import '../models/feature.dart';
 import '../models/content_pack.dart';
 import '../models/spell.dart';
@@ -382,6 +383,9 @@ class _CharacterVaultState extends State<CharacterVault> {
           spell.id: ?state.spellSummons[spell.id],
       },
       currentHp: updated.currentHp,
+      activeConditions: updated.levelInClass('Sorcerer') >= 1
+          ? state.activeConditions
+          : ({...state.activeConditions}..remove(innateSorceryCondition)),
       maxHp: updated.maxHp,
       clearWildShape: updated.levelInClass('Druid') < 2,
       clearWildCompanion: updated.levelInClass('Druid') < 2,

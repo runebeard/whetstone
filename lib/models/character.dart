@@ -34,6 +34,9 @@ class Character {
   final PrimalOrder? primalOrder;
   final ElementalFury? elementalFury;
   final Set<String> druidCantripIds;
+  final Set<String> sorcererSpellIds;
+  // A live effect supplied by the session; never serialized in the definition.
+  final bool innateSorceryActive;
   final Map<String, int> skillModifierMinimums;
   final Map<Ability, int> saveModifierMinimums;
   // Derived live bonuses are not part of the saved character definition.
@@ -68,6 +71,8 @@ class Character {
     this.primalOrder,
     this.elementalFury,
     this.druidCantripIds = const {},
+    this.sorcererSpellIds = const {},
+    this.innateSorceryActive = false,
     this.skillModifierMinimums = const {},
     this.saveModifierMinimums = const {},
     this.savingThrowBonus = 0,
@@ -103,6 +108,8 @@ class Character {
     ElementalFury? elementalFury,
     bool clearElementalFury = false,
     Set<String>? druidCantripIds,
+    Set<String>? sorcererSpellIds,
+    bool? innateSorceryActive,
     Map<String, int>? skillModifierMinimums,
     Map<Ability, int>? saveModifierMinimums,
     int? savingThrowBonus,
@@ -136,6 +143,8 @@ class Character {
           ? null
           : elementalFury ?? this.elementalFury,
       druidCantripIds: druidCantripIds ?? this.druidCantripIds,
+      sorcererSpellIds: sorcererSpellIds ?? this.sorcererSpellIds,
+      innateSorceryActive: innateSorceryActive ?? this.innateSorceryActive,
       skillModifierMinimums:
           skillModifierMinimums ?? this.skillModifierMinimums,
       saveModifierMinimums: saveModifierMinimums ?? this.saveModifierMinimums,
@@ -176,6 +185,8 @@ class Character {
       'elementalFury': ?elementalFury?.name,
       if (druidCantripIds.isNotEmpty)
         'druidCantripIds': druidCantripIds.toList(),
+      if (sorcererSpellIds.isNotEmpty)
+        'sorcererSpellIds': sorcererSpellIds.toList(),
       'savedClassRules': ?savedClassRules,
       'level': level,
       'currentHp': currentHp,
@@ -285,6 +296,9 @@ class Character {
           .where((choice) => choice.name == json['elementalFury'])
           .firstOrNull,
       druidCantripIds: (json['druidCantripIds'] as List<Object?>? ?? const [])
+          .cast<String>()
+          .toSet(),
+      sorcererSpellIds: (json['sorcererSpellIds'] as List<Object?>? ?? const [])
           .cast<String>()
           .toSet(),
       primalOrder: PrimalOrder.values
@@ -582,8 +596,16 @@ class Character {
   int? spellSaveDc(Spell spell) {
     final ability = spell.castingAbility;
     if (ability == null || spell.savingThrowAbility == null) return null;
-    return 8 + proficiencyBonus + abilityModifierFor(ability);
+    return 8 +
+        proficiencyBonus +
+        abilityModifierFor(ability) +
+        (benefitsFromInnateSorcery(spell) ? 1 : 0);
   }
+
+  bool benefitsFromInnateSorcery(Spell spell) =>
+      innateSorceryActive &&
+      levelInClass('Sorcerer') >= 1 &&
+      sorcererSpellIds.contains(spell.id);
 
   int scoreFor(Ability ability) {
     return abilityScores[ability] ?? 10;

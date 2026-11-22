@@ -10,6 +10,7 @@ const freedomOfMovementCondition = 'Freedom of Movement';
 const divineSenseCondition = 'Divine Sense';
 const steadyAimCondition = 'Steady Aim';
 const superiorDefenseCondition = 'Superior Defense';
+const innateSorceryCondition = 'Innate Sorcery';
 
 enum IncomingDamageType {
   other('Other or unspecified'),

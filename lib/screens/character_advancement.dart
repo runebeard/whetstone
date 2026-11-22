@@ -423,6 +423,10 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
         additionalClassLevels: allocation,
         primalOrder: primalOrder,
         elementalFury: elementalFury,
+        sorcererSpellIds: {
+          for (final spell in spells)
+            if (current.sorcererSpellIds.contains(spell.id)) spell.id,
+        },
         clearElementalFury: druidLevelAt(level, allocation) < 7,
         druidCantripIds: {
           for (final spell in spells)

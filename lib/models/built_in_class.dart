@@ -18,6 +18,7 @@ const darkOnesOwnLuckResourceId = 'whetstone:subclass:dark-ones-own-luck';
 const hurlThroughHellResourceId = 'whetstone:subclass:hurl-through-hell';
 const sorceryPointsResourceId = 'whetstone:class:sorcery-points';
 const sorcerousRestorationResourceId = 'whetstone:class:sorcerous-restoration';
+const innateSorceryResourceId = 'whetstone:class:innate-sorcery';
 const wildShapeResourceId = 'whetstone:class:wild-shape';
 const bardicInspirationResourceId = 'whetstone:class:bardic-inspiration';
 const layOnHandsResourceId = 'whetstone:class:lay-on-hands';
@@ -39,6 +40,7 @@ const progressingClassResourceIds = {
   hurlThroughHellResourceId,
   sorceryPointsResourceId,
   sorcerousRestorationResourceId,
+  innateSorceryResourceId,
   wildShapeResourceId,
   bardicInspirationResourceId,
   layOnHandsResourceId,
@@ -235,7 +237,7 @@ enum BuiltInClass {
         charismaModifier.clamp(1, 10),
       ),
       paladin => (layOnHandsResourceId, 'Lay on Hands', 5 * level),
-      sorcerer => ('whetstone:class:innate-sorcery', 'Innate Sorcery', 2),
+      sorcerer => (innateSorceryResourceId, 'Innate Sorcery', 2),
       _ => null,
     };
     return [
