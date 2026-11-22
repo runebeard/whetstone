@@ -121,6 +121,15 @@ class _CharacterOverviewState extends State<CharacterOverview>
     character = widget.character;
     final missingMonkResources =
         [
+              ...BuiltInClass.barbarian
+                  .classResources(
+                    character.levelInClass('Barbarian'),
+                    charismaModifier: 0,
+                    subclass: character.subclasses['Barbarian'],
+                  )
+                  .where(
+                    (resource) => resource.id == intimidatingPresenceResourceId,
+                  ),
               ...BuiltInClass.wizard.classResources(
                 character.levelInClass('Wizard'),
                 charismaModifier: 0,
@@ -2827,6 +2836,102 @@ class _CharacterOverviewState extends State<CharacterOverview>
       detail:
           '3 Focus Points spent · Resistance to typed damage except Force for 10 combat turns, ending on Incapacitation. Start-of-turn timing confirmed at the table.',
     );
+  }
+
+  bool get hasIntimidatingPresence =>
+      character.levelInClass('Barbarian') >= 14 &&
+      character.subclasses['Barbarian'] == 'Path of the Berserker';
+
+  CharacterResource? resourceWithId(String id) =>
+      character.resources.where((resource) => resource.id == id).firstOrNull;
+
+  bool get intimidatingPresenceAvailable {
+    final presence = resourceWithId(intimidatingPresenceResourceId);
+    final rage = resourceWithId(rageResourceId);
+    return currentMode == CharacterMode.combat &&
+        hasIntimidatingPresence &&
+        characterState.canConcentrate &&
+        presence != null &&
+        (remainingUses(presence) > 0
+            ? !usedCombatActions.contains(CombatActionCost.bonusAction)
+            : rage != null && remainingUses(rage) > 0);
+  }
+
+  Future<void> useIntimidatingPresence() async {
+    if (!intimidatingPresenceAvailable) return;
+    final presence = resourceWithId(intimidatingPresenceResourceId)!;
+    final restore = remainingUses(presence) == 0;
+    final dc =
+        8 +
+        characterForPhysicalChecks.abilityModifierFor(Ability.strength) +
+        character.proficiencyBonus;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          restore
+              ? 'Restore Intimidating Presence'
+              : 'Intimidating Presence · Confirm targets',
+        ),
+        content: Text(
+          restore
+              ? 'Spend one Rage use to restore Intimidating Presence. This costs no action and does not activate or end Rage. Use the feature separately after restoring it.'
+              : 'Choose creatures in a 30-foot Emanation from you. Spend your Bonus Action and one Intimidating Presence use. Each chosen creature makes a DC $dc Wisdom saving throw. On failure, it is Frightened for 1 minute, repeating the save at the end of each of its turns to end the effect on success. Resolve eligibility, saves, conditions and expiry at the table.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              restore ? 'Spend one Rage · Restore use' : 'Unleash presence',
+            ),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        confirmed != true ||
+        !intimidatingPresenceAvailable ||
+        (remainingUses(presence) == 0) != restore) {
+      return;
+    }
+    if (restore) {
+      final rage = resourceWithId(rageResourceId);
+      if (rage == null || remainingUses(rage) <= 0) return;
+      updateCharacterState(
+        characterState.copyWith(
+          resourceValues: {
+            ...characterState.resourceValues,
+            presence.id: 1,
+            rage.id: remainingUses(rage) - 1,
+          },
+        ),
+      );
+      recordSessionEvent(
+        SessionEventType.resource,
+        'Intimidating Presence restored',
+        detail: 'One Rage use spent · No action spent.',
+      );
+    } else {
+      usedCombatActions.add(CombatActionCost.bonusAction);
+      updateCharacterState(
+        characterState.copyWith(
+          resourceValues: {
+            ...characterState.resourceValues,
+            presence.id: remainingUses(presence) - 1,
+          },
+        ),
+      );
+      recordSessionEvent(
+        SessionEventType.combat,
+        'Intimidating Presence',
+        detail:
+            'Bonus Action and one use spent · Chosen creatures within 30 feet make DC $dc Wisdom saves. Frightened for 1 minute on failure; repeat at the end of each target turn. Resolve target effects at the table.',
+      );
+    }
   }
 
   Future<void> useBarbarianDefense() async {
@@ -7462,6 +7567,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onAttackRoll: rollAttack,
       onUnarmedStrike: activeWildShape == null ? useUnarmedStrike : null,
       onCuttingWords: hasCuttingWords ? useCuttingWords : null,
+      onIntimidatingPresence: hasIntimidatingPresence
+          ? useIntimidatingPresence
+          : null,
+      intimidatingPresenceAvailable: intimidatingPresenceAvailable,
       onBarbarianDefense:
           character.levelInClass('Barbarian') >= 1 && activeWildShape == null
           ? useBarbarianDefense

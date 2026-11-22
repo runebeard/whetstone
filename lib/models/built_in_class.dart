@@ -4,6 +4,8 @@ import 'spell_slots.dart';
 import 'weapon.dart';
 
 const rageResourceId = 'whetstone:class:rage';
+const intimidatingPresenceResourceId =
+    'whetstone:subclass:intimidating-presence';
 const secondWindResourceId = 'whetstone:class:second-wind';
 const indomitableResourceId = 'whetstone:class:indomitable';
 const actionSurgeResourceId = 'whetstone:class:action-surge';
@@ -19,6 +21,7 @@ const paladinChannelDivinityId = 'whetstone:class:paladin-channel-divinity';
 
 const progressingClassResourceIds = {
   rageResourceId,
+  intimidatingPresenceResourceId,
   secondWindResourceId,
   indomitableResourceId,
   actionSurgeResourceId,
@@ -226,6 +229,16 @@ enum BuiltInClass {
       _ => null,
     };
     return [
+      if (this == barbarian &&
+          level >= 14 &&
+          subclass == 'Path of the Berserker')
+        const CharacterResource(
+          id: intimidatingPresenceResourceId,
+          name: 'Intimidating Presence',
+          maximum: 1,
+          initialValue: 1,
+          rechargePeriod: RechargePeriod.longRest,
+        ),
       if (this == wizard)
         const CharacterResource(
           id: arcaneRecoveryResourceId,
