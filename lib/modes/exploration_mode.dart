@@ -28,6 +28,8 @@ class ExplorationModeView extends StatelessWidget {
   final VoidCallback? onArcaneRecovery;
   final VoidCallback? onMemorizeSpell;
   final VoidCallback? onMagicalCunning;
+  final VoidCallback? onRestoreHurlThroughHell;
+  final bool restoreHurlThroughHellAvailable;
   final VoidCallback? onDarkLuck;
   final bool darkLuckAvailable;
   final VoidCallback? onFiendishResilience;
@@ -65,6 +67,8 @@ class ExplorationModeView extends StatelessWidget {
     this.onArcaneRecovery,
     this.onMemorizeSpell,
     this.onMagicalCunning,
+    this.onRestoreHurlThroughHell,
+    this.restoreHurlThroughHellAvailable = false,
     this.onDarkLuck,
     this.darkLuckAvailable = false,
     this.onFiendishResilience,
@@ -148,6 +152,13 @@ class ExplorationModeView extends StatelessWidget {
                     ? 'Eldritch Master · Magical Cunning'
                     : 'Magical Cunning · Pact slots',
               ),
+            ),
+          if (onRestoreHurlThroughHell != null)
+            OutlinedButton(
+              onPressed: restoreHurlThroughHellAvailable
+                  ? onRestoreHurlThroughHell
+                  : null,
+              child: const Text('Hurl Through Hell · Restore use'),
             ),
           if (onFiendishResilience != null)
             OutlinedButton(

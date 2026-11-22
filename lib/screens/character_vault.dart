@@ -415,6 +415,7 @@ class _CharacterVaultState extends State<CharacterVault> {
       attackRollMadeThisTurn: session.attackRollMadeThisTurn,
       recklessAttackArmed: session.recklessAttackArmed,
       frenzyUsedThisTurn: session.frenzyUsedThisTurn,
+      hurlThroughHellUsedThisTurn: session.hurlThroughHellUsedThisTurn,
       flurryAttacksRemaining: session.flurryAttacksRemaining,
       attackActionAttacksRemaining: session.attackActionAttacksRemaining,
       timeline: session.timeline,

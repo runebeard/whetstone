@@ -69,6 +69,10 @@ class CombatModeView extends StatelessWidget {
   final VoidCallback? onRetaliation;
   final VoidCallback? onRecklessAttack;
   final VoidCallback? onDarkOnesBlessing;
+  final VoidCallback? onHurlThroughHell;
+  final bool hurlThroughHellAvailable;
+  final VoidCallback? onRestoreHurlThroughHell;
+  final bool restoreHurlThroughHellAvailable;
   final VoidCallback? onDarkLuck;
   final bool darkLuckAvailable;
   final bool darkOnesBlessingAvailable;
@@ -146,6 +150,10 @@ class CombatModeView extends StatelessWidget {
     this.onRetaliation,
     this.onRecklessAttack,
     this.onDarkOnesBlessing,
+    this.onHurlThroughHell,
+    this.hurlThroughHellAvailable = false,
+    this.onRestoreHurlThroughHell,
+    this.restoreHurlThroughHellAvailable = false,
     this.onDarkLuck,
     this.darkLuckAvailable = false,
     this.darkOnesBlessingAvailable = false,
@@ -481,6 +489,18 @@ class CombatModeView extends StatelessWidget {
             OutlinedButton(
               onPressed: darkOnesBlessingAvailable ? onDarkOnesBlessing : null,
               child: const Text('Dark One’s Blessing'),
+            ),
+          if (onHurlThroughHell != null)
+            OutlinedButton(
+              onPressed: hurlThroughHellAvailable ? onHurlThroughHell : null,
+              child: const Text('Hurl Through Hell · Confirm hit'),
+            ),
+          if (onRestoreHurlThroughHell != null)
+            OutlinedButton(
+              onPressed: restoreHurlThroughHellAvailable
+                  ? onRestoreHurlThroughHell
+                  : null,
+              child: const Text('Hurl Through Hell · Restore use'),
             ),
           if (onDarkLuck != null)
             OutlinedButton(

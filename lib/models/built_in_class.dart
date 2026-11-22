@@ -15,6 +15,7 @@ const wholenessOfBodyResourceId = 'whetstone:subclass:wholeness-of-body';
 const arcaneRecoveryResourceId = 'arcane_recovery';
 const magicalCunningResourceId = 'whetstone:class:magical-cunning';
 const darkOnesOwnLuckResourceId = 'whetstone:subclass:dark-ones-own-luck';
+const hurlThroughHellResourceId = 'whetstone:subclass:hurl-through-hell';
 const wildShapeResourceId = 'whetstone:class:wild-shape';
 const bardicInspirationResourceId = 'whetstone:class:bardic-inspiration';
 const layOnHandsResourceId = 'whetstone:class:lay-on-hands';
@@ -33,6 +34,7 @@ const progressingClassResourceIds = {
   arcaneRecoveryResourceId,
   magicalCunningResourceId,
   darkOnesOwnLuckResourceId,
+  hurlThroughHellResourceId,
   wildShapeResourceId,
   bardicInspirationResourceId,
   layOnHandsResourceId,
@@ -233,6 +235,14 @@ enum BuiltInClass {
       _ => null,
     };
     return [
+      if (this == warlock && level >= 14 && subclass == 'Fiend Patron')
+        const CharacterResource(
+          id: hurlThroughHellResourceId,
+          name: 'Hurl Through Hell',
+          maximum: 1,
+          initialValue: 1,
+          rechargePeriod: RechargePeriod.longRest,
+        ),
       if (this == warlock && level >= 6 && subclass == 'Fiend Patron')
         CharacterResource(
           id: darkOnesOwnLuckResourceId,

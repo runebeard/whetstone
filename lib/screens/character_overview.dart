@@ -96,6 +96,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   bool attackRollMadeThisTurn = false;
   bool recklessAttackArmed = false;
   bool frenzyUsedThisTurn = false;
+  bool hurlThroughHellUsedThisTurn = false;
   int flurryAttacksRemaining = 0;
   int attackActionAttacksRemaining = 0;
   CheckRoll? tacticalMindCheck;
@@ -136,7 +137,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
                   .where(
                     (resource) =>
                         resource.id == magicalCunningResourceId ||
-                        resource.id == darkOnesOwnLuckResourceId,
+                        resource.id == darkOnesOwnLuckResourceId ||
+                        resource.id == hurlThroughHellResourceId,
                   ),
               ...BuiltInClass.barbarian
                   .classResources(
@@ -184,6 +186,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
         : 1;
     if (widget.initialSession.isInCombat) {
       frenzyUsedThisTurn = widget.initialSession.frenzyUsedThisTurn;
+      hurlThroughHellUsedThisTurn =
+          widget.initialSession.hurlThroughHellUsedThisTurn;
       attackRollMadeThisTurn =
           widget.initialSession.attackRollMadeThisTurn ||
           widget.initialSession.attackActionAttacksRemaining > 0;
@@ -297,6 +301,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         attackRollMadeThisTurn: attackRollMadeThisTurn,
         recklessAttackArmed: recklessAttackArmed,
         frenzyUsedThisTurn: frenzyUsedThisTurn,
+        hurlThroughHellUsedThisTurn: hurlThroughHellUsedThisTurn,
         flurryAttacksRemaining: flurryAttacksRemaining,
         attackActionAttacksRemaining: attackActionAttacksRemaining,
         timeline: [...timeline],
@@ -7063,6 +7068,142 @@ class _CharacterOverviewState extends State<CharacterOverview>
             .firstOrNull;
   }
 
+  bool get hasHurlThroughHell =>
+      character.levelInClass('Warlock') >= 14 &&
+      character.subclasses['Warlock'] == 'Fiend Patron';
+
+  bool get hurlThroughHellAvailable {
+    final use = resourceWithId(hurlThroughHellResourceId);
+    return hasHurlThroughHell &&
+        currentMode == CharacterMode.combat &&
+        characterState.canConcentrate &&
+        !hurlThroughHellUsedThisTurn &&
+        use != null &&
+        remainingUses(use) > 0;
+  }
+
+  Future<void> useHurlThroughHell() async {
+    if (!hurlThroughHellAvailable) return;
+    final dc =
+        8 +
+        character.proficiencyBonus +
+        character.abilityModifierFor(Ability.charisma);
+    final outcome = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Hurl Through Hell · Confirm attack hit'),
+        content: Text(
+          'Confirm you just hit a creature with an attack roll and have not used this feature this turn. '
+          'The target makes a DC $dc Charisma save at the table. One use is spent even on a successful save; no extra action or attack is spent. '
+          'On failure, it disappears and is incapacitated until the end of your next turn, then returns to its previous space or the nearest unoccupied space. '
+          'A non-Fiend also takes 8d10 Psychic damage. This separate save effect does not double on a critical hit. '
+          'Track the target, its return and turns outside the app at the table.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'saved'),
+            child: const Text('Target saved'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'fiend'),
+            child: const Text('Failed · Fiend target'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, 'failed'),
+            child: const Text('Failed · Roll Psychic damage'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || outcome == null || !hurlThroughHellAvailable) return;
+    hurlThroughHellUsedThisTurn = true;
+    if (!spendCastResource(hurlThroughHellResourceId)) {
+      hurlThroughHellUsedThisTurn = false;
+      return;
+    }
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Hurl Through Hell · ${outcome == 'saved' ? 'Target saved' : 'Target banished'}',
+      detail: outcome == 'saved'
+          ? 'DC $dc Charisma save succeeded. One use spent; no banishment or extra damage.'
+          : 'DC $dc Charisma save failed. Target disappears and is incapacitated until the end of your next turn, then returns to its prior space or the nearest unoccupied space. Resolve at the table. ${outcome == 'fiend' ? 'Fiend target: no Psychic damage.' : 'Non-Fiend: apply the separate Psychic damage roll.'}',
+    );
+    if (outcome == 'failed') {
+      final damage = const DiceExpression(
+        diceCount: 8,
+        dieSides: 10,
+      ).roll('Hurl Through Hell', diceRoller);
+      addRollNotice(
+        title: 'Hurl Through Hell Damage',
+        calculation: '8d10 · ${damage.dice.join(' + ')} = ${damage.total}',
+        total: damage.total,
+        tone: RollNoticeTone.damage,
+        detail:
+            'Psychic · Separate failed-save effect; no critical doubling. Apply target damage and defenses at the table.',
+      );
+    }
+  }
+
+  bool get restoreHurlThroughHellAvailable {
+    final use = resourceWithId(hurlThroughHellResourceId);
+    final pool = magicalCunningPactPool;
+    return hasHurlThroughHell &&
+        characterState.canConcentrate &&
+        use != null &&
+        remainingUses(use) == 0 &&
+        pool != null &&
+        remainingUses(pool) > 0;
+  }
+
+  Future<void> restoreHurlThroughHell() async {
+    if (!restoreHurlThroughHellAvailable) return;
+    final pool = magicalCunningPactPool!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Restore Hurl Through Hell'),
+        content: Text(
+          'Spend one ${pool.name} slot to restore one use. No action is spent. This does not activate the feature or reset its once-per-turn limit. Ordinary spell slots cannot pay this cost.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Spend Pact slot · Restore use'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        confirmed != true ||
+        !restoreHurlThroughHellAvailable ||
+        magicalCunningPactPool?.id != pool.id) {
+      return;
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        resourceValues: {
+          ...characterState.resourceValues,
+          hurlThroughHellResourceId: 1,
+          pool.id: remainingUses(pool) - 1,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.resource,
+      'Hurl Through Hell restored',
+      detail:
+          'One Pact Magic slot spent; no action. The once-per-turn limit is unchanged.',
+    );
+  }
+
   bool get magicalCunningAvailable {
     final use = resourceWithId(magicalCunningResourceId);
     final pool = magicalCunningPactPool;
@@ -7212,6 +7353,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   void beginCombat() {
     frenzyUsedThisTurn = false;
+    hurlThroughHellUsedThisTurn = false;
     attackRollMadeThisTurn = false;
     recklessAttackArmed = false;
     setState(() {
@@ -7896,6 +8038,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   void advanceCombatTurn() {
     frenzyUsedThisTurn = false;
+    hurlThroughHellUsedThisTurn = false;
     attackRollMadeThisTurn = false;
     recklessAttackArmed = false;
     tacticalMindCheck = null;
@@ -7966,6 +8109,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   void endCombat() {
     frenzyUsedThisTurn = false;
+    hurlThroughHellUsedThisTurn = false;
     attackRollMadeThisTurn = false;
     recklessAttackArmed = false;
     var ended = characterState.endRage();
@@ -8221,6 +8365,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
           : null,
       onDarkOnesBlessing: hasDarkOnesBlessing ? useDarkOnesBlessing : null,
       darkOnesBlessingAvailable: darkOnesBlessingAvailable,
+      onRestoreHurlThroughHell: hasHurlThroughHell
+          ? restoreHurlThroughHell
+          : null,
+      restoreHurlThroughHellAvailable: restoreHurlThroughHellAvailable,
       magicalCunningAvailable: magicalCunningAvailable,
       onBarbarianDefense:
           character.levelInClass('Barbarian') >= 1 && activeWildShape == null
@@ -8270,6 +8418,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onDamageTaken: promptConcentrationAfterDamage,
       adjustIncomingDamage: adjustIncomingDamage,
       resolveDamage: resolveRelentlessRage,
+      onHurlThroughHell: hasHurlThroughHell ? useHurlThroughHell : null,
+      hurlThroughHellAvailable: hurlThroughHellAvailable,
       onActionTap: handleActionTap,
       onActionDetails: showActionDetails,
       onAttackRoll: rollAttack,
@@ -8279,6 +8429,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       darkLuckAvailable: darkLuckAvailable,
       onDarkOnesBlessing: hasDarkOnesBlessing ? useDarkOnesBlessing : null,
       darkOnesBlessingAvailable: darkOnesBlessingAvailable,
+      onRestoreHurlThroughHell: hasHurlThroughHell
+          ? restoreHurlThroughHell
+          : null,
+      restoreHurlThroughHellAvailable: restoreHurlThroughHellAvailable,
       onRecklessAttack: character.levelInClass('Barbarian') >= 2
           ? declareRecklessAttack
           : null,

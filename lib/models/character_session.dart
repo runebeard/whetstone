@@ -38,6 +38,7 @@ class CharacterSession {
   final bool attackRollMadeThisTurn;
   final bool recklessAttackArmed;
   final bool frenzyUsedThisTurn;
+  final bool hurlThroughHellUsedThisTurn;
   final int flurryAttacksRemaining;
   final int attackActionAttacksRemaining;
   final List<SessionEvent> timeline;
@@ -66,6 +67,7 @@ class CharacterSession {
     this.attackRollMadeThisTurn = false,
     this.recklessAttackArmed = false,
     this.frenzyUsedThisTurn = false,
+    this.hurlThroughHellUsedThisTurn = false,
     this.flurryAttacksRemaining = 0,
     this.attackActionAttacksRemaining = 0,
     this.timeline = const [],
@@ -103,6 +105,8 @@ class CharacterSession {
       if (isInCombat && attackRollMadeThisTurn) 'attackRollMadeThisTurn': true,
       if (isInCombat && recklessAttackArmed) 'recklessAttackArmed': true,
       if (isInCombat && frenzyUsedThisTurn) 'frenzyUsedThisTurn': true,
+      if (isInCombat && hurlThroughHellUsedThisTurn)
+        'hurlThroughHellUsedThisTurn': true,
       if (isInCombat && stunningStrikeUsedThisTurn)
         'stunningStrikeUsedThisTurn': true,
       if (isInCombat && selfRestorationUsedThisTurn)
@@ -153,6 +157,8 @@ class CharacterSession {
       attackRollMadeThisTurn: json['attackRollMadeThisTurn'] as bool? ?? false,
       recklessAttackArmed: json['recklessAttackArmed'] as bool? ?? false,
       frenzyUsedThisTurn: json['frenzyUsedThisTurn'] as bool? ?? false,
+      hurlThroughHellUsedThisTurn:
+          json['hurlThroughHellUsedThisTurn'] as bool? ?? false,
       stunningStrikeUsedThisTurn:
           json['stunningStrikeUsedThisTurn'] as bool? ?? false,
       selfRestorationUsedThisTurn:
