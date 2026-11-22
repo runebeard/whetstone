@@ -206,9 +206,14 @@ class RestPlan {
       }
     }
 
+    if (type == RestType.shortRest && character.levelInClass('Wizard') >= 5) {
+      changes.add('Memorize Spell available');
+    }
     return RestPlan(
       type: type,
       updatedState: currentState.copyWith(
+        memorizeSpellAvailable:
+            type == RestType.shortRest && character.levelInClass('Wizard') >= 5,
         activeConditions: restConditions,
         currentHp: currentHp,
         hitDiceSpent: type == RestType.longRest

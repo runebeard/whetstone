@@ -5826,6 +5826,107 @@ class _CharacterOverviewState extends State<CharacterOverview>
           (level, resource),
   ];
 
+  Future<void> useMemorizeSpell() async {
+    bool canUse() =>
+        mounted &&
+        currentMode != CharacterMode.combat &&
+        character.levelInClass('Wizard') >= 5 &&
+        characterState.canConcentrate &&
+        characterState.memorizeSpellAvailable;
+    if (!canUse()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Finish a Short Rest to use Memorize Spell once.'),
+        ),
+      );
+      return;
+    }
+    bool eligible(Spell spell) =>
+        spell.level > 0 &&
+        !spell.isCircleGrant &&
+        (spell.castingAbility == null ||
+            spell.castingAbility == Ability.intelligence);
+    Future<Spell?> choose(bool prepared) => showDialog<Spell>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text(
+          prepared
+              ? 'Memorize Spell · Replace prepared spell'
+              : 'Memorize Spell · Prepare from spellbook',
+        ),
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'Choose a level 1+ Wizard spell from your spellbook. Confirm class ownership and any always-prepared feature restrictions at the table.',
+            ),
+          ),
+          for (final spell in character.spells.where(
+            (spell) => eligible(spell) && spell.prepared == prepared,
+          ))
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, spell),
+              child: Text('${spell.name} · Level ${spell.level}'),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    final previous = await choose(true);
+    if (!mounted || previous == null || !canUse()) return;
+    final next = await choose(false);
+    if (!mounted || next == null || !canUse()) return;
+    if (!character.spells.any(
+          (spell) => spell.id == previous.id && spell.prepared,
+        ) ||
+        !character.spells.any(
+          (spell) => spell.id == next.id && !spell.prepared,
+        )) {
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Memorize Spell · Confirm swap'),
+        content: Text(
+          'Replace ${previous.name} with ${next.name} as one prepared Wizard spell after the completed Short Rest. Confirm both are eligible spellbook spells and the old spell is not always prepared by another feature. Spell slots, ongoing concentration and summons are preserved.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Confirm eligible Wizard spell swap'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true || !canUse()) return;
+    updateCharacterState(
+      characterState.copyWith(memorizeSpellAvailable: false),
+    );
+    saveSpellChanges([
+      for (final spell in character.spells)
+        if (spell.id == previous.id)
+          spell.withPrepared(false)
+        else if (spell.id == next.id)
+          spell.withPrepared(true)
+        else
+          spell,
+    ], characterState.pinnedActionKeys);
+    recordSessionEvent(
+      SessionEventType.rest,
+      'Memorize Spell',
+      detail:
+          '${previous.name} → ${next.name}. One prepared spell replaced after Short Rest.',
+    );
+  }
+
   Future<void> useArcaneRecovery() async {
     final resource = character.resources
         .where((r) => r.id == arcaneRecoveryResourceId)
@@ -6862,6 +6963,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
       adjustIncomingDamage: adjustIncomingDamage,
       inventory: inventory,
       onBeginCombat: showBeginCombatPrompt,
+      onMemorizeSpell: character.levelInClass('Wizard') >= 5
+          ? useMemorizeSpell
+          : null,
       onArcaneRecovery: character.levelInClass('Wizard') > 0
           ? useArcaneRecovery
           : null,

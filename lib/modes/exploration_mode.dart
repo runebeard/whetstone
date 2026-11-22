@@ -25,6 +25,7 @@ class ExplorationModeView extends StatelessWidget {
   final VoidCallback? onWholenessOfBody;
   final VoidCallback? onMonkDefense;
   final VoidCallback? onArcaneRecovery;
+  final VoidCallback? onMemorizeSpell;
   final VoidCallback onAddItemFromLibrary;
   final VoidCallback onCreateCustomItem;
   final VoidCallback onRestockItem;
@@ -49,6 +50,7 @@ class ExplorationModeView extends StatelessWidget {
     this.onWholenessOfBody,
     this.onMonkDefense,
     this.onArcaneRecovery,
+    this.onMemorizeSpell,
     required this.onAddItemFromLibrary,
     required this.onCreateCustomItem,
     required this.onRestockItem,
@@ -109,6 +111,11 @@ class ExplorationModeView extends StatelessWidget {
             icon: const Icon(Icons.shield_outlined),
             label: const Text('Combat'),
           ),
+          if (onMemorizeSpell != null)
+            OutlinedButton(
+              onPressed: onMemorizeSpell,
+              child: const Text('Memorize Spell · After Short Rest'),
+            ),
           if (onArcaneRecovery != null)
             OutlinedButton(
               onPressed: onArcaneRecovery,

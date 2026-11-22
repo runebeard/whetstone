@@ -89,6 +89,7 @@ class CharacterState {
   final int? wildShapeTurnsRemaining;
   final String? wildCompanion;
   final bool naturalRecoveryUsed;
+  final bool memorizeSpellAvailable;
   final bool naturalRecoveryCastUsed;
   final DruidLand? druidLand;
   final int armourClass;
@@ -123,6 +124,7 @@ class CharacterState {
     this.wildShapeTurnsRemaining,
     this.wildCompanion,
     this.naturalRecoveryUsed = false,
+    this.memorizeSpellAvailable = false,
     this.naturalRecoveryCastUsed = false,
     this.druidLand,
     required this.armourClass,
@@ -172,6 +174,7 @@ class CharacterState {
       'wildShapeTurnsRemaining': ?wildShapeTurnsRemaining,
       'wildCompanion': ?wildCompanion,
       if (naturalRecoveryUsed) 'naturalRecoveryUsed': true,
+      if (memorizeSpellAvailable) 'memorizeSpellAvailable': true,
       if (naturalRecoveryCastUsed) 'naturalRecoveryCastUsed': true,
       'druidLand': ?druidLand?.name,
       'armourClass': armourClass,
@@ -213,6 +216,7 @@ class CharacterState {
       wildShapeTurnsRemaining: json['wildShapeTurnsRemaining'] as int?,
       wildCompanion: json['wildCompanion'] as String?,
       naturalRecoveryUsed: json['naturalRecoveryUsed'] as bool? ?? false,
+      memorizeSpellAvailable: json['memorizeSpellAvailable'] as bool? ?? false,
       naturalRecoveryCastUsed:
           json['naturalRecoveryCastUsed'] as bool? ?? false,
       druidLand: DruidLand.values
@@ -366,6 +370,7 @@ class CharacterState {
     String? wildCompanion,
     bool clearWildCompanion = false,
     bool? naturalRecoveryUsed,
+    bool? memorizeSpellAvailable,
     bool? naturalRecoveryCastUsed,
     DruidLand? druidLand,
     int? armourClass,
@@ -402,6 +407,8 @@ class CharacterState {
           ? null
           : wildCompanion ?? this.wildCompanion,
       naturalRecoveryUsed: naturalRecoveryUsed ?? this.naturalRecoveryUsed,
+      memorizeSpellAvailable:
+          memorizeSpellAvailable ?? this.memorizeSpellAvailable,
       naturalRecoveryCastUsed:
           naturalRecoveryCastUsed ?? this.naturalRecoveryCastUsed,
       druidLand: druidLand ?? this.druidLand,

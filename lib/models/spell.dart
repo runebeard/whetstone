@@ -93,6 +93,31 @@ class Spell extends CharacterAction {
       };
 
   bool get isCantrip => level == 0;
+  Spell withPrepared(bool value) => Spell(
+    id: id,
+    name: name,
+    level: level,
+    prepared: value,
+    summary: summary,
+    concentration: concentration,
+    repeatableEffect: repeatableEffect,
+    rollEffectOnCast: rollEffectOnCast,
+    ritual: ritual,
+    castingAbility: castingAbility,
+    deriveAttackModifier: deriveAttackModifier,
+    scaleCantripDamage: scaleCantripDamage,
+    additionalDicePerSlotLevel: additionalDicePerSlotLevel,
+    addCastingModifierToDamage: addCastingModifierToDamage,
+    savingThrowAbility: savingThrowAbility,
+    halfDamageOnSave: halfDamageOnSave,
+    castingTime: castingTime,
+    range: range,
+    duration: duration,
+    components: components,
+    rollModifier: rollModifier,
+    damageFormula: damageFormula,
+    damageType: damageType,
+  );
   bool get isAvailableInCombat => isCantrip || prepared;
 
   String get levelLabel => isCantrip ? 'Cantrip' : 'Level $level';
