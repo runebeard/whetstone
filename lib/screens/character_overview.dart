@@ -95,6 +95,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   bool stepOfWindUsedThisTurn = false;
   bool attackRollMadeThisTurn = false;
   bool recklessAttackArmed = false;
+  bool frenzyUsedThisTurn = false;
   int flurryAttacksRemaining = 0;
   int attackActionAttacksRemaining = 0;
   CheckRoll? tacticalMindCheck;
@@ -168,6 +169,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         ? widget.initialSession.combatRound
         : 1;
     if (widget.initialSession.isInCombat) {
+      frenzyUsedThisTurn = widget.initialSession.frenzyUsedThisTurn;
       attackRollMadeThisTurn =
           widget.initialSession.attackRollMadeThisTurn ||
           widget.initialSession.attackActionAttacksRemaining > 0;
@@ -278,6 +280,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         stepOfWindUsedThisTurn: stepOfWindUsedThisTurn,
         attackRollMadeThisTurn: attackRollMadeThisTurn,
         recklessAttackArmed: recklessAttackArmed,
+        frenzyUsedThisTurn: frenzyUsedThisTurn,
         flurryAttacksRemaining: flurryAttacksRemaining,
         attackActionAttacksRemaining: attackActionAttacksRemaining,
         timeline: [...timeline],
@@ -3287,6 +3290,58 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
+  Future<void> resolveFrenzy({
+    required bool usesStrength,
+    required bool critical,
+    String? damageType,
+  }) async {
+    bool eligible() =>
+        mounted &&
+        currentMode == CharacterMode.combat &&
+        character.levelInClass('Barbarian') >= 3 &&
+        character.subclasses['Barbarian'] == 'Path of the Berserker' &&
+        characterState.canConcentrate &&
+        characterState.isRaging &&
+        characterState.activeConditions.contains(recklessAttackCondition) &&
+        usesStrength &&
+        !frenzyUsedThisTurn;
+    if (!eligible()) return;
+    final count = character.rageDamageBonus * (critical ? 2 : 1);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Frenzy · Confirm first Strength hit'),
+        content: Text(
+          'Confirm this is the first target you hit on your own turn with a Strength-based attack while raging and using Reckless Attack. Add ${count}d6 extra damage${critical ? ' (critical hit dice doubled)' : ''}, of the same type as the triggering attack. No extra action, attack or Rage use is spent. Resolve target damage at the table.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Resolve at table'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Apply Frenzy damage'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true || !eligible()) return;
+    frenzyUsedThisTurn = true;
+    final result = DiceExpression(
+      diceCount: count,
+      dieSides: 6,
+    ).roll('Frenzy', diceRoller);
+    addRollNotice(
+      title: 'Frenzy Damage',
+      calculation: '${count}d6 · ${result.dice.join(' + ')} = ${result.total}',
+      total: result.total,
+      tone: RollNoticeTone.damage,
+      detail:
+          '${damageType ?? 'Same type as the triggering attack'} · First qualifying hit this turn. No extra action or resource spent.',
+    );
+  }
+
   bool get canDeclareRecklessAttack =>
       currentMode == CharacterMode.combat &&
       character.levelInClass('Barbarian') >= 2 &&
@@ -3604,6 +3659,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
       );
       rollRadiantStrikes(
         critical: attack.naturalRoll >= character.weaponCriticalThreshold,
+      );
+      await resolveFrenzy(
+        usesStrength: !useDexterity,
+        critical: critical,
+        damageType: hit,
       );
       if (asFlurry) await resolveOpenHandTechnique();
       return;
@@ -4060,6 +4120,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
       weapon,
       critical: attack.naturalRoll >= character.weaponCriticalThreshold,
     );
+    await resolveFrenzy(
+      usesStrength: weapon.usesStrength,
+      critical: attack.naturalRoll >= character.weaponCriticalThreshold,
+      damageType: weapon.damageType,
+    );
   }
 
   void rollRadiantStrikes({required bool critical}) {
@@ -4476,6 +4541,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
     }
     if (action is Weapon) {
       await resolveSneakAttack(action, critical: critical);
+      await resolveFrenzy(
+        usesStrength: action.usesStrength,
+        critical: critical,
+        damageType: action.damageType,
+      );
     }
   }
 
@@ -6767,6 +6837,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   // ------------------------------------------------------------
 
   void beginCombat() {
+    frenzyUsedThisTurn = false;
     attackRollMadeThisTurn = false;
     recklessAttackArmed = false;
     setState(() {
@@ -7398,6 +7469,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void advanceCombatTurn() {
+    frenzyUsedThisTurn = false;
     attackRollMadeThisTurn = false;
     recklessAttackArmed = false;
     tacticalMindCheck = null;
@@ -7466,6 +7538,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void endCombat() {
+    frenzyUsedThisTurn = false;
     attackRollMadeThisTurn = false;
     recklessAttackArmed = false;
     var ended = characterState.endRage();
