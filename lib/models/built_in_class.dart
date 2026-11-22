@@ -14,6 +14,7 @@ const uncannyMetabolismResourceId = 'whetstone:class:uncanny-metabolism';
 const wholenessOfBodyResourceId = 'whetstone:subclass:wholeness-of-body';
 const arcaneRecoveryResourceId = 'arcane_recovery';
 const magicalCunningResourceId = 'whetstone:class:magical-cunning';
+const darkOnesOwnLuckResourceId = 'whetstone:subclass:dark-ones-own-luck';
 const wildShapeResourceId = 'whetstone:class:wild-shape';
 const bardicInspirationResourceId = 'whetstone:class:bardic-inspiration';
 const layOnHandsResourceId = 'whetstone:class:lay-on-hands';
@@ -31,6 +32,7 @@ const progressingClassResourceIds = {
   wholenessOfBodyResourceId,
   arcaneRecoveryResourceId,
   magicalCunningResourceId,
+  darkOnesOwnLuckResourceId,
   wildShapeResourceId,
   bardicInspirationResourceId,
   layOnHandsResourceId,
@@ -231,6 +233,14 @@ enum BuiltInClass {
       _ => null,
     };
     return [
+      if (this == warlock && level >= 6 && subclass == 'Fiend Patron')
+        CharacterResource(
+          id: darkOnesOwnLuckResourceId,
+          name: 'Dark One’s Own Luck',
+          maximum: charismaModifier.clamp(1, 10),
+          initialValue: charismaModifier.clamp(1, 10),
+          rechargePeriod: RechargePeriod.longRest,
+        ),
       if (this == warlock && level >= 2)
         const CharacterResource(
           id: magicalCunningResourceId,

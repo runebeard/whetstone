@@ -65,6 +65,8 @@ class CombatModeView extends StatelessWidget {
   final VoidCallback? onRetaliation;
   final VoidCallback? onRecklessAttack;
   final VoidCallback? onDarkOnesBlessing;
+  final VoidCallback? onDarkLuck;
+  final bool darkLuckAvailable;
   final bool darkOnesBlessingAvailable;
   final bool recklessAttackAvailable;
   final bool recklessAttackArmed;
@@ -138,6 +140,8 @@ class CombatModeView extends StatelessWidget {
     this.onRetaliation,
     this.onRecklessAttack,
     this.onDarkOnesBlessing,
+    this.onDarkLuck,
+    this.darkLuckAvailable = false,
     this.darkOnesBlessingAvailable = false,
     this.recklessAttackAvailable = false,
     this.recklessAttackArmed = false,
@@ -469,6 +473,11 @@ class CombatModeView extends StatelessWidget {
             OutlinedButton(
               onPressed: darkOnesBlessingAvailable ? onDarkOnesBlessing : null,
               child: const Text('Dark One’s Blessing'),
+            ),
+          if (onDarkLuck != null)
+            OutlinedButton(
+              onPressed: darkLuckAvailable ? onDarkLuck : null,
+              child: const Text('Dark One’s Own Luck · Last check or save'),
             ),
           if (characterState.fiendishResistance != null)
             Text(

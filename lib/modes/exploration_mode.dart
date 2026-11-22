@@ -28,6 +28,8 @@ class ExplorationModeView extends StatelessWidget {
   final VoidCallback? onArcaneRecovery;
   final VoidCallback? onMemorizeSpell;
   final VoidCallback? onMagicalCunning;
+  final VoidCallback? onDarkLuck;
+  final bool darkLuckAvailable;
   final VoidCallback? onFiendishResilience;
   final VoidCallback? onDarkOnesBlessing;
   final bool darkOnesBlessingAvailable;
@@ -63,6 +65,8 @@ class ExplorationModeView extends StatelessWidget {
     this.onArcaneRecovery,
     this.onMemorizeSpell,
     this.onMagicalCunning,
+    this.onDarkLuck,
+    this.darkLuckAvailable = false,
     this.onFiendishResilience,
     this.onDarkOnesBlessing,
     this.darkOnesBlessingAvailable = false,
@@ -153,6 +157,11 @@ class ExplorationModeView extends StatelessWidget {
                   ? onFiendishResilience
                   : null,
               child: const Text('Fiendish Resilience · After Rest'),
+            ),
+          if (onDarkLuck != null)
+            OutlinedButton(
+              onPressed: darkLuckAvailable ? onDarkLuck : null,
+              child: const Text('Dark One’s Own Luck · Last check or save'),
             ),
           if (characterState.fiendishResistance != null)
             Text(

@@ -100,6 +100,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   int attackActionAttacksRemaining = 0;
   CheckRoll? tacticalMindCheck;
   CheckRoll? peerlessSkillRoll;
+  CheckRoll? darkLuckRoll;
   late final DiceRoller diceRoller;
   String? pendingCriticalActionKey;
   (String, int)? pendingAttackSlot;
@@ -127,9 +128,16 @@ class _CharacterOverviewState extends State<CharacterOverview>
               ...BuiltInClass.warlock
                   .classResources(
                     character.levelInClass('Warlock'),
-                    charismaModifier: 0,
+                    charismaModifier: character.abilityModifierFor(
+                      Ability.charisma,
+                    ),
+                    subclass: character.subclasses['Warlock'],
                   )
-                  .where((resource) => resource.id == magicalCunningResourceId),
+                  .where(
+                    (resource) =>
+                        resource.id == magicalCunningResourceId ||
+                        resource.id == darkOnesOwnLuckResourceId,
+                  ),
               ...BuiltInClass.barbarian
                   .classResources(
                     character.levelInClass('Barbarian'),
@@ -493,6 +501,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       modifier,
       peerlessEligible: true,
       checkAbility: effectiveSkill.ability,
+      darkLuckEligible: true,
       minimumRoll: reliable ? 10 : null,
       minimumRollReason: reliable ? 'Reliable Talent' : null,
       describe: jackBonus > 0 || primal
@@ -2046,9 +2055,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
       check.modifier,
       hasAdvantage: hasAdvantage,
       checkAbility: check.ability,
+      darkLuckEligible: true,
     );
     if (character.levelInClass('Monk') >= 14) {
-      await rerollWithDisciplinedSurvivor(roll, originalMode);
+      await rerollWithDisciplinedSurvivor(
+        roll,
+        originalMode,
+        tableResolvedSave: true,
+      );
       return;
     }
     final fighterLevel = character.levelInClass('Fighter');
@@ -2082,6 +2096,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     rollCheck(
       '$label · Indomitable',
       check.modifier + fighterLevel,
+      darkLuckEligible: true,
       checkAbility: check.ability,
       modeOverride: originalMode,
     );
@@ -4610,6 +4625,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     CheckRoll original,
     D20Mode mode, {
     bool knownFailure = false,
+    bool tableResolvedSave = false,
   }) async {
     final focus = character.resources
         .where((resource) => resource.id == focusResourceId)
@@ -4652,6 +4668,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       original.modifier,
       modeOverride: mode,
       minimumTotal: original.minimumTotal,
+      darkLuckEligible: tableResolvedSave,
     );
   }
 
@@ -4662,6 +4679,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     Ability? checkAbility,
     int? minimumTotal,
     bool peerlessEligible = false,
+    bool darkLuckEligible = false,
     bool attackRoll = false,
     bool strengthAttack = false,
     bool reactionAttack = false,
@@ -4674,6 +4692,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }) {
     tacticalMindCheck = null;
     peerlessSkillRoll = null;
+    darkLuckRoll = null;
     if (attackRoll) {
       recordAttackForReckless(asReaction: reactionAttack);
       hasAdvantage =
@@ -4707,6 +4726,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
               : null),
     );
     final minimumApplied = roll.effectiveRoll != roll.naturalRoll;
+    if (darkLuckEligible && hasDarkOnesOwnLuck) darkLuckRoll = roll;
     final totalMinimumApplied = roll.total != roll.unadjustedTotal;
     if (hasPeerlessSkill &&
         peerlessEligible &&
@@ -4953,6 +4973,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     tacticalMindCheck = null;
     final bonus = diceRoller.rollDie(10);
     peerlessSkillRoll = null;
+    darkLuckRoll = null;
     final total = check.total + bonus;
     final success = total >= dc;
     if (success) spendCastResource(resource.id);
@@ -5080,6 +5101,65 @@ class _CharacterOverviewState extends State<CharacterOverview>
     HapticFeedback.selectionClick();
   }
 
+  bool get hasDarkOnesOwnLuck =>
+      character.levelInClass('Warlock') >= 6 &&
+      character.subclasses['Warlock'] == 'Fiend Patron';
+
+  bool get darkLuckAvailable =>
+      hasDarkOnesOwnLuck &&
+      darkLuckRoll != null &&
+      !(characterState.currentHp == 0 &&
+          characterState.deathSaveFailures >= 3) &&
+      character.resources.any(
+        (resource) =>
+            resource.id == darkOnesOwnLuckResourceId &&
+            remainingUses(resource) > 0,
+      );
+
+  Future<void> useDarkOnesOwnLuck() async {
+    if (!darkLuckAvailable) return;
+    final original = darkLuckRoll!;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Dark One’s Own Luck'),
+        content: Text(
+          '${original.label} total ${original.total}. Confirm no effects of this roll have been resolved yet. Spend one use to add 1d10, with no action cost. Only one use may apply to this roll. Resolve the final check or save at the table; this control excludes attacks, initiative and automatically resolved saves.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Spend use · Add 1d10'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        confirmed != true ||
+        !darkLuckAvailable ||
+        !identical(original, darkLuckRoll)) {
+      return;
+    }
+    if (!spendCastResource(darkOnesOwnLuckResourceId)) return;
+    darkLuckRoll = null;
+    peerlessSkillRoll = null;
+    tacticalMindCheck = null;
+    final bonus = diceRoller.rollDie(10);
+    addRollNotice(
+      title: 'Dark One’s Own Luck · ${original.label}',
+      calculation:
+          '${original.total} + 1d10 ($bonus) = ${original.total + bonus}',
+      total: original.total + bonus,
+      tone: RollNoticeTone.normal,
+      detail:
+          'One use spent · Original d20 ${original.naturalRoll} unchanged. Resolve the new total before applying effects.',
+    );
+  }
+
   bool get hasPeerlessSkill =>
       character.levelInClass('Bard') >= 14 &&
       character.subclasses['Bard'] == 'College of Lore';
@@ -5113,6 +5193,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       return;
     }
     peerlessSkillRoll = null;
+    darkLuckRoll = null;
     // A die can be applied only once to this roll, even when the use is retained.
     tacticalMindCheck = null;
     final die = diceRoller.rollDie(character.bardicInspirationDieSides);
@@ -5273,6 +5354,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         check.modifier,
         useSelectedMode: false,
         checkAbility: choice.$2,
+        darkLuckEligible: true,
         modeOverride: choice.$3 ? D20Mode.normal : D20Mode.advantage,
         describe: (_) => choice.$3
             ? 'Countercharm Advantage cancelled by Disadvantage. Resolve the new save outcome at the table.'
@@ -6596,6 +6678,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
           roller: diceRoller,
         );
     peerlessSkillRoll = null;
+    darkLuckRoll = null;
     updateCharacterState(plan.updatedState);
     recordSessionEvent(
       SessionEventType.rest,
@@ -7063,6 +7146,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       combatRound = 1;
       combatInitiative = null;
       peerlessSkillRoll = null;
+      darkLuckRoll = null;
       usedCombatActions.clear();
       actionSurge = null;
       wildResurgenceUsedThisTurn = false;
@@ -7692,6 +7776,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     recklessAttackArmed = false;
     tacticalMindCheck = null;
     peerlessSkillRoll = null;
+    darkLuckRoll = null;
     pendingAttackSlot = null;
     pendingCriticalActionKey = null;
     setState(() {
@@ -7781,6 +7866,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       combatRound = 1;
       combatInitiative = null;
       peerlessSkillRoll = null;
+      darkLuckRoll = null;
       usedCombatActions.clear();
       actionSurge = null;
       wildResurgenceUsedThisTurn = false;
@@ -8004,6 +8090,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onMagicalCunning: character.levelInClass('Warlock') >= 2
           ? useMagicalCunning
           : null,
+      onDarkLuck: hasDarkOnesOwnLuck ? useDarkOnesOwnLuck : null,
+      darkLuckAvailable: darkLuckAvailable,
       onFiendishResilience: character.hasFiendishResilience
           ? chooseFiendishResilience
           : null,
@@ -8063,6 +8151,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onAttackRoll: rollAttack,
       onUnarmedStrike: activeWildShape == null ? useUnarmedStrike : null,
       onCuttingWords: hasCuttingWords ? useCuttingWords : null,
+      onDarkLuck: hasDarkOnesOwnLuck ? useDarkOnesOwnLuck : null,
+      darkLuckAvailable: darkLuckAvailable,
       onDarkOnesBlessing: hasDarkOnesBlessing ? useDarkOnesBlessing : null,
       darkOnesBlessingAvailable: darkOnesBlessingAvailable,
       onRecklessAttack: character.levelInClass('Barbarian') >= 2
