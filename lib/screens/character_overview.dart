@@ -377,15 +377,69 @@ class _CharacterOverviewState extends State<CharacterOverview>
     }
   }
 
-  void handleSkillTap(SkillCheck check) {
-    tacticalMindCheck = rollSkillCheck(check);
+  bool canUsePrimalKnowledge(SkillCheck check) =>
+      character.levelInClass('Barbarian') >= 3 &&
+      characterState.isRaging &&
+      const {
+        'acrobatics',
+        'intimidation',
+        'perception',
+        'stealth',
+        'survival',
+      }.contains(check.skill.id);
+
+  Future<bool?> choosePrimalKnowledge(SkillCheck check) async {
+    if (!canUsePrimalKnowledge(check)) return false;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Primal Knowledge · ${check.skill.name}'),
+        content: const Text(
+          'While raging, you can use Strength for this skill check. Keep your skill proficiency or Expertise; Rage grants Advantage to the Strength check. No additional action or Rage use is spent.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Use ${check.skill.ability.label}'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Use Strength'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || !canUsePrimalKnowledge(check)) return null;
+    return result;
+  }
+
+  Future<void> handleSkillTap(SkillCheck check) async {
+    final primal = await choosePrimalKnowledge(check);
+    if (!mounted || primal == null) return;
+    tacticalMindCheck = rollSkillCheck(check, usePrimalKnowledge: primal);
   }
 
   CheckRoll rollSkillCheck(
     SkillCheck check, {
     String? label,
     String Function(CheckRoll)? describe,
+    bool usePrimalKnowledge = false,
   }) {
+    final primal = usePrimalKnowledge && canUsePrimalKnowledge(check);
+    final effectiveSkill = primal
+        ? Skill(
+            id: check.skill.id,
+            name: check.skill.name,
+            ability: Ability.strength,
+          )
+        : check.skill;
+    final modifier = primal
+        ? characterForPhysicalChecks.modifierFor(effectiveSkill)
+        : check.modifier;
     final reliable =
         character.levelInClass('Rogue') >= 7 &&
         (check.proficiency != SkillProficiency.none ||
@@ -397,18 +451,21 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
     return rollCheck(
       label ?? check.skill.name,
-      check.modifier,
+      modifier,
       peerlessEligible: true,
-      checkAbility: check.skill.ability,
+      checkAbility: effectiveSkill.ability,
       minimumRoll: reliable ? 10 : null,
       minimumRollReason: reliable ? 'Reliable Talent' : null,
-      describe: jackBonus > 0
-          ? (roll) =>
-                '${describe == null ? '' : '${describe(roll)} · '}Jack of All Trades +$jackBonus'
+      describe: jackBonus > 0 || primal
+          ? (roll) => [
+              if (describe != null) describe(roll),
+              if (primal) 'Primal Knowledge · Strength',
+              if (jackBonus > 0) 'Jack of All Trades +$jackBonus',
+            ].join(' · ')
           : describe,
       hasAdvantage:
           (characterState.isRaging &&
-              check.skill.ability == Ability.strength) ||
+              effectiveSkill.ability == Ability.strength) ||
           (character.championLevel >= 3 && check.skill.id == 'athletics'),
     );
   }
@@ -6882,6 +6939,17 @@ class _CharacterOverviewState extends State<CharacterOverview>
     if (currentMode != CharacterMode.combat || !canUse()) {
       return;
     }
+    final primal = actionSkill == null
+        ? false
+        : await choosePrimalKnowledge(
+            characterForPhysicalChecks.checkFor(actionSkill),
+          );
+    if (!mounted ||
+        primal == null ||
+        currentMode != CharacterMode.combat ||
+        !canUse()) {
+      return;
+    }
     setState(() {
       if (asBonusAction) {
         usedCombatActions.add(CombatActionCost.bonusAction);
@@ -6930,6 +6998,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       final check = characterForPhysicalChecks.checkFor(actionSkill);
       tacticalMindCheck = rollSkillCheck(
         check,
+        usePrimalKnowledge: primal,
         label: '$prefix$choice · ${actionSkill.name}',
         describe: choice == 'Hide'
             ? (roll) => roll.total >= 15
@@ -7641,6 +7710,82 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
+  bool get pendingPrimalKnowledge =>
+      character.levelInClass('Barbarian') >= 3 &&
+      !character.features.any(
+        (feature) => feature.id == 'whetstone:class:primal-knowledge-skill',
+      );
+
+  Future<void> choosePrimalKnowledgeSkill() async {
+    if (!pendingPrimalKnowledge) return;
+    final skills = standardSkills
+        .where(
+          (skill) =>
+              BuiltInClass.barbarian.allowsSkill(skill.id) &&
+              character.proficiencyFor(skill) == SkillProficiency.none,
+        )
+        .toList();
+    final selected = await showDialog<Skill>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Primal Knowledge · Choose proficiency'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'Choose one new skill proficiency from the Barbarian list. Existing proficiency and Expertise are preserved. If an older save already includes this grant, review its proficiencies before making another choice.',
+            ),
+          ),
+          if (skills.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'No eligible untrained skills remain. Review your proficiencies first.',
+              ),
+            ),
+          for (final skill in skills)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, skill),
+              child: Text(skill.name),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        selected == null ||
+        !pendingPrimalKnowledge ||
+        !BuiltInClass.barbarian.allowsSkill(selected.id) ||
+        character.proficiencyFor(selected) != SkillProficiency.none) {
+      return;
+    }
+    final updated = character.copyWith(
+      skillProficiencies: {
+        ...character.skillProficiencies,
+        selected.id: SkillProficiency.proficient,
+      },
+      features: [
+        ...character.features,
+        Feature(
+          id: 'whetstone:class:primal-knowledge-skill',
+          name: 'Primal Knowledge · Skill proficiency',
+          summary:
+              '${selected.name} proficiency has already been applied. While raging, Primal Knowledge also allows Strength checks with Acrobatics, Intimidation, Perception, Stealth and Survival.',
+        ),
+      ],
+    );
+    setState(() => character = updated);
+    widget.onCharacterChanged(updated);
+    recordSessionEvent(
+      SessionEventType.condition,
+      'Primal Knowledge proficiency chosen',
+      detail: selected.name,
+    );
+  }
+
   Future<void> chooseScholar() async {
     bool canChoose() =>
         mounted &&
@@ -7732,6 +7877,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onFeatureTap: handleActionTap,
       onManageFeature: manageFeature,
       onAddFeature: addFeature,
+      onPrimalKnowledge: pendingPrimalKnowledge
+          ? choosePrimalKnowledgeSkill
+          : null,
       onLoreProficiencies: pendingLoreProficiencies
           ? () => chooseBardExpertise(loreBonus: true)
           : null,

@@ -18,6 +18,7 @@ class ProfileModeView extends StatelessWidget {
   final VoidCallback onAddFeature;
   final VoidCallback onAdvanceCharacter;
   final VoidCallback? onScholar;
+  final VoidCallback? onPrimalKnowledge;
   final VoidCallback? onLoreProficiencies;
   final VoidCallback? onBardExpertise;
 
@@ -32,6 +33,7 @@ class ProfileModeView extends StatelessWidget {
     required this.onAddFeature,
     required this.onAdvanceCharacter,
     this.onScholar,
+    this.onPrimalKnowledge,
     this.onLoreProficiencies,
     this.onBardExpertise,
   });
@@ -152,6 +154,11 @@ class ProfileModeView extends StatelessWidget {
             OutlinedButton(
               onPressed: onScholar,
               child: const Text('Scholar · Choose Expertise'),
+            ),
+          if (onPrimalKnowledge != null)
+            OutlinedButton(
+              onPressed: onPrimalKnowledge,
+              child: const Text('Primal Knowledge · Choose skill'),
             ),
           if (onLoreProficiencies != null)
             OutlinedButton(
