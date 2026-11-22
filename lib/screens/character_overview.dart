@@ -4551,6 +4551,94 @@ class _CharacterOverviewState extends State<CharacterOverview>
     HapticFeedback.selectionClick();
   }
 
+  Future<void> useCountercharm() async {
+    bool canUse() =>
+        mounted &&
+        currentMode == CharacterMode.combat &&
+        character.levelInClass('Bard') >= 7 &&
+        characterState.canConcentrate &&
+        !usedCombatActions.contains(CombatActionCost.reaction);
+    if (!canUse()) return;
+    var ability = Ability.wisdom;
+    var disadvantage = false;
+    final choice = await showDialog<(bool, Ability, bool)>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('Countercharm · Confirm failed save'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Confirm you or a creature within 30 feet just failed a saving throw against an effect that applies Charmed or Frightened. Spend your Reaction for a reroll with Advantage. No Bardic Inspiration is spent. Resolve the new outcome at the table; existing conditions are not removed automatically.',
+                ),
+                DropdownButtonFormField<Ability>(
+                  initialValue: ability,
+                  decoration: const InputDecoration(
+                    labelText: 'Your save ability',
+                  ),
+                  items: [
+                    for (final value in Ability.values)
+                      DropdownMenuItem(value: value, child: Text(value.label)),
+                  ],
+                  onChanged: (value) =>
+                      update(() => ability = value ?? Ability.wisdom),
+                ),
+                CheckboxListTile(
+                  title: const Text('Your save also has Disadvantage'),
+                  subtitle: const Text(
+                    'Advantage and Disadvantage cancel for your reroll.',
+                  ),
+                  value: disadvantage,
+                  onChanged: (value) =>
+                      update(() => disadvantage = value ?? false),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () =>
+                  Navigator.pop(context, (false, ability, disadvantage)),
+              child: const Text('Help another creature'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.pop(context, (true, ability, disadvantage)),
+              child: const Text('Reroll your failed save'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || choice == null || !canUse()) return;
+    usedCombatActions.add(CombatActionCost.reaction);
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Countercharm',
+      detail: choice.$1
+          ? 'Reaction spent · Reroll your failed save against Charmed/Frightened with Advantage.'
+          : 'Reaction spent · Another creature within 30 feet rerolls the failed Charmed/Frightened save with Advantage. Resolve its roll and outcome at the table.',
+    );
+    if (choice.$1) {
+      final check = characterInCombat.savingThrowFor(choice.$2);
+      rollCheck(
+        '${choice.$2.label} Save · Countercharm',
+        check.modifier,
+        useSelectedMode: false,
+        modeOverride: choice.$3 ? D20Mode.normal : D20Mode.advantage,
+        describe: (_) => choice.$3
+            ? 'Countercharm Advantage cancelled by Disadvantage. Resolve the new save outcome at the table.'
+            : 'Countercharm reroll with Advantage. Resolve the new save outcome at the table.',
+      );
+    }
+  }
+
   bool get hasCuttingWords =>
       character.levelInClass('Bard') >= 3 &&
       character.subclasses['Bard'] == 'College of Lore';
@@ -7086,6 +7174,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onAttackRoll: rollAttack,
       onUnarmedStrike: activeWildShape == null ? useUnarmedStrike : null,
       onCuttingWords: hasCuttingWords ? useCuttingWords : null,
+      onCountercharm: character.levelInClass('Bard') >= 7
+          ? useCountercharm
+          : null,
       cuttingWordsAvailable: character.resources.any(
         (resource) =>
             resource.id == bardicInspirationResourceId &&
