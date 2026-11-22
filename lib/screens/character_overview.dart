@@ -3276,9 +3276,75 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
+  bool get hasRetaliation =>
+      character.levelInClass('Barbarian') >= 10 &&
+      character.subclasses['Barbarian'] == 'Path of the Berserker';
+
+  bool get canRetaliate =>
+      hasRetaliation &&
+      activeWildShape == null &&
+      currentMode == CharacterMode.combat &&
+      characterState.canConcentrate &&
+      !usedCombatActions.contains(CombatActionCost.reaction);
+
+  void spendRetaliationReaction() {
+    usedCombatActions.add(CombatActionCost.reaction);
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Retaliation',
+      detail:
+          'Reaction spent after confirming damage from a creature within 5 feet. One melee response; damage already taken and target outcomes are resolved separately.',
+    );
+  }
+
+  Future<void> useRetaliation() async {
+    if (!canRetaliate) return;
+    final weapons = character.weapons
+        .where((weapon) => weapon.isMelee)
+        .toList();
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Retaliation · Confirm triggering damage'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'Confirm you just took damage from the creature within 5 feet that you will attack. Enter the incoming damage separately. Spend your Reaction for one melee weapon attack or Unarmed Strike against that creature. No Rage use, Action or Bonus Action is spent.',
+            ),
+          ),
+          for (final weapon in weapons)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, weapon.actionKey),
+              child: Text('Retaliate with ${weapon.name}'),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 'unarmed'),
+            child: const Text('Retaliate with Unarmed Strike'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null || !canRetaliate) return;
+    if (choice == 'unarmed') {
+      await useUnarmedStrike(asReaction: true);
+    } else {
+      final weapon = weapons
+          .where((weapon) => weapon.actionKey == choice)
+          .firstOrNull;
+      if (weapon == null || !character.weapons.contains(weapon)) return;
+      await rollAttack(weapon, asReaction: true, retaliation: true);
+    }
+  }
+
   Future<void> useUnarmedStrike({
     bool asBonusAction = false,
     bool asFlurry = false,
+    bool asReaction = false,
   }) async {
     final monk = character.martialArtsDieSides > 0;
     bool canUse() =>
@@ -3286,7 +3352,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
         currentMode == CharacterMode.combat &&
         activeWildShape == null &&
         characterState.canConcentrate &&
-        (asFlurry
+        (asReaction
+            ? canRetaliate
+            : asFlurry
             ? flurryAttacksRemaining > 0
             : asBonusAction
             ? monk && !usedCombatActions.contains(CombatActionCost.bonusAction)
@@ -3358,7 +3426,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
       ),
     );
     if (!mounted || choice == null || !canUse()) return;
-    if (asFlurry) {
+    if (asReaction) {
+      spendRetaliationReaction();
+    } else if (asFlurry) {
       setState(() => flurryAttacksRemaining--);
       publishSession();
     } else if (asBonusAction) {
@@ -3367,7 +3437,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     } else {
       spendAttackActionAttack();
     }
-    if (characterState.isRaging) extendRage();
+    if (characterState.isRaging && !asReaction) extendRage();
     final strength = character.abilityModifierFor(Ability.strength);
     final dexterity = character.abilityModifierFor(Ability.dexterity);
     final useDexterity = martialArts && dexterity > strength;
@@ -3491,8 +3561,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
     bool useFreeCast = false,
     String? scrollName,
     bool asReaction = false,
+    bool retaliation = false,
     bool? packTacticsChoice,
   }) async {
+    if (retaliation && !canRetaliate) return;
     final modifier = scrollName != null && action is Spell
         ? action.scrollAttackBonus
         : character.attackModifierFor(action);
@@ -3568,6 +3640,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     pendingAttackSlot = slotLevel == null
         ? null
         : (action.actionKey, slotLevel);
+    if (retaliation && !canRetaliate) return;
     if (action case Weapon(ammunitionName: final name?)) {
       if (!spendInventoryItem(name)) return;
     }
@@ -3580,6 +3653,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     }
     final threshold = action is Weapon ? character.weaponCriticalThreshold : 20;
     final aimed = consumeSteadyAimAdvantage();
+    if (retaliation) spendRetaliationReaction();
     final roll = rollCheck(
       '${action.name} Attack',
       modifier,
@@ -7567,6 +7641,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onAttackRoll: rollAttack,
       onUnarmedStrike: activeWildShape == null ? useUnarmedStrike : null,
       onCuttingWords: hasCuttingWords ? useCuttingWords : null,
+      onRetaliation: hasRetaliation && activeWildShape == null
+          ? useRetaliation
+          : null,
+      retaliationAvailable: canRetaliate,
       onIntimidatingPresence: hasIntimidatingPresence
           ? useIntimidatingPresence
           : null,
