@@ -64,6 +64,8 @@ class CombatModeView extends StatelessWidget {
   final VoidCallback? onIntimidatingPresence;
   final VoidCallback? onRetaliation;
   final VoidCallback? onRecklessAttack;
+  final VoidCallback? onDarkOnesBlessing;
+  final bool darkOnesBlessingAvailable;
   final bool recklessAttackAvailable;
   final bool recklessAttackArmed;
   final bool retaliationAvailable;
@@ -135,6 +137,8 @@ class CombatModeView extends StatelessWidget {
     this.onIntimidatingPresence,
     this.onRetaliation,
     this.onRecklessAttack,
+    this.onDarkOnesBlessing,
+    this.darkOnesBlessingAvailable = false,
     this.recklessAttackAvailable = false,
     this.recklessAttackArmed = false,
     this.retaliationAvailable = false,
@@ -460,6 +464,11 @@ class CombatModeView extends StatelessWidget {
             OutlinedButton(
               onPressed: retaliationAvailable ? onRetaliation : null,
               child: const Text('Retaliation · Reaction'),
+            ),
+          if (onDarkOnesBlessing != null)
+            OutlinedButton(
+              onPressed: darkOnesBlessingAvailable ? onDarkOnesBlessing : null,
+              child: const Text('Dark One’s Blessing'),
             ),
           if (onRecklessAttack != null)
             OutlinedButton(

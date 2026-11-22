@@ -6761,6 +6761,61 @@ class _CharacterOverviewState extends State<CharacterOverview>
     await useNaturalRecovery(arcane: true);
   }
 
+  bool get hasDarkOnesBlessing =>
+      character.levelInClass('Warlock') >= 3 &&
+      character.subclasses['Warlock'] == 'Fiend Patron';
+
+  bool get darkOnesBlessingAvailable =>
+      hasDarkOnesBlessing &&
+      !(characterState.currentHp == 0 && characterState.deathSaveFailures >= 3);
+
+  Future<void> useDarkOnesBlessing() async {
+    if (!darkOnesBlessingAvailable) return;
+    final level = character.levelInClass('Warlock');
+    final charisma = character.abilityModifierFor(Ability.charisma);
+    final grant = (level + charisma).clamp(1, 999999);
+    final trigger = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Dark One’s Blessing · Confirm enemy'),
+        content: Text(
+          'Confirm an enemy was just reduced to 0 HP. Gain $grant temporary HP: Warlock $level + Charisma $charisma, minimum 1. '
+          'If someone else reduced it to 0 HP, that enemy must be within 10 feet of you. '
+          'Temporary HP do not heal or stack; keep a higher existing amount. This spends no action or resource.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(context, 'You reduced an enemy to 0 HP'),
+            child: const Text('Enemy reduced by you'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(
+              context,
+              'Another creature reduced an enemy within 10 feet to 0 HP',
+            ),
+            child: const Text('Nearby enemy reduced by another'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || trigger == null || !darkOnesBlessingAvailable) return;
+    final previous = characterState.temporaryHp;
+    final temporary = previous > grant ? previous : grant;
+    updateCharacterState(characterState.copyWith(temporaryHp: temporary));
+    recordSessionEvent(
+      SessionEventType.health,
+      'Dark One’s Blessing',
+      detail:
+          '$trigger · Warlock $level + Charisma $charisma → $grant temporary HP (minimum 1). '
+          '${previous > grant ? 'Kept higher existing temporary HP: $previous.' : 'Temporary HP set to $temporary.'} No action or resource spent.',
+    );
+  }
+
   CharacterResource? get magicalCunningPactPool {
     final expected = spellSlotsForClass(
       'Warlock',
@@ -7884,6 +7939,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onMagicalCunning: character.levelInClass('Warlock') >= 2
           ? useMagicalCunning
           : null,
+      onDarkOnesBlessing: hasDarkOnesBlessing ? useDarkOnesBlessing : null,
+      darkOnesBlessingAvailable: darkOnesBlessingAvailable,
       magicalCunningAvailable: magicalCunningAvailable,
       onBarbarianDefense:
           character.levelInClass('Barbarian') >= 1 && activeWildShape == null
@@ -7938,6 +7995,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onAttackRoll: rollAttack,
       onUnarmedStrike: activeWildShape == null ? useUnarmedStrike : null,
       onCuttingWords: hasCuttingWords ? useCuttingWords : null,
+      onDarkOnesBlessing: hasDarkOnesBlessing ? useDarkOnesBlessing : null,
+      darkOnesBlessingAvailable: darkOnesBlessingAvailable,
       onRecklessAttack: character.levelInClass('Barbarian') >= 2
           ? declareRecklessAttack
           : null,
