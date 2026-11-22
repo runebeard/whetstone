@@ -49,6 +49,8 @@ class CombatModeView extends StatelessWidget {
   final String? readiedAction;
   final VoidCallback? onChooseCombatAction;
   final VoidCallback? onCunningAction;
+  final VoidCallback? onCuttingWords;
+  final bool cuttingWordsAvailable;
   final VoidCallback? onFastHands;
   final VoidCallback? onSteadyAim;
   final VoidCallback? onSelfRestoration;
@@ -105,6 +107,8 @@ class CombatModeView extends StatelessWidget {
     this.readiedAction,
     this.onChooseCombatAction,
     this.onCunningAction,
+    this.onCuttingWords,
+    this.cuttingWordsAvailable = true,
     this.onFastHands,
     this.onSteadyAim,
     this.onSelfRestoration,
@@ -387,6 +391,16 @@ class CombatModeView extends StatelessWidget {
                   ? null
                   : onCunningAction,
               child: const Text('Cunning Action'),
+            ),
+          if (onCuttingWords != null)
+            OutlinedButton(
+              onPressed:
+                  !cuttingWordsAvailable ||
+                      !characterState.canConcentrate ||
+                      usedCombatActions.contains(CombatActionCost.reaction)
+                  ? null
+                  : onCuttingWords,
+              child: const Text('Cutting Words · Reaction'),
             ),
           if (onSteadyAim != null)
             OutlinedButton(

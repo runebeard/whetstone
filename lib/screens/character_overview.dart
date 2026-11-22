@@ -124,6 +124,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
                 character.levelInClass('Wizard'),
                 charismaModifier: 0,
               ),
+              ...BuiltInClass.bard.classResources(
+                character.levelInClass('Bard'),
+                charismaModifier: character.abilityModifierFor(
+                  Ability.charisma,
+                ),
+              ),
               ...BuiltInClass.monk.classResources(
                 character.levelInClass('Monk'),
                 charismaModifier: 0,
@@ -4545,6 +4551,71 @@ class _CharacterOverviewState extends State<CharacterOverview>
     HapticFeedback.selectionClick();
   }
 
+  bool get hasCuttingWords =>
+      character.levelInClass('Bard') >= 3 &&
+      character.subclasses['Bard'] == 'College of Lore';
+
+  Future<void> useCuttingWords() async {
+    final inspiration = character.resources
+        .where((resource) => resource.id == bardicInspirationResourceId)
+        .firstOrNull;
+    bool canUse() =>
+        mounted &&
+        currentMode == CharacterMode.combat &&
+        hasCuttingWords &&
+        characterState.canConcentrate &&
+        !usedCombatActions.contains(CombatActionCost.reaction) &&
+        inspiration != null &&
+        remainingUses(inspiration) > 0;
+    if (!canUse()) return;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Cutting Words · Confirm trigger'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'Confirm you can see the creature within 60 feet. It just made a damage roll, or succeeded on an attack roll or ability check. Spend your Reaction and one Bardic Inspiration use to subtract your Inspiration die from that roll. Saving throws are not eligible. Resolve whether the reduced total changes the outcome at the table.',
+            ),
+          ),
+          for (final type in [
+            'Successful attack roll',
+            'Successful ability check',
+            'Damage roll',
+          ])
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, type),
+              child: Text(type),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null || !canUse()) return;
+    final die = diceRoller.rollDie(character.bardicInspirationDieSides);
+    usedCombatActions.add(CombatActionCost.reaction);
+    updateCharacterState(
+      characterState.copyWith(
+        resourceValues: {
+          ...characterState.resourceValues,
+          inspiration!.id: remainingUses(inspiration) - 1,
+        },
+      ),
+    );
+    addRollNotice(
+      title: 'Cutting Words',
+      tone: RollNoticeTone.normal,
+      calculation: '1d${character.bardicInspirationDieSides} ($die) reduction',
+      total: die,
+      detail:
+          'Subtract $die from the creature’s ${choice.toLowerCase()}. One Bardic Inspiration and Reaction spent. Resolve the reduced total and outcome at the table.',
+    );
+  }
+
   Future<void> usePaladinChannelDivinity(CharacterResource resource) async {
     bool canUse(String choice) =>
         characterState.canConcentrate &&
@@ -7014,6 +7085,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onActionDetails: showActionDetails,
       onAttackRoll: rollAttack,
       onUnarmedStrike: activeWildShape == null ? useUnarmedStrike : null,
+      onCuttingWords: hasCuttingWords ? useCuttingWords : null,
+      cuttingWordsAvailable: character.resources.any(
+        (resource) =>
+            resource.id == bardicInspirationResourceId &&
+            remainingUses(resource) > 0,
+      ),
       onFleetStep:
           character.levelInClass('Monk') >= 11 &&
               character.subclasses['Monk'] == 'Warrior of the Open Hand'

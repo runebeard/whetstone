@@ -426,6 +426,14 @@ class Character {
 
   int get sneakAttackDice => (levelInClass('Rogue') + 1) ~/ 2;
 
+  int get bardicInspirationDieSides => switch (levelInClass('Bard')) {
+    >= 15 => 12,
+    >= 10 => 10,
+    >= 5 => 8,
+    >= 1 => 6,
+    _ => 0,
+  };
+
   int get martialArtsDieSides => switch (levelInClass('Monk')) {
     >= 17 => 12,
     >= 11 => 10,
