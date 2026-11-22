@@ -150,28 +150,35 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
   int improvedScore(Ability ability) =>
       widget.character.scoreFor(ability) + (abilityIncreases[ability] ?? 0);
 
-  bool get grantsBodyAndMind {
-    if (widget.character.features.any(
-      (feature) => feature.id == 'whetstone:class:body-and-mind',
-    )) {
+  bool get grantsBodyAndMind =>
+      reachesCapstone('Monk', 'whetstone:class:body-and-mind');
+
+  bool get grantsPrimalChampion =>
+      reachesCapstone('Barbarian', 'whetstone:class:primal-champion');
+
+  bool reachesCapstone(String className, String marker) {
+    if (widget.character.features.any((feature) => feature.id == marker)) {
       return false;
     }
     final target = int.tryParse(levelController.text) ?? 0;
-    if (target > 20 || widget.character.levelInClass('Monk') >= 20) {
+    if (target > 20 || widget.character.levelInClass(className) >= 20) {
       return false;
     }
-    final monk = widget.character.characterClass == 'Monk'
+    final classLevel = widget.character.characterClass == className
         ? target -
               classAllocation.values.fold<int>(0, (sum, value) => sum + value)
-        : classAllocation['Monk'] ?? 0;
-    return monk >= 20;
+        : classAllocation[className] ?? 0;
+    return classLevel >= 20;
   }
 
   int finalScore(Ability ability) {
     final score = improvedScore(ability);
-    if (!grantsBodyAndMind ||
-        !{Ability.dexterity, Ability.wisdom}.contains(ability) ||
-        score >= 25) {
+    final granted =
+        (grantsBodyAndMind &&
+            {Ability.dexterity, Ability.wisdom}.contains(ability)) ||
+        (grantsPrimalChampion &&
+            {Ability.strength, Ability.constitution}.contains(ability));
+    if (!granted || score >= 25) {
       return score;
     }
     return (score + 4).clamp(0, 25);
@@ -451,6 +458,13 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
               summary:
                   'Monk level 20: Dexterity and Wisdom increased by 4, capped at 25. The score increases have already been applied.',
             ),
+          if (grantsPrimalChampion)
+            const Feature(
+              id: 'whetstone:class:primal-champion',
+              name: 'Primal Champion',
+              summary:
+                  'Barbarian level 20: Strength and Constitution increased by 4, capped at 25. The scores and Constitution-based maximum HP increases have already been applied.',
+            ),
         ],
         initiallyPinnedActionKeys: {...pinnedActionKeys},
       ),
@@ -635,6 +649,10 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
                     if (grantsBodyAndMind)
                       const Text(
                         'Body and Mind · +4 Dexterity and Wisdom, to a maximum of 25. Applied once when reaching Monk level 20. Recalculate equipment-dependent AC afterward.',
+                      ),
+                    if (grantsPrimalChampion)
+                      const Text(
+                        'Primal Champion · +4 Strength and Constitution, to a maximum of 25. Applied once when reaching Barbarian level 20. Constitution adjusts maximum HP across all levels; current HP is preserved. Recalculate equipment-dependent AC afterward.',
                       ),
                     if (abilityIncreases.isNotEmpty) ...[
                       Text(

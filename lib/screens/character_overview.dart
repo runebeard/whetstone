@@ -399,6 +399,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       label ?? check.skill.name,
       check.modifier,
       peerlessEligible: true,
+      checkAbility: check.skill.ability,
       minimumRoll: reliable ? 10 : null,
       minimumRollReason: reliable ? 'Reliable Talent' : null,
       describe: jackBonus > 0
@@ -1944,7 +1945,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
     final originalMode = hasAdvantage
         ? nextRollMode.withAdvantage()
         : nextRollMode;
-    final roll = rollCheck(label, check.modifier, hasAdvantage: hasAdvantage);
+    final roll = rollCheck(
+      label,
+      check.modifier,
+      hasAdvantage: hasAdvantage,
+      checkAbility: check.ability,
+    );
     if (character.levelInClass('Monk') >= 14) {
       await rerollWithDisciplinedSurvivor(roll, originalMode);
       return;
@@ -1980,6 +1986,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     rollCheck(
       '$label · Indomitable',
       check.modifier + fighterLevel,
+      checkAbility: check.ability,
       modeOverride: originalMode,
     );
   }
@@ -4167,6 +4174,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       '${original.label} · Disciplined Survivor',
       original.modifier,
       modeOverride: mode,
+      minimumTotal: original.minimumTotal,
     );
   }
 
@@ -4174,6 +4182,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
     String label,
     int modifier, {
     bool useSelectedMode = true,
+    Ability? checkAbility,
+    int? minimumTotal,
     bool peerlessEligible = false,
     bool attackRoll = false,
     bool hasAdvantage = false,
@@ -4199,8 +4209,15 @@ class _CharacterOverviewState extends State<CharacterOverview>
       naturalRoll: mode.select(first, second),
       modifier: modifier,
       minimumRoll: minimumRoll,
+      minimumTotal:
+          minimumTotal ??
+          (checkAbility == Ability.strength &&
+                  character.levelInClass('Barbarian') >= 18
+              ? characterForPhysicalChecks.scoreFor(Ability.strength)
+              : null),
     );
     final minimumApplied = roll.effectiveRoll != roll.naturalRoll;
+    final totalMinimumApplied = roll.total != roll.unadjustedTotal;
     if (hasPeerlessSkill &&
         peerlessEligible &&
         (!attackRoll ||
@@ -4210,7 +4227,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     final critical = roll.naturalRoll >= criticalThreshold;
     if (critical) {
       HapticFeedback.heavyImpact();
-    } else if (roll.isNaturalOne && !minimumApplied) {
+    } else if (roll.isNaturalOne && !minimumApplied && !totalMinimumApplied) {
       HapticFeedback.mediumImpact();
     } else {
       HapticFeedback.selectionClick();
@@ -4220,10 +4237,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
       title: label,
       calculation: [
         if (second != null) '${mode.label}: $first, $second →',
-        'd20 ${roll.naturalRoll}${minimumApplied ? ' → ${roll.effectiveRoll}' : ''} $operator ${modifier.abs()} = ${roll.total}',
+        'd20 ${roll.naturalRoll}${minimumApplied ? ' → ${roll.effectiveRoll}' : ''} $operator ${modifier.abs()} = ${roll.unadjustedTotal}${totalMinimumApplied ? ' → ${roll.total}' : ''}',
       ].join(' '),
       total: roll.total,
-      detail: minimumApplied
+      detail: totalMinimumApplied
+          ? 'Indomitable Might: use Strength score ${roll.minimumTotal}'
+                '${minimumApplied ? ' · ${minimumRollReason ?? 'Minimum roll'}: use ${roll.effectiveRoll}' : ''}'
+                '${describe == null ? '' : ' · ${describe(roll)}'}'
+          : minimumApplied
           ? '${minimumRollReason ?? 'Minimum roll'}: use ${roll.effectiveRoll}'
                 '${describe == null ? '' : ' · ${describe(roll)}'}'
           : describe?.call(roll) ??
@@ -4236,7 +4257,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
                     : null),
       tone: critical
           ? RollNoticeTone.criticalSuccess
-          : roll.isNaturalOne && !minimumApplied
+          : roll.isNaturalOne && !minimumApplied && !totalMinimumApplied
           ? RollNoticeTone.criticalFailure
           : RollNoticeTone.normal,
     );
@@ -4761,6 +4782,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         '${choice.$2.label} Save · Countercharm',
         check.modifier,
         useSelectedMode: false,
+        checkAbility: choice.$2,
         modeOverride: choice.$3 ? D20Mode.normal : D20Mode.advantage,
         describe: (_) => choice.$3
             ? 'Countercharm Advantage cancelled by Disadvantage. Resolve the new save outcome at the table.'

@@ -23,17 +23,22 @@ class CheckRoll {
   final int naturalRoll;
   final int modifier;
   final int? minimumRoll;
+  final int? minimumTotal;
 
   const CheckRoll({
     required this.label,
     required this.naturalRoll,
     required this.modifier,
     this.minimumRoll,
+    this.minimumTotal,
   });
 
   int get effectiveRoll =>
       minimumRoll == null ? naturalRoll : max(naturalRoll, minimumRoll!);
-  int get total => effectiveRoll + modifier;
+  int get unadjustedTotal => effectiveRoll + modifier;
+  int get total => minimumTotal == null
+      ? unadjustedTotal
+      : max(unadjustedTotal, minimumTotal!);
   bool get isNaturalOne => naturalRoll == 1;
   bool get isNaturalTwenty => naturalRoll == 20;
 
