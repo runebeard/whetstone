@@ -24,6 +24,7 @@ class ExplorationModeView extends StatelessWidget {
   final VoidCallback onBeginCombat;
   final VoidCallback? onWholenessOfBody;
   final VoidCallback? onMonkDefense;
+  final VoidCallback? onBarbarianDefense;
   final VoidCallback? onArcaneRecovery;
   final VoidCallback? onMemorizeSpell;
   final VoidCallback? onBardicInspiration;
@@ -53,6 +54,7 @@ class ExplorationModeView extends StatelessWidget {
     required this.onBeginCombat,
     this.onWholenessOfBody,
     this.onMonkDefense,
+    this.onBarbarianDefense,
     this.onArcaneRecovery,
     this.onMemorizeSpell,
     this.onBardicInspiration,
@@ -123,6 +125,11 @@ class ExplorationModeView extends StatelessWidget {
             OutlinedButton(
               onPressed: onMemorizeSpell,
               child: const Text('Memorize Spell · After Short Rest'),
+            ),
+          if (onBarbarianDefense != null)
+            OutlinedButton(
+              onPressed: onBarbarianDefense,
+              child: const Text('Barbarian · Unarmored Defense'),
             ),
           if (onBardicInspiration != null)
             OutlinedButton(

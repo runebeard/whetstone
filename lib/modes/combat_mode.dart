@@ -60,6 +60,7 @@ class CombatModeView extends StatelessWidget {
   final VoidCallback? onSteadyAim;
   final VoidCallback? onSelfRestoration;
   final VoidCallback? onMonkDefense;
+  final VoidCallback? onBarbarianDefense;
   final VoidCallback? onSuperiorDefense;
   final VoidCallback? onFleetStep;
   final bool canUseFleetStep;
@@ -123,6 +124,7 @@ class CombatModeView extends StatelessWidget {
     this.onSteadyAim,
     this.onSelfRestoration,
     this.onMonkDefense,
+    this.onBarbarianDefense,
     this.onSuperiorDefense,
     this.onFleetStep,
     this.canUseFleetStep = false,
@@ -427,6 +429,11 @@ class CombatModeView extends StatelessWidget {
                   ? null
                   : onCountercharm,
               child: const Text('Countercharm · Reaction'),
+            ),
+          if (onBarbarianDefense != null)
+            OutlinedButton(
+              onPressed: onBarbarianDefense,
+              child: const Text('Barbarian · Unarmored Defense'),
             ),
           if (onPeerlessSkill != null)
             OutlinedButton(

@@ -2772,6 +2772,59 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
+  Future<void> useBarbarianDefense() async {
+    bool eligible() =>
+        character.levelInClass('Barbarian') >= 1 && activeWildShape == null;
+    if (!eligible()) return;
+    final dexterity = character.abilityModifierFor(Ability.dexterity);
+    final constitution = character.abilityModifierFor(Ability.constitution);
+    final base = 10 + dexterity + constitution;
+    var shield = false;
+    final armourClass = await showDialog<int>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('Barbarian · Unarmored Defense'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Confirm you are wearing no armor. Base AC: 10 + $dexterity Dexterity + $constitution Constitution = $base. '
+                'This replaces your tracked AC and does not stack with another base AC formula. Confirm other bonuses separately. '
+                '${character.levelInClass('Barbarian') >= 5 ? 'Fast Movement adds 10 feet to Speed while you are not wearing Heavy armor; resolve movement at the table. ' : ''}'
+                'Recalculate when equipment or ability scores change.',
+              ),
+              CheckboxListTile(
+                title: const Text('Wielding a Shield · +2 AC'),
+                value: shield,
+                onChanged: (value) => update(() => shield = value ?? false),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, base + (shield ? 2 : 0)),
+              child: Text('Unarmored · Apply AC ${base + (shield ? 2 : 0)}'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || armourClass == null || !eligible()) return;
+    updateCharacterState(characterState.copyWith(armourClass: armourClass));
+    recordSessionEvent(
+      SessionEventType.condition,
+      'Barbarian Unarmored Defense',
+      detail:
+          'AC set to $armourClass after confirming no armor · ${shield ? 'Shield +2' : 'No Shield'}. '
+          'Base 10 + $dexterity Dexterity + $constitution Constitution. Recalculate after equipment or ability changes.',
+    );
+  }
+
   Future<void> useMonkDefense() async {
     final level = character.levelInClass('Monk');
     if (level < 1 || activeWildShape != null) return;
@@ -7287,6 +7340,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onMemorizeSpell: character.levelInClass('Wizard') >= 5
           ? useMemorizeSpell
           : null,
+      onBarbarianDefense:
+          character.levelInClass('Barbarian') >= 1 && activeWildShape == null
+          ? useBarbarianDefense
+          : null,
       onBardicInspiration: character.levelInClass('Bard') >= 1
           ? grantBardicInspiration
           : null,
@@ -7336,6 +7393,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onAttackRoll: rollAttack,
       onUnarmedStrike: activeWildShape == null ? useUnarmedStrike : null,
       onCuttingWords: hasCuttingWords ? useCuttingWords : null,
+      onBarbarianDefense:
+          character.levelInClass('Barbarian') >= 1 && activeWildShape == null
+          ? useBarbarianDefense
+          : null,
       onPeerlessSkill: hasPeerlessSkill ? usePeerlessSkill : null,
       peerlessSkillAvailable: peerlessSkillAvailable,
       onBardicInspiration: character.levelInClass('Bard') >= 1
