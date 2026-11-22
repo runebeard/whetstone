@@ -37,6 +37,7 @@ class CombatModeView extends StatelessWidget {
   final int combatRound;
   final int? combatInitiative;
   final ValueChanged<int>? onInitiativeRecorded;
+  final Future<int?> Function(CheckRoll)? beforeInitiativeRecord;
   final int Function()? rollD20;
   final Set<CombatActionCost> usedCombatActions;
   final ActionSurgeState? actionSurge;
@@ -112,6 +113,7 @@ class CombatModeView extends StatelessWidget {
     this.combatRound = 1,
     this.combatInitiative,
     this.onInitiativeRecorded,
+    this.beforeInitiativeRecord,
     this.rollD20,
     this.usedCombatActions = const {},
     this.actionSurge,
@@ -323,6 +325,7 @@ class CombatModeView extends StatelessWidget {
             adjustIncomingDamage: adjustIncomingDamage,
             onDeathSaveRoll: onDeathSaveRoll,
             onInitiativeRecorded: onInitiativeRecorded,
+            beforeInitiativeRecord: beforeInitiativeRecord,
             rollD20: rollD20,
             initiativeMode:
                 character.levelInClass('Barbarian') >= 7 ||

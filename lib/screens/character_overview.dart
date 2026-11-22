@@ -7234,6 +7234,57 @@ class _CharacterOverviewState extends State<CharacterOverview>
     recordSessionEvent(SessionEventType.combat, 'Combat began');
   }
 
+  Future<int?> adjustInitiativeWithDarkLuck(CheckRoll roll) async {
+    final resource = resourceWithId(darkOnesOwnLuckResourceId);
+    bool eligible() =>
+        mounted &&
+        currentMode == CharacterMode.combat &&
+        hasDarkOnesOwnLuck &&
+        resource != null &&
+        remainingUses(resource) > 0 &&
+        !(characterState.currentHp == 0 &&
+            characterState.deathSaveFailures >= 3);
+    if (!eligible()) return roll.total;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Dark One’s Own Luck · Initiative'),
+        content: Text(
+          'Initiative total ${roll.total} (d20 ${roll.naturalRoll}, modifier ${roll.displayModifier}). '
+          'You can spend one use to add 1d10 before recording the total and resolving initiative effects. No action is spent.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel recording'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'keep'),
+            child: const Text('Keep initiative'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, 'boost'),
+            child: const Text('Spend use · Boost initiative'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || currentMode != CharacterMode.combat || choice == null) {
+      return null;
+    }
+    if (choice == 'keep') return roll.total;
+    if (!eligible() || !spendCastResource(resource!.id)) return null;
+    final bonus = diceRoller.rollDie(10);
+    addRollNotice(
+      title: 'Initiative · Dark One’s Own Luck',
+      calculation: '${roll.total} + 1d10 ($bonus) = ${roll.total + bonus}',
+      total: roll.total + bonus,
+      tone: RollNoticeTone.normal,
+      detail: 'One use spent · Original d20 ${roll.naturalRoll} unchanged.',
+    );
+    return roll.total + bonus;
+  }
+
   Future<void> recordCombatInitiative(int total) async {
     if (currentMode != CharacterMode.combat) return;
     final firstInitiative = combatInitiative == null;
@@ -8322,6 +8373,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onTriggerReadiedAction: triggerReadiedAction,
       combatInitiative: combatInitiative,
       onInitiativeRecorded: recordCombatInitiative,
+      beforeInitiativeRecord: hasDarkOnesOwnLuck
+          ? adjustInitiativeWithDarkLuck
+          : null,
       rollD20: diceRoller.rollD20,
       onTogglePinned: togglePinnedAction,
       onSavingThrowTap: handleSavingThrowTap,

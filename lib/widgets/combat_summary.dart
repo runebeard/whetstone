@@ -26,10 +26,12 @@ class CombatSummary extends StatefulWidget {
 
   final VoidCallback? onDeathSaveRoll;
   final ValueChanged<int>? onInitiativeRecorded;
+  final Future<int?> Function(CheckRoll)? beforeInitiativeRecord;
 
   const CombatSummary({
     this.onDeathSaveRoll,
     this.onInitiativeRecorded,
+    this.beforeInitiativeRecord,
     super.key,
     required this.characterState,
     this.additionalResistance,
@@ -204,6 +206,7 @@ class _CombatSummaryState extends State<CombatSummary> {
     final initiative = await showDialog<int>(
       context: context,
       builder: (context) => InitiativeRollDialog(
+        beforeRecord: widget.beforeInitiativeRecord,
         initiativeModifier: characterState.initiativeModifier,
         rollD20: rollD20,
         canRecord: widget.onInitiativeRecorded != null,

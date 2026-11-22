@@ -8,6 +8,7 @@ class InitiativeRollDialog extends StatefulWidget {
   final int Function() rollD20;
   final bool canRecord;
   final D20Mode initialMode;
+  final Future<int?> Function(CheckRoll)? beforeRecord;
 
   const InitiativeRollDialog({
     super.key,
@@ -15,6 +16,7 @@ class InitiativeRollDialog extends StatefulWidget {
     required this.rollD20,
     this.canRecord = false,
     this.initialMode = D20Mode.normal,
+    this.beforeRecord,
   });
 
   @override
@@ -25,6 +27,7 @@ class _InitiativeRollDialogState extends State<InitiativeRollDialog> {
   late int firstDie;
   int? secondDie;
   late D20Mode mode;
+  bool recording = false;
 
   int get dieResult => mode.select(firstDie, secondDie);
 
@@ -50,6 +53,28 @@ class _InitiativeRollDialogState extends State<InitiativeRollDialog> {
     setState(() {
       rollDice();
     });
+  }
+
+  Future<void> record() async {
+    if (recording) return;
+    if (widget.beforeRecord == null) {
+      Navigator.pop(context, total);
+      return;
+    }
+    setState(() => recording = true);
+    final adjusted = await widget.beforeRecord!(
+      CheckRoll(
+        label: 'Initiative',
+        naturalRoll: dieResult,
+        modifier: widget.initiativeModifier,
+      ),
+    );
+    if (!mounted) return;
+    if (adjusted == null) {
+      setState(() => recording = false);
+    } else {
+      Navigator.pop(context, adjusted);
+    }
   }
 
   @override
@@ -106,7 +131,7 @@ class _InitiativeRollDialogState extends State<InitiativeRollDialog> {
             DialogueActionButton(label: 'Roll Again', onTap: rollAgain),
             if (widget.canRecord)
               FilledButton(
-                onPressed: () => Navigator.pop(context, total),
+                onPressed: recording ? null : record,
                 child: const Text('Record Initiative'),
               ),
             const SizedBox(height: 12),
