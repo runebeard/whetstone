@@ -3116,6 +3116,56 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
+  Future<void> useDraconicDefense() async {
+    bool eligible() =>
+        character.hasDraconicResilience && activeWildShape == null;
+    if (!eligible()) return;
+    final dexterity = character.abilityModifierFor(Ability.dexterity);
+    final charisma = character.abilityModifierFor(Ability.charisma);
+    final base = 10 + dexterity + charisma;
+    var shield = false;
+    final ac = await showDialog<int>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('Draconic Resilience · Unarmored AC'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Confirm you are wearing no armor. Base AC: 10 + $dexterity Dexterity + $charisma Charisma = $base. '
+                'This replaces your tracked AC and does not stack with another base AC formula. Confirm other AC bonuses separately, and recalculate when equipment or ability scores change.',
+              ),
+              CheckboxListTile(
+                title: const Text('Wielding a Shield · +2 AC'),
+                value: shield,
+                onChanged: (value) => update(() => shield = value ?? false),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, base + (shield ? 2 : 0)),
+              child: Text('Unarmored · Apply AC ${base + (shield ? 2 : 0)}'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || ac == null || !eligible()) return;
+    updateCharacterState(characterState.copyWith(armourClass: ac));
+    recordSessionEvent(
+      SessionEventType.condition,
+      'Draconic Resilience AC',
+      detail:
+          'AC set to $ac after confirming no armor · Base 10 + $dexterity Dexterity + $charisma Charisma${shield ? ' +2 Shield' : ''}. HP, actions and resources unchanged.',
+    );
+  }
+
   Future<void> useMonkDefense() async {
     final level = character.levelInClass('Monk');
     if (level < 1 || activeWildShape != null) return;
@@ -8862,6 +8912,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
           ? toggleInnateSorcery
           : null,
       innateSorceryAvailable: innateSorceryAvailable,
+      onDraconicDefense:
+          character.hasDraconicResilience && activeWildShape == null
+          ? useDraconicDefense
+          : null,
       onDragonWings: character.hasDragonWings ? toggleDragonWings : null,
       dragonWingsAvailable: dragonWingsAvailable,
       onRestoreDragonWings: character.hasDragonWings
@@ -8944,6 +8998,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
           ? toggleInnateSorcery
           : null,
       innateSorceryAvailable: innateSorceryAvailable,
+      onDraconicDefense:
+          character.hasDraconicResilience && activeWildShape == null
+          ? useDraconicDefense
+          : null,
       onDragonWings: character.hasDragonWings ? toggleDragonWings : null,
       dragonWingsAvailable: dragonWingsAvailable,
       onRestoreDragonWings: character.hasDragonWings
