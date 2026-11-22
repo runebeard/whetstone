@@ -93,6 +93,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
   bool stunningStrikeUsedThisTurn = false;
   bool fleetStepUsedThisTurn = false;
   bool stepOfWindUsedThisTurn = false;
+  bool attackRollMadeThisTurn = false;
+  bool recklessAttackArmed = false;
   int flurryAttacksRemaining = 0;
   int attackActionAttacksRemaining = 0;
   CheckRoll? tacticalMindCheck;
@@ -166,6 +168,13 @@ class _CharacterOverviewState extends State<CharacterOverview>
         ? widget.initialSession.combatRound
         : 1;
     if (widget.initialSession.isInCombat) {
+      attackRollMadeThisTurn =
+          widget.initialSession.attackRollMadeThisTurn ||
+          widget.initialSession.attackActionAttacksRemaining > 0;
+      recklessAttackArmed =
+          widget.initialSession.recklessAttackArmed &&
+          !attackRollMadeThisTurn &&
+          character.levelInClass('Barbarian') >= 2;
       fleetStepUsedThisTurn = widget.initialSession.fleetStepUsedThisTurn;
       stepOfWindUsedThisTurn = widget.initialSession.stepOfWindUsedThisTurn;
       combatInitiative = widget.initialSession.combatInitiative;
@@ -267,6 +276,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
         stunningStrikeUsedThisTurn: stunningStrikeUsedThisTurn,
         fleetStepUsedThisTurn: fleetStepUsedThisTurn,
         stepOfWindUsedThisTurn: stepOfWindUsedThisTurn,
+        attackRollMadeThisTurn: attackRollMadeThisTurn,
+        recklessAttackArmed: recklessAttackArmed,
         flurryAttacksRemaining: flurryAttacksRemaining,
         attackActionAttacksRemaining: attackActionAttacksRemaining,
         timeline: [...timeline],
@@ -3276,6 +3287,82 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
+  bool get canDeclareRecklessAttack =>
+      currentMode == CharacterMode.combat &&
+      character.levelInClass('Barbarian') >= 2 &&
+      characterState.canConcentrate &&
+      !attackRollMadeThisTurn;
+
+  Future<void> declareRecklessAttack() async {
+    if (!canDeclareRecklessAttack) return;
+    if (recklessAttackArmed) {
+      setState(() => recklessAttackArmed = false);
+      recordSessionEvent(
+        SessionEventType.combat,
+        'Reckless Attack declaration cancelled',
+      );
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Prepare Reckless Attack'),
+        content: const Text(
+          'Confirm the next attack roll is your first on your turn. The declaration activates when that roll is made. Your attacks using Strength gain Advantage until the start of your next turn, and attack rolls against you have Advantage during that time. No action or Rage use is spent. Weapons must be marked as using Strength; Beast attacks without a tracked ability require table resolution. For older mid-turn saves, confirm no earlier attack roll was made.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Prepare first attack'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true || !canDeclareRecklessAttack) return;
+    setState(() => recklessAttackArmed = true);
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Reckless Attack prepared',
+      detail:
+          'Waiting for the first attack roll on your turn. Tap the declaration control again to cancel before rolling.',
+    );
+  }
+
+  void recordAttackForReckless({required bool asReaction}) {
+    if (currentMode != CharacterMode.combat ||
+        character.levelInClass('Barbarian') < 2 ||
+        asReaction) {
+      return;
+    }
+    final first = !attackRollMadeThisTurn;
+    attackRollMadeThisTurn = true;
+    if (first && recklessAttackArmed) {
+      recklessAttackArmed = false;
+      updateCharacterState(
+        characterState.copyWith(
+          activeConditions: {
+            ...characterState.activeConditions,
+            recklessAttackCondition,
+          },
+          conditionTurns: {
+            ...characterState.conditionTurns,
+            recklessAttackCondition: 1,
+          },
+        ),
+      );
+      recordSessionEvent(
+        SessionEventType.combat,
+        'Reckless Attack activated',
+        detail:
+            'Strength attacks have Advantage, and attack rolls against you have Advantage, until the start of your next turn. Resolve incoming attack Advantage at the table.',
+      );
+    }
+  }
+
   bool get hasRetaliation =>
       character.levelInClass('Barbarian') >= 10 &&
       character.subclasses['Barbarian'] == 'Path of the Berserker';
@@ -3455,6 +3542,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       final attack = rollCheck(
         'Unarmed Strike Attack',
         modifier + character.proficiencyBonus,
+        strengthAttack: !useDexterity,
+        reactionAttack: asReaction,
         peerlessEligible: true,
         attackRoll: true,
         criticalThreshold: character.weaponCriticalThreshold,
@@ -3665,6 +3754,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
     final roll = rollCheck(
       '${action.name} Attack',
       modifier,
+      strengthAttack: action is Weapon
+          ? action.usesStrength
+          : action is Spell && action.castingAbility == Ability.strength,
+      reactionAttack: asReaction,
       peerlessEligible: true,
       attackRoll: true,
       criticalThreshold: threshold,
@@ -3909,6 +4002,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     final attack = rollCheck(
       '${weapon.name} $mastery Attack',
       weapon.attackModifier,
+      strengthAttack: weapon.usesStrength,
       peerlessEligible: true,
       attackRoll: true,
       criticalThreshold: character.weaponCriticalThreshold,
@@ -4483,6 +4577,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
     int? minimumTotal,
     bool peerlessEligible = false,
     bool attackRoll = false,
+    bool strengthAttack = false,
+    bool reactionAttack = false,
     bool hasAdvantage = false,
     D20Mode? modeOverride,
     int criticalThreshold = 20,
@@ -4492,6 +4588,17 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }) {
     tacticalMindCheck = null;
     peerlessSkillRoll = null;
+    if (attackRoll) {
+      recordAttackForReckless(asReaction: reactionAttack);
+      hasAdvantage =
+          hasAdvantage ||
+          (strengthAttack &&
+              currentMode == CharacterMode.combat &&
+              character.levelInClass('Barbarian') >= 2 &&
+              characterState.activeConditions.contains(
+                recklessAttackCondition,
+              ));
+    }
     final selectedMode = useSelectedMode ? nextRollMode : D20Mode.normal;
     final mode =
         modeOverride ??
@@ -6660,6 +6767,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
   // ------------------------------------------------------------
 
   void beginCombat() {
+    attackRollMadeThisTurn = false;
+    recklessAttackArmed = false;
     setState(() {
       currentMode = CharacterMode.combat;
       combatRound = 1;
@@ -7289,6 +7398,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void advanceCombatTurn() {
+    attackRollMadeThisTurn = false;
+    recklessAttackArmed = false;
     tacticalMindCheck = null;
     peerlessSkillRoll = null;
     pendingAttackSlot = null;
@@ -7355,8 +7466,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void endCombat() {
+    attackRollMadeThisTurn = false;
+    recklessAttackArmed = false;
     var ended = characterState.endRage();
     const turnEffects = {
+      recklessAttackCondition,
       dodgingCondition,
       dashingCondition,
       disengagingCondition,
@@ -7649,6 +7763,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onAttackRoll: rollAttack,
       onUnarmedStrike: activeWildShape == null ? useUnarmedStrike : null,
       onCuttingWords: hasCuttingWords ? useCuttingWords : null,
+      onRecklessAttack: character.levelInClass('Barbarian') >= 2
+          ? declareRecklessAttack
+          : null,
+      recklessAttackAvailable: canDeclareRecklessAttack,
+      recklessAttackArmed: recklessAttackArmed,
       onRetaliation: hasRetaliation ? useRetaliation : null,
       retaliationAvailable: canRetaliate,
       onIntimidatingPresence: hasIntimidatingPresence

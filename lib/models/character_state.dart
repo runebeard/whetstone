@@ -1,6 +1,7 @@
 import 'character.dart';
 
 const ragingCondition = 'Raging';
+const recklessAttackCondition = 'Reckless Attack';
 const dodgingCondition = 'Dodging';
 const dashingCondition = 'Dashing';
 const disengagingCondition = 'Disengaging';

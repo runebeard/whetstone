@@ -130,6 +130,7 @@ class RestPlan {
       ..removeAll({
         divineSenseCondition,
         ragingCondition,
+        recklessAttackCondition,
         steadyAimCondition,
         superiorDefenseCondition,
       });
