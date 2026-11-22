@@ -51,6 +51,8 @@ class CombatModeView extends StatelessWidget {
   final VoidCallback? onCunningAction;
   final VoidCallback? onCuttingWords;
   final VoidCallback? onCountercharm;
+  final VoidCallback? onBardicInspiration;
+  final bool bardicInspirationAvailable;
   final bool cuttingWordsAvailable;
   final VoidCallback? onFastHands;
   final VoidCallback? onSteadyAim;
@@ -110,6 +112,8 @@ class CombatModeView extends StatelessWidget {
     this.onCunningAction,
     this.onCuttingWords,
     this.onCountercharm,
+    this.onBardicInspiration,
+    this.bardicInspirationAvailable = false,
     this.cuttingWordsAvailable = true,
     this.onFastHands,
     this.onSteadyAim,
@@ -403,6 +407,13 @@ class CombatModeView extends StatelessWidget {
                   ? null
                   : onCuttingWords,
               child: const Text('Cutting Words · Reaction'),
+            ),
+          if (onBardicInspiration != null)
+            OutlinedButton(
+              onPressed: bardicInspirationAvailable
+                  ? onBardicInspiration
+                  : null,
+              child: const Text('Bardic Inspiration · Bonus Action'),
             ),
           if (onCountercharm != null)
             OutlinedButton(

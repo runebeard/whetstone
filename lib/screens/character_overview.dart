@@ -4551,6 +4551,67 @@ class _CharacterOverviewState extends State<CharacterOverview>
     HapticFeedback.selectionClick();
   }
 
+  bool get bardicInspirationAvailable =>
+      character.levelInClass('Bard') >= 1 &&
+      characterState.canConcentrate &&
+      (currentMode != CharacterMode.combat ||
+          !usedCombatActions.contains(CombatActionCost.bonusAction)) &&
+      character.resources.any(
+        (resource) =>
+            resource.id == bardicInspirationResourceId &&
+            remainingUses(resource) > 0,
+      );
+
+  Future<void> grantBardicInspiration() async {
+    if (!bardicInspirationAvailable) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Grant Bardic Inspiration'),
+        content: Text(
+          'Confirm another creature within 60 feet can see or hear you and does not already have a Bardic Inspiration die. '
+          'Grant it one d${character.bardicInspirationDieSides} for up to 1 hour. '
+          'It can roll the die after failing a D20 Test and add the result, expending the die when rolled. '
+          'Spend one Inspiration use${currentMode == CharacterMode.combat ? ' and your Bonus Action' : ''}. '
+          'The recipient tracks the die, its expiry and its eventual roll at the table.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Grant die'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true || !bardicInspirationAvailable) return;
+    final resource = character.resources.firstWhere(
+      (resource) => resource.id == bardicInspirationResourceId,
+    );
+    if (currentMode == CharacterMode.combat) {
+      usedCombatActions.add(CombatActionCost.bonusAction);
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        resourceValues: {
+          ...characterState.resourceValues,
+          resource.id: remainingUses(resource) - 1,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.resource,
+      'Bardic Inspiration granted · d${character.bardicInspirationDieSides}',
+      detail:
+          'One Inspiration use spent${currentMode == CharacterMode.combat ? ' · Bonus Action spent' : ''}. '
+          'Another creature within 60 feet receives the die for up to 1 hour; '
+          'one die per recipient. Recipient resolves the failed D20 Test bonus and expiry at the table.',
+    );
+  }
+
   Future<void> useCountercharm() async {
     bool canUse() =>
         mounted &&
@@ -7131,6 +7192,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onMemorizeSpell: character.levelInClass('Wizard') >= 5
           ? useMemorizeSpell
           : null,
+      onBardicInspiration: character.levelInClass('Bard') >= 1
+          ? grantBardicInspiration
+          : null,
+      bardicInspirationAvailable: bardicInspirationAvailable,
       onArcaneRecovery: character.levelInClass('Wizard') > 0
           ? useArcaneRecovery
           : null,
@@ -7174,6 +7239,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onAttackRoll: rollAttack,
       onUnarmedStrike: activeWildShape == null ? useUnarmedStrike : null,
       onCuttingWords: hasCuttingWords ? useCuttingWords : null,
+      onBardicInspiration: character.levelInClass('Bard') >= 1
+          ? grantBardicInspiration
+          : null,
+      bardicInspirationAvailable: bardicInspirationAvailable,
       onCountercharm: character.levelInClass('Bard') >= 7
           ? useCountercharm
           : null,

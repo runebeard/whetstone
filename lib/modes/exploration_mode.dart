@@ -26,6 +26,8 @@ class ExplorationModeView extends StatelessWidget {
   final VoidCallback? onMonkDefense;
   final VoidCallback? onArcaneRecovery;
   final VoidCallback? onMemorizeSpell;
+  final VoidCallback? onBardicInspiration;
+  final bool bardicInspirationAvailable;
   final VoidCallback onAddItemFromLibrary;
   final VoidCallback onCreateCustomItem;
   final VoidCallback onRestockItem;
@@ -51,6 +53,8 @@ class ExplorationModeView extends StatelessWidget {
     this.onMonkDefense,
     this.onArcaneRecovery,
     this.onMemorizeSpell,
+    this.onBardicInspiration,
+    this.bardicInspirationAvailable = false,
     required this.onAddItemFromLibrary,
     required this.onCreateCustomItem,
     required this.onRestockItem,
@@ -115,6 +119,13 @@ class ExplorationModeView extends StatelessWidget {
             OutlinedButton(
               onPressed: onMemorizeSpell,
               child: const Text('Memorize Spell · After Short Rest'),
+            ),
+          if (onBardicInspiration != null)
+            OutlinedButton(
+              onPressed: bardicInspirationAvailable
+                  ? onBardicInspiration
+                  : null,
+              child: const Text('Grant Bardic Inspiration'),
             ),
           if (onArcaneRecovery != null)
             OutlinedButton(
