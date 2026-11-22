@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -19,9 +20,10 @@ class CombatSummary extends StatefulWidget {
   final int? formArmourClass;
   final ValueChanged<CharacterState> onChanged;
   final ValueChanged<int>? onDamageTaken;
-  final CharacterState Function(CharacterState, int)? resolveDamage;
+  final FutureOr<CharacterState> Function(CharacterState, int)? resolveDamage;
   final Future<int?> Function(int)? adjustIncomingDamage;
   final int Function()? rollD20;
+  final VoidCallback? onInitiativeRollStarted;
   final D20Mode initiativeMode;
 
   final VoidCallback? onDeathSaveRoll;
@@ -41,6 +43,7 @@ class CombatSummary extends StatefulWidget {
     this.resolveDamage,
     this.adjustIncomingDamage,
     this.rollD20,
+    this.onInitiativeRollStarted,
     this.initiativeMode = D20Mode.normal,
   });
 
@@ -118,7 +121,10 @@ class _CombatSummaryState extends State<CombatSummary> {
     );
     if (applied <= 0) return;
     final damaged = characterState.takeDamage(applied, critical: critical);
-    widget.onChanged(widget.resolveDamage?.call(damaged, applied) ?? damaged);
+    final resolved =
+        await (widget.resolveDamage?.call(damaged, applied) ?? damaged);
+    if (!mounted) return;
+    widget.onChanged(resolved);
     widget.onDamageTaken?.call(applied);
   }
 
@@ -203,6 +209,7 @@ class _CombatSummaryState extends State<CombatSummary> {
   int rollD20() => widget.rollD20?.call() ?? random.nextInt(20) + 1;
 
   Future<void> showInitiativeRoll(BuildContext context) async {
+    widget.onInitiativeRollStarted?.call();
     final initiative = await showDialog<int>(
       context: context,
       builder: (context) => InitiativeRollDialog(

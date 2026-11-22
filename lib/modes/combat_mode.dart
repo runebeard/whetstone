@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/ability.dart';
@@ -20,7 +22,7 @@ class CombatModeView extends StatelessWidget {
   final String? attackActionStatus;
   final ValueChanged<CharacterState> onCharacterStateChanged;
   final ValueChanged<int>? onDamageTaken;
-  final CharacterState Function(CharacterState, int)? resolveDamage;
+  final FutureOr<CharacterState> Function(CharacterState, int)? resolveDamage;
   final Future<int?> Function(int)? adjustIncomingDamage;
   final ValueChanged<CharacterAction> onActionTap;
   final ValueChanged<CharacterAction> onActionDetails;
@@ -39,6 +41,7 @@ class CombatModeView extends StatelessWidget {
   final ValueChanged<int>? onInitiativeRecorded;
   final Future<int?> Function(CheckRoll)? beforeInitiativeRecord;
   final int Function()? rollD20;
+  final VoidCallback? onInitiativeRollStarted;
   final Set<CombatActionCost> usedCombatActions;
   final ActionSurgeState? actionSurge;
   final VoidCallback? onActionSurgeSpent;
@@ -115,6 +118,7 @@ class CombatModeView extends StatelessWidget {
     this.onInitiativeRecorded,
     this.beforeInitiativeRecord,
     this.rollD20,
+    this.onInitiativeRollStarted,
     this.usedCombatActions = const {},
     this.actionSurge,
     this.onActionSurgeSpent,
@@ -327,6 +331,7 @@ class CombatModeView extends StatelessWidget {
             onInitiativeRecorded: onInitiativeRecorded,
             beforeInitiativeRecord: beforeInitiativeRecord,
             rollD20: rollD20,
+            onInitiativeRollStarted: onInitiativeRollStarted,
             initiativeMode:
                 character.levelInClass('Barbarian') >= 7 ||
                     character.championLevel >= 3

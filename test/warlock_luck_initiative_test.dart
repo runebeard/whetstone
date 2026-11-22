@@ -23,11 +23,16 @@ void main() {
     'cancel',
     'advantage',
     'monk',
+    'stale-keep',
+    'stale-cancel',
   ]) {
     testWidgets('Own Luck initiative: $scenario', (tester) async {
       final advantage = scenario == 'advantage';
       final monk = scenario == 'monk';
       final uses = scenario == 'empty' ? 0 : 2;
+      final stale = scenario.startsWith('stale-');
+      final cancel = scenario == 'cancel' || scenario == 'stale-cancel';
+      final keep = scenario == 'keep' || scenario == 'stale-keep';
       var character = seedCharacters.first.copyWith(
         characterClass: advantage ? 'Barbarian' : 'Warlock',
         level: advantage
@@ -69,7 +74,9 @@ void main() {
         isInCombat: true,
         usedCombatActions: CombatActionCost.values.toSet(),
       );
-      final dice = SequenceDiceRoller(advantage ? [2, 17, 4] : [3, 7]);
+      final dice = SequenceDiceRoller(
+        advantage ? [2, 17, 4] : [if (stale) 9, 3, 7],
+      );
       var generation = 0;
       Widget app() => MaterialApp(
         home: CharacterOverview(
@@ -83,6 +90,17 @@ void main() {
       );
       await tester.pumpWidget(app());
       await tester.pumpAndSettle();
+      final lastCheck = find.widgetWithText(
+        OutlinedButton,
+        'Dark One’s Own Luck · Last check or save',
+      );
+      if (stale) {
+        final save = find.byTooltip('Wisdom saving throw');
+        await tester.ensureVisible(save);
+        await tester.tap(save);
+        await tester.pumpAndSettle();
+        expect(tester.widget<OutlinedButton>(lastCheck).onPressed, isNotNull);
+      }
       await tap(tester, '⚡ Init');
       await tap(tester, 'Record Initiative');
       if (uses > 0) {
@@ -96,7 +114,7 @@ void main() {
           expect(find.text('Recover Focus and HP'), findsNothing);
           expect(session.characterState.resourceValues[focusResourceId], 0);
         }
-        if (scenario == 'cancel') {
+        if (cancel) {
           await tap(tester, 'Cancel recording');
           expect(find.text('Record Initiative'), findsOneWidget);
           expect(session.combatInitiative, isNull);
@@ -104,17 +122,17 @@ void main() {
             session.characterState.resourceValues[darkOnesOwnLuckResourceId],
             2,
           );
-          expect(dice.index, 1);
+          expect(dice.index, stale ? 2 : 1);
+          await tap(tester, 'Close');
+          expect(tester.widget<OutlinedButton>(lastCheck).onPressed, isNull);
           return;
         }
         await tap(
           tester,
-          scenario == 'keep'
-              ? 'Keep initiative'
-              : 'Spend use · Boost initiative',
+          keep ? 'Keep initiative' : 'Spend use · Boost initiative',
         );
       }
-      final boosted = uses > 0 && scenario != 'keep';
+      final boosted = uses > 0 && !keep;
       final expected = advantage
           ? 23
           : boosted
@@ -138,12 +156,14 @@ void main() {
       expect(session.usedCombatActions, CombatActionCost.values.toSet());
       expect(
         dice.index,
-        advantage
-            ? 3
-            : boosted
-            ? 2
-            : 1,
+        (advantage
+                ? 3
+                : boosted
+                ? 2
+                : 1) +
+            (stale ? 1 : 0),
       );
+      expect(tester.widget<OutlinedButton>(lastCheck).onPressed, isNull);
       session = CharacterSession.fromJson(session.toJson());
       generation++;
       await tester.pumpWidget(app());

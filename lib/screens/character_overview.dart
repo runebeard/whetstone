@@ -6478,7 +6478,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   bool get hasPersistentRage => character.levelInClass('Barbarian') >= 15;
 
-  CharacterState resolveRelentlessRage(CharacterState damaged, int damage) {
+  Future<CharacterState> resolveRelentlessRage(
+    CharacterState damaged,
+    int damage,
+  ) async {
     final barbarianLevel = character.levelInClass('Barbarian');
     if (!characterState.isRaging ||
         characterState.currentHp <= 0 ||
@@ -6493,16 +6496,19 @@ class _CharacterOverviewState extends State<CharacterOverview>
     final attempts = characterState.relentlessRageAttempts;
     final dc = 10 + 5 * attempts;
     final hp = (2 * barbarianLevel).clamp(1, damaged.maxHp);
-    final roll = rollCheck(
+    var roll = rollCheck(
       'Relentless Rage',
       characterForPhysicalChecks.savingThrowFor(Ability.constitution).modifier,
       describe: (roll) => roll.total >= dc
           ? 'DC $dc · Remain conscious at $hp HP'
           : 'DC $dc · Failed save',
     );
+    roll = await boostFailedSaveWithDarkLuck(roll, dc: dc);
     return damaged.copyWith(
       relentlessRageAttempts: attempts + 1,
       currentHp: roll.total >= dc ? hp : 0,
+      // The save decision can spend a resource after damage was calculated.
+      resourceValues: characterState.resourceValues,
     );
   }
 
@@ -8377,6 +8383,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
           ? adjustInitiativeWithDarkLuck
           : null,
       rollD20: diceRoller.rollD20,
+      onInitiativeRollStarted: () => setState(() {
+        tacticalMindCheck = null;
+        peerlessSkillRoll = null;
+        darkLuckRoll = null;
+      }),
       onTogglePinned: togglePinnedAction,
       onSavingThrowTap: handleSavingThrowTap,
       onResourceSpend: spendResource,
