@@ -627,6 +627,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
       for (final resource in editableCharacter.resources) resource.id: resource,
     };
     final resourceValues = <String, int>{};
+    if (updated.levelInClass('Sorcerer') >= 2) {
+      for (var level = 1; level <= 5; level++) {
+        final count = characterState.resourceValues[fontOfMagicSlotId(level)];
+        if (count != null) resourceValues[fontOfMagicSlotId(level)] = count;
+      }
+    }
     final bonusSlot = characterState.resourceValues[wildResurgenceSlot.id];
     if (bonusSlot != null && updated.levelInClass('Druid') >= 5) {
       resourceValues[wildResurgenceSlot.id] = bonusSlot;
@@ -2293,6 +2299,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   Iterable<CharacterResource> get castingResources sync* {
     yield* character.resources;
+    if (character.levelInClass('Sorcerer') >= 2) {
+      yield* fontOfMagicSlots(characterState.resourceValues);
+    }
     if (character.levelInClass('Druid') >= 5 &&
         characterState.resourceValues.containsKey(wildResurgenceSlot.id)) {
       yield wildResurgenceSlot;
@@ -2338,6 +2347,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
                     ? ' Wild Resurgence'
                     : natureMagicianSlots.contains(resource)
                     ? ' Nature Magician'
+                    : resource.id.startsWith(fontOfMagicSlotPrefix)
+                    ? ' Font of Magic'
                     : resource.rechargePeriod == RechargePeriod.shortRest
                     ? ' Pact Magic'
                     : ''}'
@@ -7235,6 +7246,152 @@ class _CharacterOverviewState extends State<CharacterOverview>
         remainingUses(pool) < pool.maximum;
   }
 
+  int get sorceryPointCapacity {
+    final points = resourceWithId(sorceryPointsResourceId);
+    return points == null
+        ? 0
+        : character.levelInClass('Sorcerer').clamp(0, points.maximum);
+  }
+
+  List<int> get fontSlotCreationChoices {
+    final points = resourceWithId(sorceryPointsResourceId);
+    final level = character.levelInClass('Sorcerer');
+    if (points == null ||
+        level < 2 ||
+        !characterState.canConcentrate ||
+        (currentMode == CharacterMode.combat &&
+            usedCombatActions.contains(CombatActionCost.bonusAction))) {
+      return [];
+    }
+    return [
+      for (final entry in fontOfMagicCreationCosts.entries)
+        if (level >= entry.value.$2 && remainingUses(points) >= entry.value.$1)
+          entry.key,
+    ];
+  }
+
+  Future<void> createFontOfMagicSlot() async {
+    final choices = fontSlotCreationChoices;
+    if (choices.isEmpty) return;
+    final chosen = await showDialog<int>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Font of Magic · Create slot'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'Spend Sorcery Points to create one extra spell slot. This costs a Bonus Action in combat. Created slots survive Short Rests and vanish on Long Rest.',
+            ),
+          ),
+          for (final level in choices)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, level),
+              child: Text(
+                'Level $level · ${fontOfMagicCreationCosts[level]!.$1} points',
+              ),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || chosen == null || !fontSlotCreationChoices.contains(chosen)) {
+      return;
+    }
+    final points = resourceWithId(sorceryPointsResourceId)!;
+    final cost = fontOfMagicCreationCosts[chosen]!.$1;
+    if (currentMode == CharacterMode.combat) {
+      usedCombatActions.add(CombatActionCost.bonusAction);
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        resourceValues: {
+          ...characterState.resourceValues,
+          points.id: remainingUses(points) - cost,
+          fontOfMagicSlotId(chosen):
+              (characterState.resourceValues[fontOfMagicSlotId(chosen)] ?? 0) +
+              1,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.resource,
+      'Font of Magic · Slot created',
+      detail:
+          '$cost Sorcery Points spent · One extra level $chosen slot. Expires on Long Rest.${currentMode == CharacterMode.combat ? ' Bonus Action spent.' : ''}',
+    );
+  }
+
+  bool get slotToSorceryPointsAvailable {
+    final points = resourceWithId(sorceryPointsResourceId);
+    return character.levelInClass('Sorcerer') >= 2 &&
+        characterState.canConcentrate &&
+        points != null &&
+        remainingUses(points) < sorceryPointCapacity &&
+        castingResources.any(
+          (r) => spellSlotLevel(r) != null && remainingUses(r) > 0,
+        );
+  }
+
+  Future<void> convertSlotToSorceryPoints() async {
+    if (!slotToSorceryPointsAvailable) return;
+    final choice = await chooseAvailableSlot(1, 'Font of Magic · Choose slot');
+    if (!mounted || choice == null || !slotToSorceryPointsAvailable) return;
+    final slot = castingResources.where((r) => r.id == choice.$2).firstOrNull;
+    final points = resourceWithId(sorceryPointsResourceId)!;
+    if (slot == null || remainingUses(slot) <= 0) return;
+    final gain = (sorceryPointCapacity - remainingUses(points)).clamp(
+      0,
+      choice.$1,
+    );
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Convert slot to Sorcery Points'),
+        content: Text(
+          'Spend one level ${choice.$1} slot from ${slot.name} and recover $gain Sorcery Points, capped at $sorceryPointCapacity. '
+          '${gain < choice.$1 ? 'Any excess points are lost. ' : ''}No action is spent. This does not cast a spell or recover other resources.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Spend slot · Recover points'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        confirmed != true ||
+        !slotToSorceryPointsAvailable ||
+        remainingUses(slot) <= 0) {
+      return;
+    }
+    final current = remainingUses(points);
+    final recovered = (sorceryPointCapacity - current).clamp(0, choice.$1);
+    updateCharacterState(
+      characterState.copyWith(
+        resourceValues: {
+          ...characterState.resourceValues,
+          slot.id: remainingUses(slot) - 1,
+          points.id: current + recovered,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.resource,
+      'Font of Magic · Slot converted',
+      detail:
+          'One level ${choice.$1} ${slot.name} slot spent · $current → ${current + recovered} Sorcery Points. No action spent.',
+    );
+  }
+
   Future<void> useMagicalCunning() async {
     if (!magicalCunningAvailable) return;
     final pool = magicalCunningPactPool!;
@@ -8384,6 +8541,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
           : null,
       onDarkOnesBlessing: hasDarkOnesBlessing ? useDarkOnesBlessing : null,
       darkOnesBlessingAvailable: darkOnesBlessingAvailable,
+      onSlotToSorceryPoints: character.levelInClass('Sorcerer') >= 2
+          ? convertSlotToSorceryPoints
+          : null,
+      slotToSorceryPointsAvailable: slotToSorceryPointsAvailable,
+      onCreateFontSlot: character.levelInClass('Sorcerer') >= 2
+          ? createFontOfMagicSlot
+          : null,
+      createFontSlotAvailable: fontSlotCreationChoices.isNotEmpty,
       onRestoreHurlThroughHell: hasHurlThroughHell
           ? restoreHurlThroughHell
           : null,
@@ -8448,6 +8613,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
       darkLuckAvailable: darkLuckAvailable,
       onDarkOnesBlessing: hasDarkOnesBlessing ? useDarkOnesBlessing : null,
       darkOnesBlessingAvailable: darkOnesBlessingAvailable,
+      onSlotToSorceryPoints: character.levelInClass('Sorcerer') >= 2
+          ? convertSlotToSorceryPoints
+          : null,
+      slotToSorceryPointsAvailable: slotToSorceryPointsAvailable,
+      onCreateFontSlot: character.levelInClass('Sorcerer') >= 2
+          ? createFontOfMagicSlot
+          : null,
+      createFontSlotAvailable: fontSlotCreationChoices.isNotEmpty,
       onRestoreHurlThroughHell: hasHurlThroughHell
           ? restoreHurlThroughHell
           : null,

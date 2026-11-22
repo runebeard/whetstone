@@ -25,6 +25,30 @@ const _fullCasterSlots = [
 
 String spellSlotId(int level) => 'whetstone:spell-slot:$level';
 String pactSlotId(int level) => 'whetstone:pact-slot:$level';
+const fontOfMagicSlotPrefix = 'whetstone:spell-slot:font-of-magic:';
+String fontOfMagicSlotId(int level) => '$fontOfMagicSlotPrefix$level';
+
+Iterable<CharacterResource> fontOfMagicSlots(Map<String, int> values) sync* {
+  for (var level = 1; level <= 5; level++) {
+    final count = values[fontOfMagicSlotId(level)];
+    if (count == null) continue;
+    yield CharacterResource(
+      id: fontOfMagicSlotId(level),
+      name: 'Font of Magic',
+      maximum: count > 0 ? count : 1,
+      initialValue: 0,
+      rechargePeriod: RechargePeriod.manual,
+    );
+  }
+}
+
+const fontOfMagicCreationCosts = {
+  1: (2, 2),
+  2: (3, 3),
+  3: (5, 5),
+  4: (6, 7),
+  5: (7, 9),
+};
 
 const wildResurgenceSlot = CharacterResource(
   id: 'whetstone:spell-slot:wild-resurgence',
@@ -46,6 +70,9 @@ final natureMagicianSlots = [
 ];
 
 int? spellSlotLevel(CharacterResource resource) {
+  for (var level = 1; level <= 5; level++) {
+    if (resource.id == fontOfMagicSlotId(level)) return level;
+  }
   if (resource.id == wildResurgenceSlot.id) return 1;
   for (final (index, slot) in natureMagicianSlots.indexed) {
     if (resource.id == slot.id) return 2 * (index + 1);

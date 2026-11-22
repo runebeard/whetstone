@@ -69,6 +69,10 @@ class CombatModeView extends StatelessWidget {
   final VoidCallback? onRetaliation;
   final VoidCallback? onRecklessAttack;
   final VoidCallback? onDarkOnesBlessing;
+  final VoidCallback? onSlotToSorceryPoints;
+  final VoidCallback? onCreateFontSlot;
+  final bool createFontSlotAvailable;
+  final bool slotToSorceryPointsAvailable;
   final VoidCallback? onHurlThroughHell;
   final bool hurlThroughHellAvailable;
   final VoidCallback? onRestoreHurlThroughHell;
@@ -150,6 +154,10 @@ class CombatModeView extends StatelessWidget {
     this.onRetaliation,
     this.onRecklessAttack,
     this.onDarkOnesBlessing,
+    this.onSlotToSorceryPoints,
+    this.onCreateFontSlot,
+    this.createFontSlotAvailable = false,
+    this.slotToSorceryPointsAvailable = false,
     this.onHurlThroughHell,
     this.hurlThroughHellAvailable = false,
     this.onRestoreHurlThroughHell,
@@ -489,6 +497,18 @@ class CombatModeView extends StatelessWidget {
             OutlinedButton(
               onPressed: darkOnesBlessingAvailable ? onDarkOnesBlessing : null,
               child: const Text('Dark One’s Blessing'),
+            ),
+          if (onSlotToSorceryPoints != null)
+            OutlinedButton(
+              onPressed: slotToSorceryPointsAvailable
+                  ? onSlotToSorceryPoints
+                  : null,
+              child: const Text('Font of Magic · Slot to points'),
+            ),
+          if (onCreateFontSlot != null)
+            OutlinedButton(
+              onPressed: createFontSlotAvailable ? onCreateFontSlot : null,
+              child: const Text('Font of Magic · Create slot'),
             ),
           if (onHurlThroughHell != null)
             OutlinedButton(

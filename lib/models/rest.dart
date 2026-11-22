@@ -214,6 +214,14 @@ class RestPlan {
       changes.add('Relentless Rage save DC reset to 10');
     }
     if (type == RestType.longRest) {
+      for (var level = 1; level <= 5; level++) {
+        final removed = resourceValues.remove(fontOfMagicSlotId(level));
+        if (removed != null && removed > 0) {
+          changes.add(
+            'Font of Magic: $removed created level $level slots expired',
+          );
+        }
+      }
       if (currentState.naturalRecoveryUsed) {
         changes.add('Natural Recovery restored');
       }

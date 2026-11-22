@@ -28,6 +28,10 @@ class ExplorationModeView extends StatelessWidget {
   final VoidCallback? onArcaneRecovery;
   final VoidCallback? onMemorizeSpell;
   final VoidCallback? onMagicalCunning;
+  final VoidCallback? onSlotToSorceryPoints;
+  final VoidCallback? onCreateFontSlot;
+  final bool createFontSlotAvailable;
+  final bool slotToSorceryPointsAvailable;
   final VoidCallback? onRestoreHurlThroughHell;
   final bool restoreHurlThroughHellAvailable;
   final VoidCallback? onDarkLuck;
@@ -67,6 +71,10 @@ class ExplorationModeView extends StatelessWidget {
     this.onArcaneRecovery,
     this.onMemorizeSpell,
     this.onMagicalCunning,
+    this.onSlotToSorceryPoints,
+    this.onCreateFontSlot,
+    this.createFontSlotAvailable = false,
+    this.slotToSorceryPointsAvailable = false,
     this.onRestoreHurlThroughHell,
     this.restoreHurlThroughHellAvailable = false,
     this.onDarkLuck,
@@ -139,6 +147,18 @@ class ExplorationModeView extends StatelessWidget {
             icon: const Icon(Icons.shield_outlined),
             label: const Text('Combat'),
           ),
+          if (onSlotToSorceryPoints != null)
+            OutlinedButton(
+              onPressed: slotToSorceryPointsAvailable
+                  ? onSlotToSorceryPoints
+                  : null,
+              child: const Text('Font of Magic · Slot to points'),
+            ),
+          if (onCreateFontSlot != null)
+            OutlinedButton(
+              onPressed: createFontSlotAvailable ? onCreateFontSlot : null,
+              child: const Text('Font of Magic · Create slot'),
+            ),
           if (onMemorizeSpell != null)
             OutlinedButton(
               onPressed: onMemorizeSpell,

@@ -350,6 +350,10 @@ class _CharacterVaultState extends State<CharacterVault> {
       return;
     }
     final updatedResourceValues = {
+      if (updated.levelInClass('Sorcerer') >= 2)
+        for (var level = 1; level <= 5; level++)
+          fontOfMagicSlotId(level):
+              ?state.resourceValues[fontOfMagicSlotId(level)],
       if (updated.levelInClass('Druid') >= 5)
         wildResurgenceSlot.id: ?state.resourceValues[wildResurgenceSlot.id],
       if (updated.levelInClass('Druid') >= 20)
