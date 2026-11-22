@@ -3282,7 +3282,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   bool get canRetaliate =>
       hasRetaliation &&
-      activeWildShape == null &&
+      (activeWildShape == null ||
+          activeWildShape!.combatAttack.range == '5 feet') &&
       currentMode == CharacterMode.combat &&
       characterState.canConcentrate &&
       !usedCombatActions.contains(CombatActionCost.reaction);
@@ -3299,18 +3300,24 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   Future<void> useRetaliation() async {
     if (!canRetaliate) return;
-    final weapons = character.weapons
-        .where((weapon) => weapon.isMelee)
+    final form = activeWildShape;
+    final weapons = characterInCombat.weapons
+        .where(
+          (weapon) =>
+              weapon.isMelee ||
+              (form?.combatAttack.id == weapon.id && weapon.range == '5 feet'),
+        )
         .toList();
     final choice = await showDialog<String>(
       context: context,
       builder: (context) => SimpleDialog(
         title: const Text('Retaliation · Confirm triggering damage'),
         children: [
-          const Padding(
+          Padding(
             padding: EdgeInsets.all(16),
             child: Text(
-              'Confirm you just took damage from the creature within 5 feet that you will attack. Enter the incoming damage separately. Spend your Reaction for one melee weapon attack or Unarmed Strike against that creature. No Rage use, Action or Bonus Action is spent.',
+              'Confirm you just took damage from the creature within 5 feet that you will attack. Enter the incoming damage separately. Spend your Reaction for one melee response against that creature. No Rage use, Action or Bonus Action is spent. '
+              '${form == null ? 'Choose a melee weapon or Unarmed Strike.' : 'Confirm your form is physically capable of this response. Only its current melee attack is available.'}',
             ),
           ),
           for (final weapon in weapons)
@@ -3318,10 +3325,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
               onPressed: () => Navigator.pop(context, weapon.actionKey),
               child: Text('Retaliate with ${weapon.name}'),
             ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(context, 'unarmed'),
-            child: const Text('Retaliate with Unarmed Strike'),
-          ),
+          if (form == null)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, 'unarmed'),
+              child: const Text('Retaliate with Unarmed Strike'),
+            ),
           SimpleDialogOption(
             onPressed: () => Navigator.pop(context),
             child: const Text('Cancel'),
@@ -3336,7 +3344,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       final weapon = weapons
           .where((weapon) => weapon.actionKey == choice)
           .firstOrNull;
-      if (weapon == null || !character.weapons.contains(weapon)) return;
+      if (weapon == null || !characterInCombat.weapons.contains(weapon)) return;
       await rollAttack(weapon, asReaction: true, retaliation: true);
     }
   }
@@ -7641,9 +7649,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onAttackRoll: rollAttack,
       onUnarmedStrike: activeWildShape == null ? useUnarmedStrike : null,
       onCuttingWords: hasCuttingWords ? useCuttingWords : null,
-      onRetaliation: hasRetaliation && activeWildShape == null
-          ? useRetaliation
-          : null,
+      onRetaliation: hasRetaliation ? useRetaliation : null,
       retaliationAvailable: canRetaliate,
       onIntimidatingPresence: hasIntimidatingPresence
           ? useIntimidatingPresence

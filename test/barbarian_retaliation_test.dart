@@ -25,6 +25,100 @@ const bow = Weapon(
 );
 
 void main() {
+  for (final packTactics in [false, true]) {
+    testWidgets(
+      'Beast Retaliation keeps Wolf Pack Tactics choice $packTactics and shared Reaction',
+      (tester) async {
+        final character = seedCharacters.first.copyWith(
+          characterClass: 'Barbarian',
+          level: 12,
+          additionalClassLevels: {'Druid': 2},
+          subclasses: {'Barbarian': 'Path of the Berserker'},
+          weapons: [blade],
+          resources: BuiltInClass.druid.classResources(2, charismaModifier: 0),
+        );
+        var session = CharacterSession(
+          characterState: CharacterState.fromCharacter(character).copyWith(
+            currentHp: 22,
+            temporaryHp: 5,
+            wildShapeForm: 'Wolf',
+            wildShapeTurnsRemaining: 100,
+            activeConditions: {ragingCondition},
+            conditionTurns: {ragingCondition: 1},
+            resourceValues: {wildShapeResourceId: 1},
+          ),
+          inventory: [],
+          archivedInventory: [],
+          isInCombat: true,
+          usedCombatActions: {
+            CombatActionCost.action,
+            CombatActionCost.bonusAction,
+          },
+          attackActionAttacksRemaining: 1,
+        );
+        final dice = SequenceDiceRoller([2, 16]);
+        Widget app() => MaterialApp(
+          home: CharacterOverview(
+            key: ValueKey(session.usedCombatActions.length),
+            character: character,
+            initialSession: session,
+            onCharacterChanged: (_) {},
+            onSessionChanged: (v) => session = v,
+            diceRoller: dice,
+          ),
+        );
+        await tester.pumpWidget(app());
+        final button = find.widgetWithText(
+          OutlinedButton,
+          'Retaliation · Reaction',
+        );
+        Future<void> open() async {
+          await tester.ensureVisible(button);
+          await tester.tap(button);
+          await tester.pumpAndSettle();
+          expect(find.text('Retaliate with Test blade'), findsNothing);
+          expect(find.text('Retaliate with Unarmed Strike'), findsNothing);
+          await tester.tap(find.text('Retaliate with Wolf Bite'));
+          await tester.pumpAndSettle();
+        }
+
+        await open();
+        expect(find.text('Pack Tactics'), findsOneWidget);
+        await tester.tapAt(const Offset(5, 5));
+        await tester.pumpAndSettle();
+        expect(
+          session.usedCombatActions.contains(CombatActionCost.reaction),
+          false,
+        );
+        expect(dice.index, 0);
+        await open();
+        await tester.tap(find.text(packTactics ? 'Yes' : 'No'));
+        await tester.pumpAndSettle();
+        expect(
+          session.timeline.any(
+            (event) =>
+                event.title == 'Wolf Bite Attack: ${packTactics ? 20 : 6}',
+          ),
+          true,
+        );
+        expect(session.usedCombatActions, CombatActionCost.values.toSet());
+        expect(session.attackActionAttacksRemaining, 1);
+        expect(session.characterState.wildShapeForm, 'Wolf');
+        expect(session.characterState.wildShapeTurnsRemaining, 100);
+        expect(session.characterState.resourceValues[wildShapeResourceId], 1);
+        expect(session.characterState.currentHp, 22);
+        expect(session.characterState.temporaryHp, 5);
+        expect(session.characterState.conditionTurns[ragingCondition], 1);
+        expect(dice.index, packTactics ? 2 : 1);
+        session = CharacterSession.fromJson(session.toJson());
+        await tester.pumpWidget(app());
+        await tester.pumpAndSettle();
+        expect(tester.widget<OutlinedButton>(button).onPressed, isNull);
+        expect(session.characterState.wildShapeForm, 'Wolf');
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
   for (final unarmed in [false, true]) {
     testWidgets(
       'Retaliation unarmed=$unarmed spends shared Reaction and preserves Attack budget and Rage',
