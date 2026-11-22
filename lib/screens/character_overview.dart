@@ -5816,6 +5816,16 @@ class _CharacterOverviewState extends State<CharacterOverview>
         (level, resource),
   ];
 
+  List<(int, CharacterResource)> get arcaneRecoverySlots => [
+    for (final resource in character.resources)
+      for (var level = 1; level <= 5; level++)
+        if ((resource.id == spellSlotId(level) ||
+                resource.id == 'level_${level}_slots') &&
+            resource.rechargePeriod == RechargePeriod.longRest &&
+            remainingUses(resource) < resource.maximum)
+          (level, resource),
+  ];
+
   Future<void> useArcaneRecovery() async {
     final resource = character.resources
         .where((r) => r.id == arcaneRecoveryResourceId)
@@ -5827,9 +5837,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         budget > 0 &&
         resource != null &&
         remainingUses(resource) > 0 &&
-        naturalRecoverySlots.any(
-          (entry) => entry.$1 <= budget && entry.$2.id == spellSlotId(entry.$1),
-        );
+        arcaneRecoverySlots.any((entry) => entry.$1 <= budget);
     if (!canUse()) return;
     final confirm = await showDialog<bool>(
       context: context,
@@ -5869,9 +5877,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
     final recovered = <String, int>{};
     while (mounted) {
       final available = [
-        for (final (level, resource) in naturalRecoverySlots)
-          if ((!arcane || resource.id == spellSlotId(level)) &&
-              level <= budget &&
+        for (final (level, resource)
+            in (arcane ? arcaneRecoverySlots : naturalRecoverySlots))
+          if (level <= budget &&
               remainingUses(resource) + (recovered[resource.id] ?? 0) <
                   resource.maximum)
             (level, resource),

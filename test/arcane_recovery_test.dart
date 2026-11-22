@@ -142,4 +142,53 @@ void main() {
       },
     );
   }
+  for (final remaining in [0, 1]) {
+    testWidgets(
+      'Legacy Arcane Recovery remaining=$remaining preserves old pool and slots',
+      (tester) async {
+        var wizard = seedCharacters.first;
+        var session = CharacterSession(
+          characterState: CharacterState.fromCharacter(wizard).copyWith(
+            resourceValues: {
+              ...CharacterState.fromCharacter(wizard).resourceValues,
+              'arcane_recovery': remaining,
+              'level_2_slots': 0,
+            },
+          ),
+          inventory: [],
+          archivedInventory: [],
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: CharacterOverview(
+              character: wizard,
+              initialSession: session,
+              onSessionChanged: (v) => session = v,
+              onCharacterChanged: (v) => wizard = v,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          wizard.resources.where((r) => r.name == 'Arcane Recovery').length,
+          1,
+        );
+        final button = find.text('Arcane Recovery · After Short Rest');
+        await tester.ensureVisible(button);
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+        if (remaining == 0) {
+          expect(find.text('Short Rest finished · Choose slots'), findsNothing);
+          expect(session.characterState.resourceValues['arcane_recovery'], 0);
+        } else {
+          await tester.tap(find.text('Short Rest finished · Choose slots'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Recover a level 2 slot'));
+          await tester.pumpAndSettle();
+          expect(session.characterState.resourceValues['level_2_slots'], 1);
+          expect(session.characterState.resourceValues['arcane_recovery'], 0);
+        }
+      },
+    );
+  }
 }

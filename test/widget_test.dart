@@ -3956,7 +3956,9 @@ void main() {
     final arcaneRecovery = find.text('Arcane Recovery');
     await tester.ensureVisible(arcaneRecovery);
     await tester.pumpAndSettle();
-    await tester.tap(arcaneRecovery);
+    await tester.longPress(arcaneRecovery);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Spend One'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('End Combat'));
     await tester.pumpAndSettle();
