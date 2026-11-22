@@ -7354,38 +7354,61 @@ class _CharacterOverviewState extends State<CharacterOverview>
     return null;
   }
 
-  Future<void> chooseBardExpertise() async {
-    final milestone = pendingBardExpertise;
+  bool get pendingLoreProficiencies =>
+      character.levelInClass('Bard') >= 3 &&
+      character.subclasses['Bard'] == 'College of Lore' &&
+      !character.features.any(
+        (feature) => feature.id == 'whetstone:class:lore-proficiencies',
+      );
+
+  Future<void> chooseBardExpertise({bool loreBonus = false}) async {
+    final milestone = loreBonus
+        ? (pendingLoreProficiencies ? 3 : null)
+        : pendingBardExpertise;
     if (milestone == null) return;
+    final count = loreBonus ? 3 : 2;
+    final eligible = loreBonus
+        ? SkillProficiency.none
+        : SkillProficiency.proficient;
+    final granted = loreBonus
+        ? SkillProficiency.proficient
+        : SkillProficiency.expertise;
+    final title = loreBonus
+        ? 'Lore Bard · Bonus Proficiencies'
+        : 'Bard Expertise · Level $milestone';
+    final confirm = loreBonus
+        ? 'Confirm three proficiencies'
+        : 'Confirm two Expertise skills';
     final skills = standardSkills
-        .where(
-          (skill) =>
-              character.proficiencyFor(skill) == SkillProficiency.proficient,
-        )
+        .where((skill) => character.proficiencyFor(skill) == eligible)
         .toList();
     final selected = <String>{};
     final choices = await showDialog<Set<String>>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, update) => AlertDialog(
-          title: Text('Bard Expertise · Level $milestone'),
+          title: Text(title),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  'Choose two skills in which you already have proficiency. Existing Expertise does not stack. If an older save already includes this grant, review its proficiencies before making another choice.',
+                Text(
+                  loreBonus
+                      ? 'Choose three skills in which you have no proficiency. Existing proficiency and Expertise are preserved. If an older save already includes this grant, review its proficiencies before making another choice.'
+                      : 'Choose two skills in which you already have proficiency. Existing Expertise does not stack. If an older save already includes this grant, review its proficiencies before making another choice.',
                 ),
-                if (skills.length < 2)
-                  const Text(
-                    'Two eligible proficient skills are required. Review your skill proficiencies first.',
+                if (skills.length < count)
+                  Text(
+                    loreBonus
+                        ? 'Three eligible untrained skills are required. Review your skill proficiencies first.'
+                        : 'Two eligible proficient skills are required. Review your skill proficiencies first.',
                   ),
                 for (final skill in skills)
                   CheckboxListTile(
                     title: Text(skill.name),
                     value: selected.contains(skill.id),
                     onChanged:
-                        !selected.contains(skill.id) && selected.length == 2
+                        !selected.contains(skill.id) && selected.length == count
                         ? null
                         : (value) => update(() {
                             if (value == true) {
@@ -7404,10 +7427,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: selected.length == 2
+              onPressed: selected.length == count
                   ? () => Navigator.pop(context, {...selected})
                   : null,
-              child: const Text('Confirm two Expertise skills'),
+              child: Text(confirm),
             ),
           ],
         ),
@@ -7415,11 +7438,16 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
     if (!mounted ||
         choices == null ||
-        choices.length != 2 ||
-        pendingBardExpertise != milestone ||
+        choices.length != count ||
+        (loreBonus
+            ? !pendingLoreProficiencies
+            : pendingBardExpertise != milestone) ||
         !choices.every(
           (id) =>
-              character.skillProficiencies[id] == SkillProficiency.proficient,
+              character.proficiencyFor(
+                standardSkills.singleWhere((skill) => skill.id == id),
+              ) ==
+              eligible,
         )) {
       return;
     }
@@ -7430,15 +7458,17 @@ class _CharacterOverviewState extends State<CharacterOverview>
     final updated = character.copyWith(
       skillProficiencies: {
         ...character.skillProficiencies,
-        for (final id in choices) id: SkillProficiency.expertise,
+        for (final id in choices) id: granted,
       },
       features: [
         ...character.features,
         Feature(
-          id: 'whetstone:class:bard-expertise:$milestone',
-          name: 'Bard Expertise · Level $milestone',
+          id: loreBonus
+              ? 'whetstone:class:lore-proficiencies'
+              : 'whetstone:class:bard-expertise:$milestone',
+          name: title,
           summary:
-              'Expertise applied to $names. The skill proficiencies have already been updated.',
+              '${loreBonus ? 'Proficiency' : 'Expertise'} applied to $names. The skill proficiencies have already been updated.',
         ),
       ],
     );
@@ -7446,7 +7476,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     widget.onCharacterChanged(updated);
     recordSessionEvent(
       SessionEventType.condition,
-      'Bard Expertise chosen',
+      loreBonus ? 'Lore Bard proficiencies chosen' : 'Bard Expertise chosen',
       detail: 'Level $milestone · $names',
     );
   }
@@ -7542,6 +7572,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onFeatureTap: handleActionTap,
       onManageFeature: manageFeature,
       onAddFeature: addFeature,
+      onLoreProficiencies: pendingLoreProficiencies
+          ? () => chooseBardExpertise(loreBonus: true)
+          : null,
       onBardExpertise: pendingBardExpertise == null
           ? null
           : chooseBardExpertise,
