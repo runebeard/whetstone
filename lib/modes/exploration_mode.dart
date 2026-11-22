@@ -27,6 +27,8 @@ class ExplorationModeView extends StatelessWidget {
   final VoidCallback? onBarbarianDefense;
   final VoidCallback? onArcaneRecovery;
   final VoidCallback? onMemorizeSpell;
+  final VoidCallback? onMagicalCunning;
+  final bool magicalCunningAvailable;
   final VoidCallback? onBardicInspiration;
   final VoidCallback? onPeerlessSkill;
   final bool peerlessSkillAvailable;
@@ -57,6 +59,8 @@ class ExplorationModeView extends StatelessWidget {
     this.onBarbarianDefense,
     this.onArcaneRecovery,
     this.onMemorizeSpell,
+    this.onMagicalCunning,
+    this.magicalCunningAvailable = false,
     this.onBardicInspiration,
     this.onPeerlessSkill,
     this.peerlessSkillAvailable = false,
@@ -125,6 +129,15 @@ class ExplorationModeView extends StatelessWidget {
             OutlinedButton(
               onPressed: onMemorizeSpell,
               child: const Text('Memorize Spell · After Short Rest'),
+            ),
+          if (onMagicalCunning != null)
+            OutlinedButton(
+              onPressed: magicalCunningAvailable ? onMagicalCunning : null,
+              child: Text(
+                character.levelInClass('Warlock') >= 20
+                    ? 'Eldritch Master · Magical Cunning'
+                    : 'Magical Cunning · Pact slots',
+              ),
             ),
           if (onBarbarianDefense != null)
             OutlinedButton(

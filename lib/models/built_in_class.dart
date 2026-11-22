@@ -13,6 +13,7 @@ const focusResourceId = 'whetstone:class:focus';
 const uncannyMetabolismResourceId = 'whetstone:class:uncanny-metabolism';
 const wholenessOfBodyResourceId = 'whetstone:subclass:wholeness-of-body';
 const arcaneRecoveryResourceId = 'arcane_recovery';
+const magicalCunningResourceId = 'whetstone:class:magical-cunning';
 const wildShapeResourceId = 'whetstone:class:wild-shape';
 const bardicInspirationResourceId = 'whetstone:class:bardic-inspiration';
 const layOnHandsResourceId = 'whetstone:class:lay-on-hands';
@@ -29,6 +30,7 @@ const progressingClassResourceIds = {
   uncannyMetabolismResourceId,
   wholenessOfBodyResourceId,
   arcaneRecoveryResourceId,
+  magicalCunningResourceId,
   wildShapeResourceId,
   bardicInspirationResourceId,
   layOnHandsResourceId,
@@ -229,6 +231,14 @@ enum BuiltInClass {
       _ => null,
     };
     return [
+      if (this == warlock && level >= 2)
+        const CharacterResource(
+          id: magicalCunningResourceId,
+          name: 'Magical Cunning',
+          maximum: 1,
+          initialValue: 1,
+          rechargePeriod: RechargePeriod.longRest,
+        ),
       if (this == barbarian &&
           level >= 14 &&
           subclass == 'Path of the Berserker')

@@ -124,6 +124,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
     character = widget.character;
     final missingMonkResources =
         [
+              ...BuiltInClass.warlock
+                  .classResources(
+                    character.levelInClass('Warlock'),
+                    charismaModifier: 0,
+                  )
+                  .where((resource) => resource.id == magicalCunningResourceId),
               ...BuiltInClass.barbarian
                   .classResources(
                     character.levelInClass('Barbarian'),
@@ -6755,6 +6761,98 @@ class _CharacterOverviewState extends State<CharacterOverview>
     await useNaturalRecovery(arcane: true);
   }
 
+  CharacterResource? get magicalCunningPactPool {
+    final expected = spellSlotsForClass(
+      'Warlock',
+      character.levelInClass('Warlock'),
+    ).firstOrNull;
+    if (expected == null) return null;
+    final level = spellSlotLevel(expected);
+    if (level == null) return null;
+    final pact = character.resources
+        .where(
+          (resource) =>
+              resource.id == pactSlotId(level) &&
+              resource.rechargePeriod == RechargePeriod.shortRest,
+        )
+        .firstOrNull;
+    return pact ??
+        character.resources
+            .where(
+              (resource) =>
+                  resource.id == spellSlotId(level) &&
+                  resource.rechargePeriod == RechargePeriod.shortRest &&
+                  resource.name.toLowerCase().contains('pact'),
+            )
+            .firstOrNull;
+  }
+
+  bool get magicalCunningAvailable {
+    final use = resourceWithId(magicalCunningResourceId);
+    final pool = magicalCunningPactPool;
+    return currentMode == CharacterMode.exploration &&
+        character.levelInClass('Warlock') >= 2 &&
+        characterState.canConcentrate &&
+        use != null &&
+        remainingUses(use) > 0 &&
+        pool != null &&
+        remainingUses(pool) < pool.maximum;
+  }
+
+  Future<void> useMagicalCunning() async {
+    if (!magicalCunningAvailable) return;
+    final pool = magicalCunningPactPool!;
+    final use = resourceWithId(magicalCunningResourceId)!;
+    final master = character.levelInClass('Warlock') >= 20;
+    final budget = master ? pool.maximum : (pool.maximum + 1) ~/ 2;
+    final recovered = (pool.maximum - remainingUses(pool)).clamp(0, budget);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          master ? 'Eldritch Master · Magical Cunning' : 'Magical Cunning',
+        ),
+        content: Text(
+          'Confirm you completed the uninterrupted 1-minute esoteric rite. Recover $recovered expended Pact Magic slot${recovered == 1 ? '' : 's'} in ${pool.name}. '
+          '${master ? 'Eldritch Master recovers all expended Pact Magic slots.' : 'Recover up to half your maximum Pact Magic slots, rounded up.'} '
+          'Once per Long Rest. Ordinary spell slots, Mystic Arcanum and temporary slots are not recovered. This does not complete a Short Rest or spend combat actions.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Rite complete · Recover Pact slots'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        confirmed != true ||
+        !magicalCunningAvailable ||
+        magicalCunningPactPool?.id != pool.id) {
+      return;
+    }
+    final current = remainingUses(pool);
+    updateCharacterState(
+      characterState.copyWith(
+        resourceValues: {
+          ...characterState.resourceValues,
+          pool.id: (current + budget).clamp(0, pool.maximum),
+          use.id: remainingUses(use) - 1,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.resource,
+      master ? 'Eldritch Master' : 'Magical Cunning',
+      detail:
+          '${(current + budget).clamp(0, pool.maximum) - current} Pact Magic slots recovered after a confirmed 1-minute rite · One use spent. Long Rest restores availability.',
+    );
+  }
+
   Future<void> useNaturalRecovery({bool arcane = false}) async {
     final resource = character.resources
         .where((r) => r.id == arcaneRecoveryResourceId)
@@ -7783,6 +7881,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       onMemorizeSpell: character.levelInClass('Wizard') >= 5
           ? useMemorizeSpell
           : null,
+      onMagicalCunning: character.levelInClass('Warlock') >= 2
+          ? useMagicalCunning
+          : null,
+      magicalCunningAvailable: magicalCunningAvailable,
       onBarbarianDefense:
           character.levelInClass('Barbarian') >= 1 && activeWildShape == null
           ? useBarbarianDefense
