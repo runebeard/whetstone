@@ -126,6 +126,18 @@ class _CharacterOverviewState extends State<CharacterOverview>
     character = widget.character;
     final missingMonkResources =
         [
+              ...BuiltInClass.sorcerer
+                  .classResources(
+                    character.levelInClass('Sorcerer'),
+                    charismaModifier: character.abilityModifierFor(
+                      Ability.charisma,
+                    ),
+                  )
+                  .where(
+                    (resource) =>
+                        resource.id == sorceryPointsResourceId ||
+                        resource.id == sorcerousRestorationResourceId,
+                  ),
               ...BuiltInClass.warlock
                   .classResources(
                     character.levelInClass('Warlock'),
@@ -6730,10 +6742,16 @@ class _CharacterOverviewState extends State<CharacterOverview>
         restType == RestType.shortRest &&
         characterState.currentHp > 0 &&
         characterState.currentHp < characterState.maxHp;
+    var useSorcerousRestoration = false;
     final counts = await showDialog<Map<int, int>>(
       context: context,
       builder: (context) => RestConfirmationDialog(
         plan: preview,
+        sorcerousRestorationAmount: preview.sorcerousRestorationAmount(
+          character,
+        ),
+        onSorcerousRestorationChanged: (value) =>
+            useSorcerousRestoration = value,
         canChangeMastery: canChangeMastery,
         canChooseDruidLand:
             restType == RestType.longRest && landDruidLevel >= 3,
@@ -6745,7 +6763,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
     if (!mounted || counts == null) return;
 
-    final plan =
+    var plan =
         RestPlan.forCharacter(
           type: restType,
           character: character,
@@ -6755,6 +6773,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
           countsBySize: counts,
           roller: diceRoller,
         );
+    if (useSorcerousRestoration) plan = plan.recoverSorceryPoints(character);
     peerlessSkillRoll = null;
     darkLuckRoll = null;
     updateCharacterState(plan.updatedState);

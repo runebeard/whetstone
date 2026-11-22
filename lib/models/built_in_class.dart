@@ -16,6 +16,8 @@ const arcaneRecoveryResourceId = 'arcane_recovery';
 const magicalCunningResourceId = 'whetstone:class:magical-cunning';
 const darkOnesOwnLuckResourceId = 'whetstone:subclass:dark-ones-own-luck';
 const hurlThroughHellResourceId = 'whetstone:subclass:hurl-through-hell';
+const sorceryPointsResourceId = 'whetstone:class:sorcery-points';
+const sorcerousRestorationResourceId = 'whetstone:class:sorcerous-restoration';
 const wildShapeResourceId = 'whetstone:class:wild-shape';
 const bardicInspirationResourceId = 'whetstone:class:bardic-inspiration';
 const layOnHandsResourceId = 'whetstone:class:lay-on-hands';
@@ -35,6 +37,8 @@ const progressingClassResourceIds = {
   magicalCunningResourceId,
   darkOnesOwnLuckResourceId,
   hurlThroughHellResourceId,
+  sorceryPointsResourceId,
+  sorcerousRestorationResourceId,
   wildShapeResourceId,
   bardicInspirationResourceId,
   layOnHandsResourceId,
@@ -235,6 +239,22 @@ enum BuiltInClass {
       _ => null,
     };
     return [
+      if (this == sorcerer && level >= 2)
+        CharacterResource(
+          id: sorceryPointsResourceId,
+          name: 'Sorcery Points',
+          maximum: level,
+          initialValue: level,
+          rechargePeriod: RechargePeriod.longRest,
+        ),
+      if (this == sorcerer && level >= 5)
+        const CharacterResource(
+          id: sorcerousRestorationResourceId,
+          name: 'Sorcerous Restoration',
+          maximum: 1,
+          initialValue: 1,
+          rechargePeriod: RechargePeriod.longRest,
+        ),
       if (this == warlock && level >= 14 && subclass == 'Fiend Patron')
         const CharacterResource(
           id: hurlThroughHellResourceId,

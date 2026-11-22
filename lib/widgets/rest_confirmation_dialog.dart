@@ -8,6 +8,8 @@ class RestConfirmationDialog extends StatefulWidget {
   final bool canUseNaturalRecovery;
   final bool canChooseDruidLand;
   final Map<int, int> availableHitDice;
+  final int sorcerousRestorationAmount;
+  final ValueChanged<bool>? onSorcerousRestorationChanged;
 
   const RestConfirmationDialog({
     super.key,
@@ -16,6 +18,8 @@ class RestConfirmationDialog extends StatefulWidget {
     this.canUseNaturalRecovery = false,
     this.canChooseDruidLand = false,
     this.availableHitDice = const {},
+    this.sorcerousRestorationAmount = 0,
+    this.onSorcerousRestorationChanged,
   });
 
   @override
@@ -24,13 +28,15 @@ class RestConfirmationDialog extends StatefulWidget {
 
 class _RestConfirmationDialogState extends State<RestConfirmationDialog> {
   final hitDice = <int, int>{};
+  bool useSorcerousRestoration = false;
   RestPlan get plan => widget.plan;
   bool get canConfirm =>
       plan.hasChanges ||
       hitDice.values.any((count) => count > 0) ||
       widget.canChangeMastery ||
       widget.canUseNaturalRecovery ||
-      widget.canChooseDruidLand;
+      widget.canChooseDruidLand ||
+      widget.sorcerousRestorationAmount > 0;
 
   @override
   Widget build(BuildContext context) {
@@ -55,6 +61,8 @@ class _RestConfirmationDialogState extends State<RestConfirmationDialog> {
                   ? 'You can recover spell slots with Natural Recovery.'
                   : widget.canChooseDruidLand
                   ? 'You can choose your Circle of the Land terrain.'
+                  : widget.sorcerousRestorationAmount > 0
+                  ? 'You can recover Sorcery Points with Sorcerous Restoration.'
                   : 'Nothing currently needs to recover.',
             ),
             if (canConfirm) ...[
@@ -66,6 +74,21 @@ class _RestConfirmationDialogState extends State<RestConfirmationDialog> {
                 ),
             ],
             const SizedBox(height: 12),
+            if (isShortRest && widget.sorcerousRestorationAmount > 0)
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  'Sorcerous Restoration · Recover ${widget.sorcerousRestorationAmount} Sorcery Points',
+                ),
+                subtitle: const Text('Optional · Once per Long Rest'),
+                value: useSorcerousRestoration,
+                onChanged: (value) {
+                  setState(() => useSorcerousRestoration = value ?? false);
+                  widget.onSorcerousRestorationChanged?.call(
+                    useSorcerousRestoration,
+                  );
+                },
+              ),
             for (final die in dice)
               if (isShortRest)
                 DropdownButtonFormField<int>(

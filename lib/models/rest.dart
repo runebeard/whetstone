@@ -28,6 +28,52 @@ class RestPlan {
 
   bool get hasChanges => changes.isNotEmpty;
 
+  int sorcerousRestorationAmount(Character character) {
+    final level = character.levelInClass('Sorcerer');
+    if (type != RestType.shortRest || level < 5) return 0;
+    final points = character.resources
+        .where((r) => r.id == sorceryPointsResourceId)
+        .firstOrNull;
+    final use = character.resources
+        .where((r) => r.id == sorcerousRestorationResourceId)
+        .firstOrNull;
+    if (points == null ||
+        use == null ||
+        (updatedState.resourceValues[use.id] ?? use.initialValue) < 1) {
+      return 0;
+    }
+    final current =
+        updatedState.resourceValues[points.id] ?? points.initialValue;
+    return (points.maximum - current).clamp(0, level ~/ 2);
+  }
+
+  RestPlan recoverSorceryPoints(Character character) {
+    final amount = sorcerousRestorationAmount(character);
+    if (amount == 0) return this;
+    final points = character.resources.singleWhere(
+      (r) => r.id == sorceryPointsResourceId,
+    );
+    final use = character.resources.singleWhere(
+      (r) => r.id == sorcerousRestorationResourceId,
+    );
+    final current =
+        updatedState.resourceValues[points.id] ?? points.initialValue;
+    return RestPlan(
+      type: type,
+      updatedState: updatedState.copyWith(
+        resourceValues: {
+          ...updatedState.resourceValues,
+          points.id: current + amount,
+          use.id: (updatedState.resourceValues[use.id] ?? use.initialValue) - 1,
+        },
+      ),
+      changes: [
+        ...changes,
+        'Sorcerous Restoration: $current → ${current + amount} Sorcery Points · One use spent',
+      ],
+    );
+  }
+
   static int hitDieFor(Character character) =>
       BuiltInClass.named(character.characterClass)?.hitDie ?? 8;
 
