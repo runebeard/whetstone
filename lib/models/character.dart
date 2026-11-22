@@ -449,6 +449,9 @@ class Character {
   };
   bool get hasFiendishResilience =>
       levelInClass('Warlock') >= 10 && subclasses['Warlock'] == 'Fiend Patron';
+  bool get hasDragonWings =>
+      levelInClass('Sorcerer') >= 14 &&
+      subclasses['Sorcerer'] == 'Draconic Sorcery';
 
   int get martialArtsDieSides => switch (levelInClass('Monk')) {
     >= 17 => 12,

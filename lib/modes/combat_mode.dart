@@ -71,6 +71,10 @@ class CombatModeView extends StatelessWidget {
   final VoidCallback? onDarkOnesBlessing;
   final VoidCallback? onSlotToSorceryPoints;
   final VoidCallback? onInnateSorcery;
+  final VoidCallback? onDragonWings;
+  final bool dragonWingsAvailable;
+  final VoidCallback? onRestoreDragonWings;
+  final bool restoreDragonWingsAvailable;
   final bool innateSorceryAvailable;
   final VoidCallback? onCreateFontSlot;
   final bool createFontSlotAvailable;
@@ -158,6 +162,10 @@ class CombatModeView extends StatelessWidget {
     this.onDarkOnesBlessing,
     this.onSlotToSorceryPoints,
     this.onInnateSorcery,
+    this.onDragonWings,
+    this.dragonWingsAvailable = false,
+    this.onRestoreDragonWings,
+    this.restoreDragonWingsAvailable = false,
     this.innateSorceryAvailable = false,
     this.onCreateFontSlot,
     this.createFontSlotAvailable = false,
@@ -501,6 +509,26 @@ class CombatModeView extends StatelessWidget {
             OutlinedButton(
               onPressed: darkOnesBlessingAvailable ? onDarkOnesBlessing : null,
               child: const Text('Dark One’s Blessing'),
+            ),
+          if (onDragonWings != null)
+            OutlinedButton(
+              onPressed: dragonWingsAvailable ? onDragonWings : null,
+              child: Text(
+                characterState.activeConditions.contains(dragonWingsCondition)
+                    ? 'Dismiss Dragon Wings'
+                    : 'Dragon Wings',
+              ),
+            ),
+          if (onRestoreDragonWings != null)
+            OutlinedButton(
+              onPressed: restoreDragonWingsAvailable
+                  ? onRestoreDragonWings
+                  : null,
+              child: const Text('Dragon Wings · Restore use'),
+            ),
+          if (characterState.activeConditions.contains(dragonWingsCondition))
+            Text(
+              'Dragon Wings · Fly Speed 60 feet · ${characterState.conditionTurns[dragonWingsCondition] ?? 0} turns remaining',
             ),
           if (onInnateSorcery != null)
             OutlinedButton(

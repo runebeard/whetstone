@@ -129,6 +129,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
               ...BuiltInClass.sorcerer
                   .classResources(
                     character.levelInClass('Sorcerer'),
+                    subclass: character.subclasses['Sorcerer'],
                     charismaModifier: character.abilityModifierFor(
                       Ability.charisma,
                     ),
@@ -137,7 +138,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
                     (resource) =>
                         resource.id == sorceryPointsResourceId ||
                         resource.id == sorcerousRestorationResourceId ||
-                        resource.id == innateSorceryResourceId,
+                        resource.id == innateSorceryResourceId ||
+                        resource.id == dragonWingsResourceId,
                   ),
               ...BuiltInClass.warlock
                   .classResources(
@@ -194,6 +196,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
     }
     diceRoller = widget.diceRoller ?? RandomDiceRoller();
     characterState = widget.initialSession.characterState;
+    if (!character.hasDragonWings) {
+      characterState = characterState.copyWith(
+        activeConditions: {...characterState.activeConditions}
+          ..remove(dragonWingsCondition),
+      );
+    }
     if (character.levelInClass('Sorcerer') < 1) {
       characterState = characterState.copyWith(
         activeConditions: {...characterState.activeConditions}
@@ -335,6 +343,13 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void updateCharacterState(CharacterState updatedState) {
+    if (!character.hasDragonWings &&
+        updatedState.activeConditions.contains(dragonWingsCondition)) {
+      updatedState = updatedState.copyWith(
+        activeConditions: {...updatedState.activeConditions}
+          ..remove(dragonWingsCondition),
+      );
+    }
     if (character.levelInClass('Sorcerer') < 1 &&
         updatedState.activeConditions.contains(innateSorceryCondition)) {
       updatedState = updatedState.copyWith(
@@ -7304,6 +7319,149 @@ class _CharacterOverviewState extends State<CharacterOverview>
       character.levelInClass('Sorcerer') >= 1 &&
       characterState.activeConditions.contains(innateSorceryCondition);
 
+  bool get dragonWingsActive =>
+      character.hasDragonWings &&
+      characterState.activeConditions.contains(dragonWingsCondition);
+
+  bool get dragonWingsAvailable {
+    if (dragonWingsActive) return true;
+    final use = resourceWithId(dragonWingsResourceId);
+    return character.hasDragonWings &&
+        characterState.canConcentrate &&
+        (currentMode != CharacterMode.combat ||
+            !usedCombatActions.contains(CombatActionCost.bonusAction)) &&
+        use != null &&
+        remainingUses(use) > 0;
+  }
+
+  Future<void> toggleDragonWings() async {
+    if (!dragonWingsAvailable) return;
+    final dismissing = dragonWingsActive;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          dismissing ? 'Dismiss Dragon Wings?' : 'Activate Dragon Wings?',
+        ),
+        content: Text(
+          dismissing
+              ? 'Dismiss your wings with no action or resource cost. Resolve your position and any falling at the table.'
+              : 'Spend one Dragon Wings use${currentMode == CharacterMode.combat ? ' and your Bonus Action' : ''}. Gain a Fly Speed of 60 feet for 1 hour, until you dismiss the wings. '
+                    'Track flight, movement and elapsed time outside combat at the table. The app counts down 600 tracked turns. This is not a spell and does not require concentration.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(dismissing ? 'Dismiss wings' : 'Activate wings'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        confirmed != true ||
+        !dragonWingsAvailable ||
+        dragonWingsActive != dismissing) {
+      return;
+    }
+    if (dismissing) {
+      updateCharacterState(
+        characterState.copyWith(
+          activeConditions: {...characterState.activeConditions}
+            ..remove(dragonWingsCondition),
+        ),
+      );
+      recordSessionEvent(
+        SessionEventType.combat,
+        'Dragon Wings dismissed',
+        detail: 'No action spent. Resolve flight and position at the table.',
+      );
+      return;
+    }
+    final use = resourceWithId(dragonWingsResourceId)!;
+    if (currentMode == CharacterMode.combat) {
+      usedCombatActions.add(CombatActionCost.bonusAction);
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        resourceValues: {
+          ...characterState.resourceValues,
+          use.id: remainingUses(use) - 1,
+        },
+        activeConditions: {
+          ...characterState.activeConditions,
+          dragonWingsCondition,
+        },
+        conditionTurns: {
+          ...characterState.conditionTurns,
+          dragonWingsCondition: 600,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Dragon Wings activated',
+      detail:
+          'One use spent · Fly Speed 60 feet for 1 hour. Flight and outside-combat elapsed time are table-managed.',
+    );
+  }
+
+  bool get restoreDragonWingsAvailable {
+    final use = resourceWithId(dragonWingsResourceId);
+    final points = resourceWithId(sorceryPointsResourceId);
+    return character.hasDragonWings &&
+        characterState.canConcentrate &&
+        use != null &&
+        remainingUses(use) == 0 &&
+        points != null &&
+        remainingUses(points) >= 3;
+  }
+
+  Future<void> restoreDragonWings() async {
+    if (!restoreDragonWingsAvailable) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Restore Dragon Wings?'),
+        content: const Text(
+          'Spend 3 Sorcery Points to restore one Dragon Wings use, with no action cost. This does not activate, dismiss or extend the wings.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Spend 3 points · Restore use'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || confirmed != true || !restoreDragonWingsAvailable) {
+      return;
+    }
+    final points = resourceWithId(sorceryPointsResourceId)!;
+    updateCharacterState(
+      characterState.copyWith(
+        resourceValues: {
+          ...characterState.resourceValues,
+          dragonWingsResourceId: 1,
+          points.id: remainingUses(points) - 3,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.resource,
+      'Dragon Wings restored',
+      detail:
+          '3 Sorcery Points spent · No action. Existing wings and their duration are unchanged.',
+    );
+  }
+
   bool get innateSorceryAvailable {
     if (innateSorceryActive) return true;
     if (character.levelInClass('Sorcerer') < 1 ||
@@ -8704,6 +8862,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
           ? toggleInnateSorcery
           : null,
       innateSorceryAvailable: innateSorceryAvailable,
+      onDragonWings: character.hasDragonWings ? toggleDragonWings : null,
+      dragonWingsAvailable: dragonWingsAvailable,
+      onRestoreDragonWings: character.hasDragonWings
+          ? restoreDragonWings
+          : null,
+      restoreDragonWingsAvailable: restoreDragonWingsAvailable,
       onCreateFontSlot: character.levelInClass('Sorcerer') >= 2
           ? createFontOfMagicSlot
           : null,
@@ -8780,6 +8944,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
           ? toggleInnateSorcery
           : null,
       innateSorceryAvailable: innateSorceryAvailable,
+      onDragonWings: character.hasDragonWings ? toggleDragonWings : null,
+      dragonWingsAvailable: dragonWingsAvailable,
+      onRestoreDragonWings: character.hasDragonWings
+          ? restoreDragonWings
+          : null,
+      restoreDragonWingsAvailable: restoreDragonWingsAvailable,
       onCreateFontSlot: character.levelInClass('Sorcerer') >= 2
           ? createFontOfMagicSlot
           : null,

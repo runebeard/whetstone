@@ -11,6 +11,7 @@ const divineSenseCondition = 'Divine Sense';
 const steadyAimCondition = 'Steady Aim';
 const superiorDefenseCondition = 'Superior Defense';
 const innateSorceryCondition = 'Innate Sorcery';
+const dragonWingsCondition = 'Dragon Wings';
 
 enum IncomingDamageType {
   other('Other or unspecified'),

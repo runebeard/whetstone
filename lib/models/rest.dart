@@ -180,6 +180,7 @@ class RestPlan {
         steadyAimCondition,
         superiorDefenseCondition,
         innateSorceryCondition,
+        dragonWingsCondition,
       });
     final ended = currentState.activeConditions.difference(restConditions);
     if (ended.isNotEmpty) changes.add('Ended ${ended.join(', ')}');

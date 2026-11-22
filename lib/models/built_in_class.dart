@@ -19,6 +19,7 @@ const hurlThroughHellResourceId = 'whetstone:subclass:hurl-through-hell';
 const sorceryPointsResourceId = 'whetstone:class:sorcery-points';
 const sorcerousRestorationResourceId = 'whetstone:class:sorcerous-restoration';
 const innateSorceryResourceId = 'whetstone:class:innate-sorcery';
+const dragonWingsResourceId = 'whetstone:subclass:dragon-wings';
 const wildShapeResourceId = 'whetstone:class:wild-shape';
 const bardicInspirationResourceId = 'whetstone:class:bardic-inspiration';
 const layOnHandsResourceId = 'whetstone:class:lay-on-hands';
@@ -41,6 +42,7 @@ const progressingClassResourceIds = {
   sorceryPointsResourceId,
   sorcerousRestorationResourceId,
   innateSorceryResourceId,
+  dragonWingsResourceId,
   wildShapeResourceId,
   bardicInspirationResourceId,
   layOnHandsResourceId,
@@ -241,6 +243,14 @@ enum BuiltInClass {
       _ => null,
     };
     return [
+      if (this == sorcerer && level >= 14 && subclass == 'Draconic Sorcery')
+        const CharacterResource(
+          id: dragonWingsResourceId,
+          name: 'Dragon Wings',
+          maximum: 1,
+          initialValue: 1,
+          rechargePeriod: RechargePeriod.longRest,
+        ),
       if (this == sorcerer && level >= 2)
         CharacterResource(
           id: sorceryPointsResourceId,
