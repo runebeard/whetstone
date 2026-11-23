@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../content/circle_spells.dart';
+import '../content/class_spells.dart';
 import '../content/wild_shape_forms.dart';
 import '../modes/combat_mode.dart';
 import '../modes/exploration_mode.dart';
@@ -268,15 +268,29 @@ class _CharacterOverviewState extends State<CharacterOverview>
     currentMode = widget.initialSession.isInCombat
         ? CharacterMode.combat
         : CharacterMode.exploration;
-    final circleSpells = withCircleSpells(character, characterState.druidLand);
+    final circleSpells = withClassSpells(character, characterState.druidLand);
     if (circleSpells.length != character.spells.length ||
         circleSpells.any(
           (spell) => !character.spells.any(
             (old) =>
                 old.id == spell.id &&
-                (!spell.isCircleGrant ||
+                old.prepared == spell.prepared &&
+                (!spell.isClassGrant ||
                     (old.summary == spell.summary &&
+                        old.name == spell.name &&
+                        old.level == spell.level &&
                         old.damageFormula == spell.damageFormula &&
+                        old.damageType == spell.damageType &&
+                        old.rollModifier == spell.rollModifier &&
+                        old.deriveAttackModifier ==
+                            spell.deriveAttackModifier &&
+                        old.savingThrowAbility == spell.savingThrowAbility &&
+                        old.rollEffectOnCast == spell.rollEffectOnCast &&
+                        old.castingAbility == spell.castingAbility &&
+                        old.concentration == spell.concentration &&
+                        old.castingTime == spell.castingTime &&
+                        old.range == spell.range &&
+                        old.components == spell.components &&
                         old.duration == spell.duration)),
           ),
         )) {
@@ -640,10 +654,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
           )
         : await confirmAuthoredAdvancement(editableCharacter, authored);
     if (!mounted || result == null) return;
-    final circleSpells = withCircleSpells(result, characterState.druidLand);
+    final circleSpells = withClassSpells(result, characterState.druidLand);
     final removedCircleKeys = {
       for (final spell in result.spells)
-        if (spell.isCircleGrant &&
+        if (spell.isClassGrant &&
             !circleSpells.any((entry) => entry.id == spell.id))
           spell.actionKey,
     };
@@ -966,7 +980,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
               onPressed: () => Navigator.pop(context, 'repeat'),
               child: const Text('Roll Repeat Effect'),
             ),
-          if (spell.isCircleGrant &&
+          if (spell.isClassGrant &&
               spell.savingThrowAbility != null &&
               spell.damageFormula == null)
             TextButton(
@@ -1434,7 +1448,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (!spell.isCircleGrant)
+              if (!spell.isClassGrant)
                 ListTile(
                   leading: const Icon(Icons.edit_outlined),
                   title: const Text('Edit Spell'),
@@ -1499,7 +1513,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
                   onTap: () => Navigator.pop(context, 'track-summon'),
                 ),
               if (spell.isCantrip &&
-                  !spell.isCircleGrant &&
+                  !spell.isClassGrant &&
                   character.levelInClass('Druid') > 0)
                 ListTile(
                   title: Text(
@@ -1509,14 +1523,15 @@ class _CharacterOverviewState extends State<CharacterOverview>
                   ),
                   onTap: () => Navigator.pop(context, 'druid-cantrip'),
                 ),
-              if (!spell.isCircleGrant)
+              if (!spell.isClassGrant)
                 ListTile(
                   leading: const Icon(Icons.delete_outline),
                   title: const Text('Remove Spell'),
                   onTap: () => Navigator.pop(context, 'remove'),
                 ),
-              if (!spell.isCircleGrant &&
-                  character.levelInClass('Sorcerer') >= 1)
+              if (!spell.isClassGrant &&
+                  character.levelInClass('Sorcerer') >= 1 &&
+                  !character.isDraconicClassSpell(spell))
                 ListTile(
                   title: Text(
                     character.sorcererSpellIds.contains(spell.id)
@@ -1792,7 +1807,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     Set<String> requestedPins, {
     DruidLand? land,
   }) {
-    final spells = withCircleSpells(
+    final spells = withClassSpells(
       character.copyWith(spells: requested),
       land ?? characterState.druidLand,
     );
@@ -2445,12 +2460,22 @@ class _CharacterOverviewState extends State<CharacterOverview>
     bool useFreeCast = false,
     String? scrollName,
   }) async {
+    if (spell.isDraconicGrant &&
+        spell.name == 'Legend Lore' &&
+        currentMode == CharacterMode.combat) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Complete this 10-minute casting outside combat.'),
+        ),
+      );
+      return;
+    }
     if (asRitual && (!spell.ritual || currentMode == CharacterMode.combat)) {
       return;
     }
     if (!canSpendSpellAction(spell, fromScroll: scrollName != null)) return;
     bool? freedomTarget;
-    if (spell.isCircleGrant && spell.name == 'Freedom of Movement') {
+    if (spell.isClassGrant && spell.name == 'Freedom of Movement') {
       freedomTarget = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -2530,14 +2555,17 @@ class _CharacterOverviewState extends State<CharacterOverview>
           ),
         );
       }
-      if (spell.isCircleGrant && spell.savingThrowAbility != null) {
+      if ((spell.isCircleGrant ||
+              (spell.isDraconicGrant &&
+                  {'Command', 'Fear', 'Charm Monster'}.contains(spell.name))) &&
+          spell.savingThrowAbility != null) {
         await resolveCircleControlSave(
           spell,
           scrollName == null
               ? characterForPhysicalChecks.spellSaveDc(spell)
               : spell.scrollSaveDc,
         );
-      } else if (spell.isCircleGrant) {
+      } else if (spell.isClassGrant) {
         recordSessionEvent(
           SessionEventType.combat,
           '${spell.name} cast',
@@ -2590,7 +2618,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   void startSpellConcentration(Spell spell, {int? slotLevel}) {
     if (!characterState.canConcentrate || characterState.isRaging) return;
-    final turns = spell.isCircleGrant
+    final turns = spell.isDraconicGrant
+        ? switch (spell.name) {
+            'Alter Self' || 'Arcane Eye' || 'Summon Dragon' => 600,
+            "Dragon's Breath" || 'Fear' => 10,
+            'Fly' => 100,
+            _ => null,
+          }
+        : spell.isCircleGrant
         ? switch (spell.name) {
             'Blur' ||
             'Hold Person' ||
@@ -7051,7 +7086,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     }
     bool eligible(Spell spell) =>
         spell.level > 0 &&
-        !spell.isCircleGrant &&
+        !character.isAlwaysPreparedSpell(spell) &&
         (spell.castingAbility == null ||
             spell.castingAbility == Ability.intelligence);
     Future<Spell?> choose(bool prepared) => showDialog<Spell>(

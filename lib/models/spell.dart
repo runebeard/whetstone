@@ -4,6 +4,23 @@ import 'character_action.dart';
 class Spell extends CharacterAction {
   static const circleGrantPrefix = 'whetstone:circle-spell:';
   bool get isCircleGrant => id.startsWith(circleGrantPrefix);
+  static const draconicGrantPrefix = 'whetstone:draconic-spell:';
+  bool get isDraconicGrant => id.startsWith(draconicGrantPrefix);
+  bool get isClassGrant => isCircleGrant || isDraconicGrant;
+  static String normalizedName(String name) =>
+      name.trim().toLowerCase().replaceAll('’', "'");
+  static const draconicGrants = {
+    'alter self': (3, 2),
+    'chromatic orb': (3, 1),
+    'command': (3, 1),
+    "dragon's breath": (3, 2),
+    'fear': (5, 3),
+    'fly': (5, 3),
+    'arcane eye': (7, 4),
+    'charm monster': (7, 4),
+    'legend lore': (9, 5),
+    'summon dragon': (9, 5),
+  };
 
   bool get hasCostlyOrConsumedMaterial {
     final description = components;

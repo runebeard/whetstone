@@ -57,7 +57,17 @@ class SpellbookModeView extends StatelessWidget {
   Widget build(BuildContext context) {
     final cantrips = sorted(character.spells.where((spell) => spell.isCantrip));
     final preparedSpells = sorted(
-      character.spells.where((spell) => !spell.isCantrip && spell.prepared),
+      character.spells.where(
+        (spell) =>
+            !spell.isCantrip &&
+            spell.prepared &&
+            !character.isAlwaysPreparedSpell(spell),
+      ),
+    );
+    final alwaysPreparedSpells = sorted(
+      character.spells.where(
+        (spell) => !spell.isCantrip && character.isAlwaysPreparedSpell(spell),
+      ),
     );
     final otherSpells = sorted(
       character.spells.where((spell) => !spell.isCantrip && !spell.prepared),
@@ -108,6 +118,7 @@ class SpellbookModeView extends StatelessWidget {
             const SizedBox(height: 16),
           ],
           buildSection('Cantrips', cantrips),
+          buildSection('Always Prepared', alwaysPreparedSpells),
           buildSection('Prepared Spells', preparedSpells),
           buildSection('Other Spells', otherSpells),
         ],

@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import '../content/class_spells.dart';
 import 'package:flutter/services.dart';
 
 import '../models/ability.dart';
@@ -332,7 +333,7 @@ class _CharacterEditorState extends State<CharacterEditor> {
       features: [...features, ...?authored?.grants(1)],
       journalEntries: [...?widget.character?.journalEntries],
     );
-    Navigator.pop(context, character);
+    Navigator.pop(context, withDraconicSpellGrants(character));
   }
 
   @override

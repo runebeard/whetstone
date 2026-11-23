@@ -639,7 +639,20 @@ class Character {
   bool benefitsFromInnateSorcery(Spell spell) =>
       innateSorceryActive &&
       levelInClass('Sorcerer') >= 1 &&
-      sorcererSpellIds.contains(spell.id);
+      (sorcererSpellIds.contains(spell.id) || isDraconicClassSpell(spell));
+
+  bool isDraconicClassSpell(Spell spell) {
+    final grant = Spell.draconicGrants[Spell.normalizedName(spell.name)];
+    return grant != null &&
+        subclasses['Sorcerer'] == 'Draconic Sorcery' &&
+        levelInClass('Sorcerer') >= grant.$1 &&
+        (spell.isDraconicGrant ||
+            spell.castingAbility == Ability.charisma ||
+            sorcererSpellIds.contains(spell.id));
+  }
+
+  bool isAlwaysPreparedSpell(Spell spell) =>
+      spell.isCircleGrant || isDraconicClassSpell(spell);
 
   int scoreFor(Ability ability) {
     return abilityScores[ability] ?? 10;
