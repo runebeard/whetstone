@@ -17,6 +17,7 @@ import 'stat_edit_dialog.dart';
 class CombatSummary extends StatefulWidget {
   final CharacterState characterState;
   final IncomingDamageType? additionalResistance;
+  final Set<IncomingDamageType> additionalResistances;
   final int? formArmourClass;
   final ValueChanged<CharacterState> onChanged;
   final ValueChanged<int>? onDamageTaken;
@@ -37,6 +38,7 @@ class CombatSummary extends StatefulWidget {
     super.key,
     required this.characterState,
     this.additionalResistance,
+    this.additionalResistances = const {},
     this.formArmourClass,
     required this.onChanged,
     this.onDamageTaken,
@@ -118,6 +120,7 @@ class _CombatSummaryState extends State<CombatSummary> {
       amount,
       type,
       additionalResistance: widget.additionalResistance,
+      additionalResistances: widget.additionalResistances,
     );
     if (applied <= 0) return;
     final damaged = characterState.takeDamage(applied, critical: critical);
@@ -270,7 +273,8 @@ class _CombatSummaryState extends State<CombatSummary> {
                         ) ||
                         characterState.isRaging ||
                         characterState.fiendishResistance != null ||
-                        widget.additionalResistance != null,
+                        widget.additionalResistance != null ||
+                        widget.additionalResistances.isNotEmpty,
                     onDamage: applyDamage,
                     onCriticalDamage: (damage, type) =>
                         applyDamage(damage, type, critical: true),

@@ -274,6 +274,7 @@ class _CharacterEditorState extends State<CharacterEditor> {
           : const {},
       subclasses: keepSubclasses ? previous!.subclasses : const {},
       draconicHpBonus: previous?.draconicHpBonus,
+      elementalAffinity: previous?.elementalAffinity,
       elementalFury: previousClass == BuiltInClass.named(className)
           ? previous?.elementalFury
           : null,

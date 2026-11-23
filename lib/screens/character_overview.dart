@@ -83,6 +83,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   String? readiedEffect;
   late Set<CombatActionCost> usedCombatActions;
   ActionSurgeState? actionSurge;
+  final elementalAffinityUsedSpellIds = <String>{};
   bool wildResurgenceUsedThisTurn = false;
   bool primalStrikeUsedThisTurn = false;
   bool cleaveUsedThisTurn = false;
@@ -124,6 +125,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
   void initState() {
     super.initState();
     character = widget.character;
+    elementalAffinityUsedSpellIds.addAll(
+      widget.initialSession.elementalAffinityUsedSpellIds,
+    );
     final missingMonkResources =
         [
               ...BuiltInClass.sorcerer
@@ -305,6 +309,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   void publishSession() {
     widget.onSessionChanged(
       CharacterSession(
+        elementalAffinityUsedSpellIds: {...elementalAffinityUsedSpellIds},
         characterState: characterState,
         inventory: [...inventory],
         archivedInventory: [...archivedInventory],
@@ -1671,7 +1676,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     if (canCast) {
       await castSpell(spell, scrollName: scrollName);
     } else if (spendInventoryItem(scrollName)) {
-      trackSpellAction(spell);
+      trackSpellAction(spell, newCast: false);
       recordSessionEvent(
         SessionEventType.combat,
         'Spell scroll failed',
@@ -2279,9 +2284,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
     return false;
   }
 
-  void trackSpellAction(Spell spell) {
+  void trackSpellAction(Spell spell, {bool newCast = true}) {
+    if (newCast) elementalAffinityUsedSpellIds.remove(spell.id);
     final cost = spellActionCost(spell);
     if (cost != null) setCombatActionUsed(cost, true);
+    if (cost == null) publishSession();
   }
 
   String freeCastId(Spell spell) => 'whetstone:free-cast:${spell.id}';
@@ -4736,18 +4743,31 @@ class _CharacterOverviewState extends State<CharacterOverview>
       );
       return;
     }
-    final expression = critical
+    var expression = critical
         ? baseExpression.withCriticalHitDice()
         : baseExpression;
+    final iceStorm =
+        action is Spell && action.isCircleGrant && action.name == 'Ice Storm';
+    final affinityBonus = action is Spell
+        ? await confirmElementalAffinityBonus(
+            action,
+            iceStorm ? 'cold' : action.damageType,
+          )
+        : 0;
+    if (!mounted) return;
+    if (!iceStorm && affinityBonus != 0) {
+      expression = expression.withModifierBonus(affinityBonus);
+    }
     HapticFeedback.selectionClick();
     final roll = expression.roll(action.name, diceRoller);
     if (action is Spell && action.isCircleGrant && action.name == 'Ice Storm') {
       final cold = const DiceExpression(
         diceCount: 4,
         dieSides: 6,
-      ).roll('Ice Storm cold', diceRoller);
+      ).withModifierBonus(affinityBonus).roll('Ice Storm cold', diceRoller);
       final bludgeoningDamage = halfDamage ? roll.total ~/ 2 : roll.total;
-      final coldDamage = halfDamage ? cold.total ~/ 2 : cold.total;
+      final coldTotal = cold.total.clamp(0, 999999);
+      final coldDamage = halfDamage ? coldTotal ~/ 2 : coldTotal;
       addRollNotice(
         title: 'Ice Storm Damage',
         calculation: '$bludgeoningDamage bludgeoning + $coldDamage cold',
@@ -4757,9 +4777,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
       );
       return;
     }
-    final total = halfDamage
-        ? (roll.total < 0 ? 0 : roll.total ~/ 2)
+    final adjustedTotal = action is Spell && affinityBonus != 0
+        ? roll.total.clamp(0, 999999)
         : roll.total;
+    final total = halfDamage
+        ? (adjustedTotal < 0 ? 0 : adjustedTotal ~/ 2)
+        : adjustedTotal;
     final dice = roll.dice.join(' + ');
     final modifier = expression.modifier;
     final modifierText = modifier == 0
@@ -4775,6 +4798,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
           : '${action.name} Damage',
       calculation:
           '${expression.notation}: $dice$modifierText = ${roll.total}'
+          '${adjustedTotal != roll.total ? ' → $adjustedTotal minimum damage' : ''}'
           '${halfDamage ? ' → $total after save' : ''}',
       total: total,
       detail: action.damageType == null
@@ -7442,6 +7466,112 @@ class _CharacterOverviewState extends State<CharacterOverview>
       character.levelInClass('Sorcerer') >= 1 &&
       characterState.activeConditions.contains(innateSorceryCondition);
 
+  Future<void> chooseElementalAffinity() async {
+    if (!character.hasElementalAffinity) return;
+    final current = character.elementalAffinity;
+    if (current != null) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('Elemental Affinity · ${current.label}'),
+          content: Text(
+            'You have ${current.label} Resistance. When casting a spell that deals ${current.label} damage, you may add your Charisma modifier to one damage roll of that cast. Your damage type choice is saved.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    final chosen = await showDialog<DraconicAffinity>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Elemental Affinity · Choose damage type'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'Choose your permanent Draconic affinity. Gain Resistance to that type and add Charisma to one matching damage roll of a spell you cast. No action or resource is spent.',
+            ),
+          ),
+          for (final type in DraconicAffinity.values)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, type),
+              child: Text(type.label),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        chosen == null ||
+        !character.hasElementalAffinity ||
+        character.elementalAffinity != null) {
+      return;
+    }
+    final updated = character.copyWith(elementalAffinity: chosen);
+    setState(() => character = updated);
+    widget.onCharacterChanged(updated);
+    recordSessionEvent(
+      SessionEventType.condition,
+      'Elemental Affinity chosen',
+      detail:
+          '${chosen.label} Resistance and matching spell-damage affinity. No action or resource spent.',
+    );
+  }
+
+  Future<int> confirmElementalAffinityBonus(
+    Spell spell,
+    String? damageType,
+  ) async {
+    final affinity = character.elementalAffinity;
+    bool eligible() =>
+        mounted &&
+        character.hasElementalAffinity &&
+        affinity != null &&
+        damageType?.trim().toLowerCase() == affinity.name &&
+        !elementalAffinityUsedSpellIds.contains(spell.id);
+    if (!eligible()) return 0;
+    final bonus = character.abilityModifierFor(Ability.charisma);
+    if (bonus == 0) return 0;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Elemental Affinity · Spell damage'),
+        content: Text(
+          'Add ${bonus >= 0 ? '+' : ''}$bonus Charisma to this ${affinity!.label} damage roll of ${spell.name}? Confirm this belongs to a spell you cast and that you have not applied this bonus to another damage roll of the same cast. '
+          'The flat bonus is not doubled on a critical hit and is included before damage is halved on a save. Concurrent casts of the same spell and manually rolled casts need table confirmation.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Keep for another roll'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Apply Charisma bonus'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        confirmed != true ||
+        !eligible() ||
+        character.elementalAffinity != affinity) {
+      return 0;
+    }
+    elementalAffinityUsedSpellIds.add(spell.id);
+    publishSession();
+    return bonus;
+  }
+
   bool get dragonWingsActive =>
       character.hasDragonWings &&
       characterState.activeConditions.contains(dragonWingsCondition);
@@ -8985,6 +9115,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
           ? toggleInnateSorcery
           : null,
       innateSorceryAvailable: innateSorceryAvailable,
+      onElementalAffinity: character.hasElementalAffinity
+          ? chooseElementalAffinity
+          : null,
       onDraconicHp: character.hasDraconicResilience ? reviewDraconicHp : null,
       onDraconicDefense:
           character.hasDraconicResilience && activeWildShape == null
@@ -9072,6 +9205,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
           ? toggleInnateSorcery
           : null,
       innateSorceryAvailable: innateSorceryAvailable,
+      onElementalAffinity: character.hasElementalAffinity
+          ? chooseElementalAffinity
+          : null,
       onDraconicHp: character.hasDraconicResilience ? reviewDraconicHp : null,
       onDraconicDefense:
           character.hasDraconicResilience && activeWildShape == null

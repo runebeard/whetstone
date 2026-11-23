@@ -400,6 +400,7 @@ class _CharacterVaultState extends State<CharacterVault> {
       resourceValues: updatedResourceValues,
     );
     final updatedSession = CharacterSession(
+      elementalAffinityUsedSpellIds: session.elementalAffinityUsedSpellIds,
       characterState: updated.hasFiendishResilience
           ? updatedState
           : updatedState.copyWith(

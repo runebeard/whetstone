@@ -300,12 +300,20 @@ class CharacterState {
       ? druidLand?.resistance
       : null;
 
+  Set<IncomingDamageType> classResistancesFor(Character character) => {
+    ?landResistanceFor(character),
+    if (character.hasElementalAffinity && character.elementalAffinity != null)
+      IncomingDamageType.values.byName(character.elementalAffinity!.name),
+  };
+
   int damageAfterResistance(
     int amount,
     IncomingDamageType type, {
     IncomingDamageType? additionalResistance,
+    Set<IncomingDamageType> additionalResistances = const {},
   }) =>
       type == additionalResistance ||
+          additionalResistances.contains(type) ||
           (fiendishResistance != null &&
               fiendishResistance != IncomingDamageType.force &&
               fiendishResistance != IncomingDamageType.other &&

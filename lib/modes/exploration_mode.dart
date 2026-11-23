@@ -27,6 +27,7 @@ class ExplorationModeView extends StatelessWidget {
   final VoidCallback? onBarbarianDefense;
   final VoidCallback? onDraconicDefense;
   final VoidCallback? onDraconicHp;
+  final VoidCallback? onElementalAffinity;
   final VoidCallback? onArcaneRecovery;
   final VoidCallback? onMemorizeSpell;
   final VoidCallback? onMagicalCunning;
@@ -78,6 +79,7 @@ class ExplorationModeView extends StatelessWidget {
     this.onBarbarianDefense,
     this.onDraconicDefense,
     this.onDraconicHp,
+    this.onElementalAffinity,
     this.onArcaneRecovery,
     this.onMemorizeSpell,
     this.onMagicalCunning,
@@ -142,7 +144,9 @@ class ExplorationModeView extends StatelessWidget {
           CombatSummary(
             characterState: characterState,
             formArmourClass: formArmourClass,
-            additionalResistance: characterState.landResistanceFor(character),
+            additionalResistances: characterState.classResistancesFor(
+              character,
+            ),
             onChanged: onCharacterStateChanged,
             onDamageTaken: onDamageTaken,
             adjustIncomingDamage: adjustIncomingDamage,
@@ -163,6 +167,13 @@ class ExplorationModeView extends StatelessWidget {
             icon: const Icon(Icons.shield_outlined),
             label: const Text('Combat'),
           ),
+          if (onElementalAffinity != null)
+            OutlinedButton(
+              onPressed: onElementalAffinity,
+              child: Text(
+                'Elemental Affinity · ${character.elementalAffinity?.label ?? 'Choose damage type'}',
+              ),
+            ),
           if (onDraconicHp != null)
             OutlinedButton(
               onPressed: onDraconicHp,

@@ -42,6 +42,7 @@ class CharacterSession {
   final int flurryAttacksRemaining;
   final int attackActionAttacksRemaining;
   final List<SessionEvent> timeline;
+  final Set<String> elementalAffinityUsedSpellIds;
 
   const CharacterSession({
     required this.characterState,
@@ -71,6 +72,7 @@ class CharacterSession {
     this.flurryAttacksRemaining = 0,
     this.attackActionAttacksRemaining = 0,
     this.timeline = const [],
+    this.elementalAffinityUsedSpellIds = const {},
   });
 
   factory CharacterSession.fromCharacter(Character character) {
@@ -124,6 +126,8 @@ class CharacterSession {
             .map((cost) => cost.name)
             .toList(),
       'timeline': timeline.map((event) => event.toJson()).toList(),
+      if (elementalAffinityUsedSpellIds.isNotEmpty)
+        'elementalAffinityUsedSpellIds': elementalAffinityUsedSpellIds.toList(),
     };
   }
 
@@ -135,6 +139,10 @@ class CharacterSession {
     }
 
     return CharacterSession(
+      elementalAffinityUsedSpellIds:
+          (json['elementalAffinityUsedSpellIds'] as List<Object?>? ?? const [])
+              .cast<String>()
+              .toSet(),
       characterState: CharacterState.fromJson(
         json['characterState'] as Map<String, Object?>,
       ),

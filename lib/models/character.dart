@@ -25,6 +25,17 @@ enum ElementalFury {
   final String label;
 }
 
+enum DraconicAffinity {
+  acid('Acid'),
+  cold('Cold'),
+  fire('Fire'),
+  lightning('Lightning'),
+  poison('Poison');
+
+  const DraconicAffinity(this.label);
+  final String label;
+}
+
 class Character {
   final String id;
   final String name;
@@ -36,6 +47,7 @@ class Character {
   final Set<String> druidCantripIds;
   final Set<String> sorcererSpellIds;
   final int? draconicHpBonus;
+  final DraconicAffinity? elementalAffinity;
   // A live effect supplied by the session; never serialized in the definition.
   final bool innateSorceryActive;
   final Map<String, int> skillModifierMinimums;
@@ -74,6 +86,7 @@ class Character {
     this.druidCantripIds = const {},
     this.sorcererSpellIds = const {},
     this.draconicHpBonus,
+    this.elementalAffinity,
     this.innateSorceryActive = false,
     this.skillModifierMinimums = const {},
     this.saveModifierMinimums = const {},
@@ -112,6 +125,7 @@ class Character {
     Set<String>? druidCantripIds,
     Set<String>? sorcererSpellIds,
     int? draconicHpBonus,
+    DraconicAffinity? elementalAffinity,
     bool? innateSorceryActive,
     Map<String, int>? skillModifierMinimums,
     Map<Ability, int>? saveModifierMinimums,
@@ -148,6 +162,7 @@ class Character {
       druidCantripIds: druidCantripIds ?? this.druidCantripIds,
       sorcererSpellIds: sorcererSpellIds ?? this.sorcererSpellIds,
       draconicHpBonus: draconicHpBonus ?? this.draconicHpBonus,
+      elementalAffinity: elementalAffinity ?? this.elementalAffinity,
       innateSorceryActive: innateSorceryActive ?? this.innateSorceryActive,
       skillModifierMinimums:
           skillModifierMinimums ?? this.skillModifierMinimums,
@@ -192,6 +207,7 @@ class Character {
       if (sorcererSpellIds.isNotEmpty)
         'sorcererSpellIds': sorcererSpellIds.toList(),
       'draconicHpBonus': ?draconicHpBonus,
+      'elementalAffinity': ?elementalAffinity?.name,
       'savedClassRules': ?savedClassRules,
       'level': level,
       'currentHp': currentHp,
@@ -307,6 +323,9 @@ class Character {
           .cast<String>()
           .toSet(),
       draconicHpBonus: (json['draconicHpBonus'] as int?)?.clamp(0, 20),
+      elementalAffinity: DraconicAffinity.values
+          .where((value) => value.name == json['elementalAffinity'])
+          .firstOrNull,
       primalOrder: PrimalOrder.values
           .where((order) => order.name == json['primalOrder'])
           .firstOrNull,
@@ -460,6 +479,9 @@ class Character {
       subclasses['Sorcerer'] == 'Draconic Sorcery';
   bool get hasDraconicResilience =>
       levelInClass('Sorcerer') >= 3 &&
+      subclasses['Sorcerer'] == 'Draconic Sorcery';
+  bool get hasElementalAffinity =>
+      levelInClass('Sorcerer') >= 6 &&
       subclasses['Sorcerer'] == 'Draconic Sorcery';
 
   int get martialArtsDieSides => switch (levelInClass('Monk')) {
