@@ -3166,6 +3166,79 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
+  Future<void> reviewDraconicHp() async {
+    if (!character.hasDraconicResilience) return;
+    final target = character.levelInClass('Sorcerer');
+    final recorded = character.draconicHpBonus;
+    final adjustment = target - (recorded ?? 0);
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Draconic Resilience · HP'),
+        content: Text(
+          recorded == target
+              ? 'Your +$target Draconic Resilience HP bonus is already recorded. No extra HP will be added. Future advancement tracks changes in Sorcerer levels.'
+              : 'At Sorcerer level $target, Draconic Resilience contributes +$target to maximum HP. '
+                    '${recorded == null ? 'This recovered character has not yet been reviewed. Choose whether the bonus is already included in your current maximum of ${characterState.maxHp} HP.' : 'The recorded contribution is +$recorded HP. Choose whether to apply the ${adjustment >= 0 ? '+' : ''}$adjustment adjustment or record that your maximum was already adjusted.'} '
+                    'Current HP is preserved unless a reduced maximum is lower. This spends no action or resource.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(recorded == target ? 'Done' : 'Cancel'),
+          ),
+          if (recorded != target) ...[
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'included'),
+              child: Text('HP already includes +$target'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, 'apply'),
+              child: Text(
+                'Apply ${adjustment >= 0 ? '+' : ''}$adjustment maximum HP',
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+    if (!mounted ||
+        choice == null ||
+        !character.hasDraconicResilience ||
+        character.draconicHpBonus != recorded ||
+        character.levelInClass('Sorcerer') != target) {
+      return;
+    }
+    final maximum = characterState.maxHp + (choice == 'apply' ? adjustment : 0);
+    if (maximum < 1 || maximum > 999) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Maximum HP must remain 1–999. Review your maximum HP before applying this bonus.',
+          ),
+        ),
+      );
+      return;
+    }
+    final hp = characterState.currentHp.clamp(0, maximum);
+    final updated = character.copyWith(
+      draconicHpBonus: target,
+      maxHp: maximum,
+      currentHp: hp,
+    );
+    setState(() => character = updated);
+    widget.onCharacterChanged(updated);
+    updateCharacterState(
+      characterState.copyWith(maxHp: maximum, currentHp: hp),
+    );
+    recordSessionEvent(
+      SessionEventType.condition,
+      'Draconic Resilience HP reviewed',
+      detail:
+          '+$target class HP contribution recorded. ${choice == 'apply' ? 'Maximum HP adjusted by $adjustment to $maximum.' : 'Existing maximum HP $maximum retained.'} No action or resource spent.',
+    );
+  }
+
   Future<void> useMonkDefense() async {
     final level = character.levelInClass('Monk');
     if (level < 1 || activeWildShape != null) return;
@@ -8912,6 +8985,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
           ? toggleInnateSorcery
           : null,
       innateSorceryAvailable: innateSorceryAvailable,
+      onDraconicHp: character.hasDraconicResilience ? reviewDraconicHp : null,
       onDraconicDefense:
           character.hasDraconicResilience && activeWildShape == null
           ? useDraconicDefense
@@ -8998,6 +9072,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
           ? toggleInnateSorcery
           : null,
       innateSorceryAvailable: innateSorceryAvailable,
+      onDraconicHp: character.hasDraconicResilience ? reviewDraconicHp : null,
       onDraconicDefense:
           character.hasDraconicResilience && activeWildShape == null
           ? useDraconicDefense

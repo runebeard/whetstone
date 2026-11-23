@@ -51,6 +51,28 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
   late final Map<String, String> subclasses;
   PrimalOrder? primalOrder;
   ElementalFury? elementalFury;
+  bool applyDraconicHpAdjustment = true;
+
+  int? get nextDraconicHpBonus {
+    final level = int.tryParse(levelController.text) ?? widget.character.level;
+    final candidate = widget.character.copyWith(
+      level: level,
+      additionalClassLevels: classAllocation,
+      subclasses: subclasses,
+    );
+    final target = candidate.hasDraconicResilience
+        ? candidate.levelInClass('Sorcerer')
+        : 0;
+    if (widget.character.draconicHpBonus != null ||
+        (!widget.character.hasDraconicResilience && target > 0)) {
+      return target;
+    }
+    return null;
+  }
+
+  int get draconicHpAdjustment => nextDraconicHpBonus == null
+      ? 0
+      : nextDraconicHpBonus! - (widget.character.draconicHpBonus ?? 0);
 
   @override
   void initState() {
@@ -370,7 +392,14 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
     final level = int.parse(levelController.text);
     final maximumHp =
         int.parse(maxHpController.text) +
-        modifierChange(Ability.constitution) * level;
+        modifierChange(Ability.constitution) * level +
+        (applyDraconicHpAdjustment ? draconicHpAdjustment : 0);
+    if (maximumHp < 1 || maximumHp > 999) {
+      showProgressionMessage(
+        'Final maximum HP must be 1–999 after class bonuses.',
+      );
+      return;
+    }
     if (additionalClasses.values.any(
       (controller) => numberBetween(controller.text, 0, 19) != null,
     )) {
@@ -442,6 +471,7 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
         },
         currentHp: widget.character.currentHp.clamp(0, maximumHp),
         maxHp: maximumHp,
+        draconicHpBonus: nextDraconicHpBonus,
         abilityScores: {
           ...current.abilityScores,
           for (final ability in Ability.values) ability: finalScore(ability),
@@ -547,6 +577,25 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
                       minimum: 1,
                       maximum: 999,
                     ),
+                    if (draconicHpAdjustment != 0)
+                      CheckboxListTile(
+                        key: const ValueKey('advancement-draconic-hp'),
+                        title: Text(
+                          'Draconic Resilience · ${draconicHpAdjustment >= 0 ? '+' : ''}$draconicHpAdjustment maximum HP',
+                        ),
+                        subtitle: const Text(
+                          'Add this adjustment when saving. Uncheck if your entered maximum HP already includes it.',
+                        ),
+                        value: applyDraconicHpAdjustment,
+                        onChanged: (value) => setState(
+                          () => applyDraconicHpAdjustment = value ?? true,
+                        ),
+                      ),
+                    if (widget.character.hasDraconicResilience &&
+                        widget.character.draconicHpBonus == null)
+                      const Text(
+                        'Review Draconic Resilience HP from Explore to enable automatic class HP progression.',
+                      ),
                     if (additionalClasses.isNotEmpty)
                       ExpansionTile(
                         title: const Text('Additional class levels'),

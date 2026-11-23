@@ -26,6 +26,7 @@ class ExplorationModeView extends StatelessWidget {
   final VoidCallback? onMonkDefense;
   final VoidCallback? onBarbarianDefense;
   final VoidCallback? onDraconicDefense;
+  final VoidCallback? onDraconicHp;
   final VoidCallback? onArcaneRecovery;
   final VoidCallback? onMemorizeSpell;
   final VoidCallback? onMagicalCunning;
@@ -76,6 +77,7 @@ class ExplorationModeView extends StatelessWidget {
     this.onMonkDefense,
     this.onBarbarianDefense,
     this.onDraconicDefense,
+    this.onDraconicHp,
     this.onArcaneRecovery,
     this.onMemorizeSpell,
     this.onMagicalCunning,
@@ -161,6 +163,11 @@ class ExplorationModeView extends StatelessWidget {
             icon: const Icon(Icons.shield_outlined),
             label: const Text('Combat'),
           ),
+          if (onDraconicHp != null)
+            OutlinedButton(
+              onPressed: onDraconicHp,
+              child: const Text('Draconic Resilience · HP'),
+            ),
           if (onDraconicDefense != null)
             OutlinedButton(
               onPressed: onDraconicDefense,

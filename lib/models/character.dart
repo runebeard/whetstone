@@ -35,6 +35,7 @@ class Character {
   final ElementalFury? elementalFury;
   final Set<String> druidCantripIds;
   final Set<String> sorcererSpellIds;
+  final int? draconicHpBonus;
   // A live effect supplied by the session; never serialized in the definition.
   final bool innateSorceryActive;
   final Map<String, int> skillModifierMinimums;
@@ -72,6 +73,7 @@ class Character {
     this.elementalFury,
     this.druidCantripIds = const {},
     this.sorcererSpellIds = const {},
+    this.draconicHpBonus,
     this.innateSorceryActive = false,
     this.skillModifierMinimums = const {},
     this.saveModifierMinimums = const {},
@@ -109,6 +111,7 @@ class Character {
     bool clearElementalFury = false,
     Set<String>? druidCantripIds,
     Set<String>? sorcererSpellIds,
+    int? draconicHpBonus,
     bool? innateSorceryActive,
     Map<String, int>? skillModifierMinimums,
     Map<Ability, int>? saveModifierMinimums,
@@ -144,6 +147,7 @@ class Character {
           : elementalFury ?? this.elementalFury,
       druidCantripIds: druidCantripIds ?? this.druidCantripIds,
       sorcererSpellIds: sorcererSpellIds ?? this.sorcererSpellIds,
+      draconicHpBonus: draconicHpBonus ?? this.draconicHpBonus,
       innateSorceryActive: innateSorceryActive ?? this.innateSorceryActive,
       skillModifierMinimums:
           skillModifierMinimums ?? this.skillModifierMinimums,
@@ -187,6 +191,7 @@ class Character {
         'druidCantripIds': druidCantripIds.toList(),
       if (sorcererSpellIds.isNotEmpty)
         'sorcererSpellIds': sorcererSpellIds.toList(),
+      'draconicHpBonus': ?draconicHpBonus,
       'savedClassRules': ?savedClassRules,
       'level': level,
       'currentHp': currentHp,
@@ -301,6 +306,7 @@ class Character {
       sorcererSpellIds: (json['sorcererSpellIds'] as List<Object?>? ?? const [])
           .cast<String>()
           .toSet(),
+      draconicHpBonus: (json['draconicHpBonus'] as int?)?.clamp(0, 20),
       primalOrder: PrimalOrder.values
           .where((order) => order.name == json['primalOrder'])
           .firstOrNull,

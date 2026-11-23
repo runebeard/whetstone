@@ -66,6 +66,7 @@ class CombatModeView extends StatelessWidget {
   final VoidCallback? onMonkDefense;
   final VoidCallback? onBarbarianDefense;
   final VoidCallback? onDraconicDefense;
+  final VoidCallback? onDraconicHp;
   final VoidCallback? onIntimidatingPresence;
   final VoidCallback? onRetaliation;
   final VoidCallback? onRecklessAttack;
@@ -158,6 +159,7 @@ class CombatModeView extends StatelessWidget {
     this.onMonkDefense,
     this.onBarbarianDefense,
     this.onDraconicDefense,
+    this.onDraconicHp,
     this.onIntimidatingPresence,
     this.onRetaliation,
     this.onRecklessAttack,
@@ -511,6 +513,11 @@ class CombatModeView extends StatelessWidget {
             OutlinedButton(
               onPressed: darkOnesBlessingAvailable ? onDarkOnesBlessing : null,
               child: const Text('Dark One’s Blessing'),
+            ),
+          if (onDraconicHp != null)
+            OutlinedButton(
+              onPressed: onDraconicHp,
+              child: const Text('Draconic Resilience · HP'),
             ),
           if (onDraconicDefense != null)
             OutlinedButton(
