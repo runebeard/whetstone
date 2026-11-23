@@ -143,7 +143,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
                         resource.id == sorceryPointsResourceId ||
                         resource.id == sorcerousRestorationResourceId ||
                         resource.id == innateSorceryResourceId ||
-                        resource.id == dragonWingsResourceId,
+                        resource.id == dragonWingsResourceId ||
+                        resource.id == dragonCompanionResourceId,
                   ),
               ...BuiltInClass.warlock
                   .classResources(
@@ -199,7 +200,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       });
     }
     diceRoller = widget.diceRoller ?? RandomDiceRoller();
-    characterState = widget.initialSession.characterState;
+    characterState = widget.initialSession.characterState
+        .normalizeDragonCompanion(character);
     if (!character.hasDragonWings) {
       characterState = characterState.copyWith(
         activeConditions: {...characterState.activeConditions}
@@ -301,6 +303,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       });
     }
     if (!characterState.canConcentrate ||
+        characterState.dragonCompanionSpellId !=
+            widget.initialSession.characterState.dragonCompanionSpellId ||
         characterState.fiendishResistance != null ||
         characterState.fiendishResilienceAvailable ||
         characterState.activeConditions.isNotEmpty) {
@@ -362,6 +366,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void updateCharacterState(CharacterState updatedState) {
+    updatedState = updatedState.normalizeDragonCompanion(character);
     if (!character.hasDragonWings &&
         updatedState.activeConditions.contains(dragonWingsCondition)) {
       updatedState = updatedState.copyWith(
@@ -1482,7 +1487,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
               if (freeCast != null)
                 ListTile(
                   leading: const Icon(Icons.auto_awesome),
-                  title: const Text('Use Free Cast'),
+                  title: Text(
+                    freeCast.id == dragonCompanionResourceId
+                        ? 'Dragon Companion · Free cast'
+                        : 'Use Free Cast',
+                  ),
                   subtitle: Text('${remainingUses(freeCast)} remaining'),
                   onTap:
                       remainingUses(freeCast) > 0 &&
@@ -1597,7 +1606,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
         await trackSpellSummon(spell);
       case 'dismiss-summon':
         final summons = {...characterState.spellSummons}..remove(spell.id);
-        updateCharacterState(characterState.copyWith(spellSummons: summons));
+        updateCharacterState(
+          characterState.dragonCompanionSpellId == spell.id
+              ? characterState.endDragonCompanion()
+              : characterState.copyWith(spellSummons: summons),
+        );
         recordSessionEvent(
           SessionEventType.combat,
           '${spell.name} summon dismissed',
@@ -2215,6 +2228,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       context: context,
       builder: (context) => ActionDetailsDialog(
         action: action,
+        spellComponents:
+            action is Spell && character.benefitsFromDragonCompanion(action)
+            ? 'V, S · Dragon Companion waives the Material component'
+            : null,
         spellSaveDc: action is Spell
             ? characterForPhysicalChecks.spellSaveDc(action)
             : null,
@@ -2317,6 +2334,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
   );
 
   CharacterResource? freeCastResource(Spell spell) {
+    final companion = character.benefitsFromDragonCompanion(spell)
+        ? resourceWithId(dragonCompanionResourceId)
+        : null;
+    if (companion != null && remainingUses(companion) > 0) return companion;
     CharacterResource? personal;
     for (final resource in character.resources) {
       if (resource.id != freeCastId(spell)) continue;
@@ -2334,7 +2355,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
                       name.toLowerCase() == spell.name.trim().toLowerCase(),
                 ) ??
             false);
-    return eligible ? circleFreeCast : personal;
+    return eligible ? circleFreeCast : personal ?? companion;
   }
 
   void addFreeCast(Spell spell) {
@@ -2474,6 +2495,49 @@ class _CharacterOverviewState extends State<CharacterOverview>
       return;
     }
     if (!canSpendSpellAction(spell, fromScroll: scrollName != null)) return;
+    final companionCast =
+        scrollName == null &&
+        !asRitual &&
+        character.benefitsFromDragonCompanion(spell);
+    var companionWithoutConcentration = false;
+    if (companionCast) {
+      final sameConcentration = characterState.concentrationSpellId == spell.id;
+      final choice = await showDialog<bool>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: const Text('Summon Dragon · Concentration'),
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'Dragon Companion waives the Material component. '
+                'Track the latest spirit here; resolve its statistics and attacks at the table.',
+              ),
+            ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Concentrate · 1 hour'),
+            ),
+            SimpleDialogOption(
+              onPressed: sameConcentration
+                  ? null
+                  : () => Navigator.pop(context, true),
+              child: Text(
+                sameConcentration
+                    ? 'End concentration on the earlier dragon first'
+                    : 'Dragon Companion · No concentration · 1 minute',
+              ),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || choice == null || !canSpendSpellAction(spell)) return;
+      companionWithoutConcentration = choice;
+    }
     bool? freedomTarget;
     if (spell.isClassGrant && spell.name == 'Freedom of Movement') {
       freedomTarget = await showDialog<bool>(
@@ -2537,10 +2601,40 @@ class _CharacterOverviewState extends State<CharacterOverview>
           return;
         }
       }
-      if (spell.concentration) {
+      if (companionCast) {
+        updateCharacterState(characterState.endDragonCompanion());
+      }
+      if (companionWithoutConcentration) {
+        updateCharacterState(
+          characterState.copyWith(
+            dragonCompanionSpellId: spell.id,
+            activeConditions: {
+              ...characterState.activeConditions,
+              dragonCompanionCondition,
+            },
+            conditionTurns: {
+              ...characterState.conditionTurns,
+              dragonCompanionCondition: 10,
+            },
+            spellSummons: {
+              ...characterState.spellSummons,
+              spell.id: 'Draconic Spirit · Dragon Companion (no concentration)',
+            },
+          ),
+        );
+      } else if (spell.concentration) {
         startSpellConcentration(spell, slotLevel: slotLevel);
       }
       trackSpellAction(spell);
+      if (companionCast) {
+        recordSessionEvent(
+          SessionEventType.combat,
+          'Dragon Companion cast',
+          detail:
+              '${useFreeCast ? 'Free cast' : 'Spell slot'} · Material waived · '
+              '${companionWithoutConcentration ? 'No concentration · 1 minute' : 'Concentration · 1 hour'}. Earlier spirits remain table-managed.',
+        );
+      }
       if (freedomTarget == true) {
         updateCharacterState(
           characterState.copyWith(

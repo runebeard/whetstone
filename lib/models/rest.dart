@@ -181,6 +181,7 @@ class RestPlan {
         superiorDefenseCondition,
         innateSorceryCondition,
         dragonWingsCondition,
+        dragonCompanionCondition,
       });
     final ended = currentState.activeConditions.difference(restConditions);
     if (ended.isNotEmpty) changes.add('Ended ${ended.join(', ')}');
@@ -271,7 +272,7 @@ class RestPlan {
     }
     return RestPlan(
       type: type,
-      updatedState: currentState.copyWith(
+      updatedState: currentState.endDragonCompanion().copyWith(
         fiendishResilienceAvailable: character.hasFiendishResilience,
         clearFiendishResistance: !character.hasFiendishResilience,
         memorizeSpellAvailable:

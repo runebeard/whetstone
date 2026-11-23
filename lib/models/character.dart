@@ -483,6 +483,13 @@ class Character {
   bool get hasElementalAffinity =>
       levelInClass('Sorcerer') >= 6 &&
       subclasses['Sorcerer'] == 'Draconic Sorcery';
+  bool get hasDragonCompanion =>
+      levelInClass('Sorcerer') >= 18 &&
+      subclasses['Sorcerer'] == 'Draconic Sorcery';
+  bool benefitsFromDragonCompanion(Spell spell) =>
+      hasDragonCompanion &&
+      isDraconicClassSpell(spell) &&
+      Spell.normalizedName(spell.name) == 'summon dragon';
 
   int get martialArtsDieSides => switch (levelInClass('Monk')) {
     >= 17 => 12,

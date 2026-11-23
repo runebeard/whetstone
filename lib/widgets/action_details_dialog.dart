@@ -11,6 +11,7 @@ class ActionDetailsDialog extends StatelessWidget {
   final VoidCallback? onRollDamage;
   final String? spellDamageFormula;
   final String? spellRange;
+  final String? spellComponents;
 
   const ActionDetailsDialog({
     super.key,
@@ -21,6 +22,7 @@ class ActionDetailsDialog extends StatelessWidget {
     this.onRollDamage,
     this.spellDamageFormula,
     this.spellRange,
+    this.spellComponents,
   });
 
   @override
@@ -46,7 +48,7 @@ class ActionDetailsDialog extends StatelessWidget {
               if ((spellRange ?? spell.range) case final value?)
                 Text('Range: $value'),
               if (spell.duration case final value?) Text('Duration: $value'),
-              if (spell.components case final value?)
+              if ((spellComponents ?? spell.components) case final value?)
                 Text('Components: $value'),
               if (spell.ritual) const Text('Ritual'),
               if (spell.rollEffectOnCast)

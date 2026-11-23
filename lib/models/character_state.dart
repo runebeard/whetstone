@@ -12,6 +12,7 @@ const steadyAimCondition = 'Steady Aim';
 const superiorDefenseCondition = 'Superior Defense';
 const innateSorceryCondition = 'Innate Sorcery';
 const dragonWingsCondition = 'Dragon Wings';
+const dragonCompanionCondition = 'Dragon Companion';
 
 enum IncomingDamageType {
   other('Other or unspecified'),
@@ -95,6 +96,7 @@ class CharacterState {
   final bool memorizeSpellAvailable;
   final IncomingDamageType? fiendishResistance;
   final bool fiendishResilienceAvailable;
+  final String? dragonCompanionSpellId;
   final bool naturalRecoveryCastUsed;
   final DruidLand? druidLand;
   final int armourClass;
@@ -132,6 +134,7 @@ class CharacterState {
     this.memorizeSpellAvailable = false,
     this.fiendishResistance,
     this.fiendishResilienceAvailable = false,
+    this.dragonCompanionSpellId,
     this.naturalRecoveryCastUsed = false,
     this.druidLand,
     required this.armourClass,
@@ -180,6 +183,7 @@ class CharacterState {
       'temporaryHp': temporaryHp,
       'fiendishResistance': ?fiendishResistance?.name,
       if (fiendishResilienceAvailable) 'fiendishResilienceAvailable': true,
+      'dragonCompanionSpellId': ?dragonCompanionSpellId,
       'wildShapeForm': ?wildShapeForm,
       'wildShapeTurnsRemaining': ?wildShapeTurnsRemaining,
       'wildCompanion': ?wildCompanion,
@@ -232,6 +236,7 @@ class CharacterState {
           .firstOrNull,
       fiendishResilienceAvailable:
           json['fiendishResilienceAvailable'] as bool? ?? false,
+      dragonCompanionSpellId: json['dragonCompanionSpellId'] as String?,
       wildShapeForm: json['wildShapeForm'] as String?,
       wildShapeTurnsRemaining: json['wildShapeTurnsRemaining'] as int?,
       wildCompanion: json['wildCompanion'] as String?,
@@ -366,6 +371,18 @@ class CharacterState {
     };
   }
 
+  CharacterState endDragonCompanion() => copyWith(
+    clearDragonCompanion: true,
+    activeConditions: {...activeConditions}..remove(dragonCompanionCondition),
+    spellSummons: {...spellSummons}..remove(dragonCompanionSpellId),
+  );
+
+  CharacterState normalizeDragonCompanion(Character character) =>
+      !character.hasDragonCompanion ||
+          !activeConditions.contains(dragonCompanionCondition)
+      ? endDragonCompanion()
+      : this;
+
   CharacterState advanceConditionTurn() {
     if (conditionTurns.isEmpty && !isRaging) return this;
     final updated = copyWith(
@@ -396,6 +413,8 @@ class CharacterState {
     IncomingDamageType? fiendishResistance,
     bool clearFiendishResistance = false,
     bool? fiendishResilienceAvailable,
+    String? dragonCompanionSpellId,
+    bool clearDragonCompanion = false,
     int? currentHp,
     int? maxHp,
     int? temporaryHp,
@@ -434,6 +453,9 @@ class CharacterState {
           : fiendishResistance ?? this.fiendishResistance,
       fiendishResilienceAvailable:
           fiendishResilienceAvailable ?? this.fiendishResilienceAvailable,
+      dragonCompanionSpellId: clearDragonCompanion
+          ? null
+          : dragonCompanionSpellId ?? this.dragonCompanionSpellId,
       currentHp: currentHp ?? this.currentHp,
       maxHp: maxHp ?? this.maxHp,
       temporaryHp: temporaryHp ?? this.temporaryHp,
