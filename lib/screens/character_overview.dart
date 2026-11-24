@@ -1549,6 +1549,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
                 Metamagic.distant,
                 Metamagic.extended,
                 Metamagic.transmuted,
+                Metamagic.twinned,
               ])
                 if (character.knowsMetamagic(option))
                   ListTile(
@@ -1688,6 +1689,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
         await castSimpleMetamagic(spell, Metamagic.extended);
       case 'transmuted':
         await castSimpleMetamagic(spell, Metamagic.transmuted);
+      case 'twinned':
+        await castSimpleMetamagic(spell, Metamagic.twinned);
       case 'concentration':
         updateCharacterState(
           characterState.copyWith(
@@ -2308,6 +2311,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
       context: context,
       builder: (context) => ActionDetailsDialog(
         action: action,
+        onCastTwinned:
+            action is Spell &&
+                simpleMetamagicAvailable(action, Metamagic.twinned)
+            ? () {
+                Navigator.pop(context);
+                castSimpleMetamagic(action, Metamagic.twinned);
+              }
+            : null,
         onCastTransmuted:
             action is Spell &&
                 simpleMetamagicAvailable(action, Metamagic.transmuted)
@@ -2413,6 +2424,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
           Metamagic.distant,
           Metamagic.extended,
           Metamagic.transmuted,
+          Metamagic.twinned,
         }.contains(option) &&
         character.knowsMetamagic(option) &&
         spell.isAvailableInCombat &&
@@ -2427,6 +2439,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         (option != Metamagic.transmuted ||
             (Metamagic.transmutedType(spell.damageType) != null &&
                 !(spell.isCircleGrant && spell.name == 'Ice Storm'))) &&
+        (option != Metamagic.twinned || Metamagic.supportsTwinned(spell)) &&
         (currentMode != CharacterMode.combat ||
             ((spell.isCantrip || !quickenedSpellUsedThisTurn) &&
                 (cost == null || !usedCombatActions.contains(cost))));
@@ -2439,7 +2452,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
     Spell spell,
     Metamagic option, {
     String? damageType,
-  }) => option == Metamagic.transmuted
+  }) => option == Metamagic.twinned
+      ? 'For Command, Fly or Charm Monster, increase the effective casting level by 1 for an additional target. '
+            'Spend the selected slot normally; ninth-level slots are unavailable for this option. '
+            'Resolve creature eligibility, target selection, range and saves at the table.'
+      : option == Metamagic.transmuted
       ? 'Damage type for this casting: ${damageType ?? transmutingDamageType}. '
             'Track the latest casting of this spell here; resolve overlapping castings at the table.'
       : option == Metamagic.extended
@@ -2761,14 +2778,26 @@ class _CharacterOverviewState extends State<CharacterOverview>
       ? (characterState.naturalRecoveryCastUsed ? 0 : 1)
       : characterState.resourceValues[resource.id] ?? resource.initialValue;
 
-  Future<(int, String)?> chooseTrackedSlot(Spell spell) =>
-      chooseAvailableSlot(spell.level, '${spell.name} slot level');
+  Future<(int, String)?> chooseTrackedSlot(Spell spell) => chooseAvailableSlot(
+    spell.level,
+    '${spell.name} slot level',
+    maximumLevel:
+        modifyingSpellId == spell.id && castingMetamagic == Metamagic.twinned
+        ? 8
+        : 9,
+  );
 
-  Future<(int, String)?> chooseAvailableSlot(int minimumLevel, String title) {
+  Future<(int, String)?> chooseAvailableSlot(
+    int minimumLevel,
+    String title, {
+    int maximumLevel = 9,
+  }) {
     final slots = [
       for (final resource in castingResources)
         if (spellSlotLevel(resource) case final level?
-            when level >= minimumLevel && remainingUses(resource) > 0)
+            when level >= minimumLevel &&
+                level <= maximumLevel &&
+                remainingUses(resource) > 0)
           (level, resource),
     ]..sort((a, b) => a.$1.compareTo(b.$1));
     if (slots.isEmpty) {
@@ -2977,6 +3006,21 @@ class _CharacterOverviewState extends State<CharacterOverview>
         startSpellConcentration(spell, slotLevel: slotLevel);
       }
       trackSpellAction(spell);
+      if (modifyingSpellId == spell.id &&
+          castingMetamagic == Metamagic.twinned) {
+        final actualLevel = slotLevel ?? spell.level;
+        final effectiveLevel = Metamagic.twinnedEffectiveLevel(
+          spell,
+          actualLevel,
+        )!;
+        recordSessionEvent(
+          SessionEventType.combat,
+          'Twinned Spell targets · ${spell.name}',
+          detail:
+              '${useFreeCast ? 'Free cast' : 'Level $actualLevel slot spent'} · '
+              'Effective level $effectiveLevel · ${1 + effectiveLevel - spell.level} targets. Resolve targets at the table.',
+        );
+      }
       if (companionCast) {
         recordSessionEvent(
           SessionEventType.combat,
@@ -3089,7 +3133,16 @@ class _CharacterOverviewState extends State<CharacterOverview>
           .copyWith(
             concentrationSpellId: spell.id,
             extendedConcentration: extendingSpell(spell),
-            concentrationSlotLevel: slotLevel == 0 ? null : slotLevel,
+            concentrationSlotLevel:
+                modifyingSpellId == spell.id &&
+                    castingMetamagic == Metamagic.twinned
+                ? Metamagic.twinnedEffectiveLevel(
+                    spell,
+                    slotLevel ?? spell.level,
+                  )
+                : slotLevel == 0
+                ? null
+                : slotLevel,
             concentrationTurnsRemaining: extendingSpell(spell)
                 ? Metamagic.extendedSpellTurns(spell, slotLevel: slotLevel)
                 : turns,

@@ -17,7 +17,11 @@ enum Metamagic {
   final int pointCost;
   String get usageHint => switch (this) {
     quickened => 'Cast from spell details',
-    subtle || distant || extended || transmuted => 'Preview from spell details',
+    subtle ||
+    distant ||
+    extended ||
+    transmuted ||
+    twinned => 'Preview from spell details',
     empowered => 'Choose dice when rolling typed spell damage',
     seeking => 'Confirm a missed spell attack to reroll one d20',
     _ => 'Resolve this option at the table',
@@ -82,6 +86,23 @@ enum Metamagic {
         };
     return turns >= 10 && turns <= 14400 ? (turns * 2).clamp(10, 14400) : null;
   }
+
+  static bool supportsTwinned(Spell spell) {
+    final baseLevel = const {
+      'command': 1,
+      'fly': 3,
+      'charm monster': 4,
+    }[Spell.normalizedName(spell.name)];
+    return baseLevel == spell.level &&
+        spell.damageFormula == null &&
+        spell.rollModifier == null &&
+        !spell.deriveAttackModifier;
+  }
+
+  static int? twinnedEffectiveLevel(Spell spell, int slotLevel) =>
+      supportsTwinned(spell) && slotLevel >= spell.level && slotLevel < 9
+      ? slotLevel + 1
+      : null;
 
   static int? extendedSpellTurns(Spell spell, {int? slotLevel}) {
     final baseline = extendedTurns(spell.duration);

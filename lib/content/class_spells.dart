@@ -74,7 +74,7 @@ Spell _draconicSpell(String key, int level) {
     'command' => (
       'Command',
       '60 feet',
-      '1 round',
+      'Instantaneous',
       false,
       'V',
       'Give a one-word command. A target failing its Wisdom save follows it on its next turn. Resolve eligibility, the command and additional upcast targets at the table.',
