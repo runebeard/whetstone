@@ -116,6 +116,7 @@ class CharacterState {
   final int? concentrationSlotLevel;
   final String? concentrationTarget;
   final int? concentrationTurnsRemaining;
+  final bool extendedConcentration;
   final int deathSaveSuccesses;
   final int deathSaveFailures;
   final Set<String> activeConditions;
@@ -149,6 +150,7 @@ class CharacterState {
     this.concentrationSlotLevel,
     this.concentrationTarget,
     this.concentrationTurnsRemaining,
+    this.extendedConcentration = false,
     required this.deathSaveSuccesses,
     required this.deathSaveFailures,
     required this.activeConditions,
@@ -204,6 +206,8 @@ class CharacterState {
       if (relentlessRageAttempts > 0)
         'relentlessRageAttempts': relentlessRageAttempts,
       'concentrationSpellId': ?concentrationSpellId,
+      if (concentrationSpellId != null && extendedConcentration)
+        'extendedConcentration': true,
       if (spellSummons.isNotEmpty) 'spellSummons': spellSummons,
       'concentrationSlotLevel': ?concentrationSlotLevel,
       'concentrationTarget': ?concentrationTarget,
@@ -260,6 +264,9 @@ class CharacterState {
       relentlessRageAttempts: json['relentlessRageAttempts'] as int? ?? 0,
       rageTurnsElapsed: ((json['rageTurnsElapsed'] as int?) ?? 0).clamp(0, 100),
       concentrationSpellId: json['concentrationSpellId'] as String?,
+      extendedConcentration:
+          json['concentrationSpellId'] != null &&
+          (json['extendedConcentration'] as bool? ?? false),
       spellSummons:
           (json['spellSummons'] as Map<String, Object?>?)
               ?.cast<String, String>() ??
@@ -439,6 +446,7 @@ class CharacterState {
     int? concentrationSlotLevel,
     String? concentrationTarget,
     int? concentrationTurnsRemaining,
+    bool? extendedConcentration,
     bool clearConcentration = false,
     int? deathSaveSuccesses,
     int? deathSaveFailures,
@@ -489,6 +497,15 @@ class CharacterState {
       concentrationSpellId: clearConcentration
           ? null
           : concentrationSpellId ?? this.concentrationSpellId,
+      extendedConcentration:
+          clearConcentration ||
+              (concentrationSpellId ?? this.concentrationSpellId) == null
+          ? false
+          : extendedConcentration ??
+                (concentrationSpellId == null ||
+                        concentrationSpellId == this.concentrationSpellId
+                    ? this.extendedConcentration
+                    : false),
       spellSummons: {
         for (final entry in (spellSummons ?? this.spellSummons).entries)
           if (entry.key != this.concentrationSpellId ||

@@ -1417,10 +1417,13 @@ class _CharacterOverviewState extends State<CharacterOverview>
     final save = characterForPhysicalChecks.savingThrowFor(
       Ability.constitution,
     );
-    final mode = nextRollMode;
+    final mode = characterState.extendedConcentration
+        ? nextRollMode.withAdvantage()
+        : nextRollMode;
     var roll = rollCheck(
       'Concentration Save',
       save.modifier,
+      modeOverride: mode,
       describe: (roll) => roll.total >= dc
           ? 'DC $dc · Concentration maintained'
           : character.levelInClass('Monk') >= 14 || hasDarkOnesOwnLuck
@@ -1535,7 +1538,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
                         : null,
                   ),
               ],
-              for (final option in [Metamagic.subtle, Metamagic.distant])
+              for (final option in [
+                Metamagic.subtle,
+                Metamagic.distant,
+                Metamagic.extended,
+              ])
                 if (character.knowsMetamagic(option))
                   ListTile(
                     title: Text(option.label),
@@ -1670,6 +1677,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
         await castSimpleMetamagic(spell, Metamagic.subtle);
       case 'distant':
         await castSimpleMetamagic(spell, Metamagic.distant);
+      case 'extended':
+        await castSimpleMetamagic(spell, Metamagic.extended);
       case 'concentration':
         updateCharacterState(
           characterState.copyWith(
@@ -2283,6 +2292,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
       context: context,
       builder: (context) => ActionDetailsDialog(
         action: action,
+        onCastExtended:
+            action is Spell &&
+                simpleMetamagicAvailable(action, Metamagic.extended)
+            ? () {
+                Navigator.pop(context);
+                castSimpleMetamagic(action, Metamagic.extended);
+              }
+            : null,
         onCastSubtle:
             action is Spell &&
                 simpleMetamagicAvailable(action, Metamagic.subtle)
@@ -2364,7 +2381,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
   bool simpleMetamagicAvailable(Spell spell, Metamagic option) {
     final points = resourceWithId(sorceryPointsResourceId);
     final cost = spellActionCost(spell);
-    return {Metamagic.subtle, Metamagic.distant}.contains(option) &&
+    return {
+          Metamagic.subtle,
+          Metamagic.distant,
+          Metamagic.extended,
+        }.contains(option) &&
         character.knowsMetamagic(option) &&
         spell.isAvailableInCombat &&
         points != null &&
@@ -2373,13 +2394,23 @@ class _CharacterOverviewState extends State<CharacterOverview>
         !characterState.isRaging &&
         (option != Metamagic.distant ||
             Metamagic.distantRange(character.rangeForSpell(spell)) != null) &&
+        (option != Metamagic.extended ||
+            Metamagic.extendedTurns(spell.duration) != null) &&
         (currentMode != CharacterMode.combat ||
             ((spell.isCantrip || !quickenedSpellUsedThisTurn) &&
                 (cost == null || !usedCombatActions.contains(cost))));
   }
 
+  bool extendingSpell(Spell spell) =>
+      modifyingSpellId == spell.id && castingMetamagic == Metamagic.extended;
+
   String metamagicPreview(Spell spell, Metamagic option) =>
-      option == Metamagic.distant
+      option == Metamagic.extended
+      ? 'Duration for this casting: ${Metamagic.extendedTurns(spell.duration)! ~/ 10} minutes (maximum 24 hours). '
+            '${spell.concentration ? 'Concentration saves have Advantage while maintaining this spell.' : 'Track elapsed time at the table.'} '
+            '${spell.canMoveConcentrationTarget ? 'Upcast duration is recalculated after slot selection.' : ''}'
+            '${character.benefitsFromDragonCompanion(spell) ? ' No-concentration Dragon Companion mode instead lasts 2 minutes.' : ''}'
+      : option == Metamagic.distant
       ? 'Range for this casting: ${Metamagic.distantRange(character.rangeForSpell(spell))}. Resolve distance and targets at the table.'
       : 'Verbal and Somatic components waived. Components for this casting: '
             '${character.benefitsFromDragonCompanion(spell) ? 'None (Dragon Companion waives Material)' : Metamagic.subtleComponents(spell)}. '
@@ -2742,6 +2773,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         character.benefitsFromDragonCompanion(spell);
     var companionWithoutConcentration = false;
     if (companionCast) {
+      final extended = extendingSpell(spell);
       final sameConcentration = characterState.concentrationSpellId == spell.id;
       final choice = await showDialog<bool>(
         context: context,
@@ -2761,7 +2793,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
             ),
             SimpleDialogOption(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Concentrate · 1 hour'),
+              child: Text(
+                extended ? 'Concentrate · 2 hours' : 'Concentrate · 1 hour',
+              ),
             ),
             SimpleDialogOption(
               onPressed: sameConcentration
@@ -2770,6 +2804,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
               child: Text(
                 sameConcentration
                     ? 'End concentration on the earlier dragon first'
+                    : extended
+                    ? 'Dragon Companion · No concentration · 2 minutes'
                     : 'Dragon Companion · No concentration · 1 minute',
               ),
             ),
@@ -2855,7 +2891,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
             },
             conditionTurns: {
               ...characterState.conditionTurns,
-              dragonCompanionCondition: 10,
+              dragonCompanionCondition: extendingSpell(spell) ? 20 : 10,
             },
             spellSummons: {
               ...characterState.spellSummons,
@@ -2873,7 +2909,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
           'Dragon Companion cast',
           detail:
               '${useFreeCast ? 'Free cast' : 'Spell slot'} · Material waived · '
-              '${companionWithoutConcentration ? 'No concentration · 1 minute' : 'Concentration · 1 hour'}. Earlier spirits remain table-managed.',
+              '${companionWithoutConcentration ? 'No concentration · ${extendingSpell(spell) ? '2 minutes' : '1 minute'}' : 'Concentration · ${extendingSpell(spell) ? '2 hours' : '1 hour'}'}. Earlier spirits remain table-managed.',
         );
       }
       if (freedomTarget == true) {
@@ -2885,7 +2921,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
             },
             conditionTurns: {
               ...characterState.conditionTurns,
-              freedomOfMovementCondition: 600,
+              freedomOfMovementCondition: extendingSpell(spell) ? 1200 : 600,
             },
           ),
         );
@@ -2978,8 +3014,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
           .copyWith(clearConcentration: true)
           .copyWith(
             concentrationSpellId: spell.id,
+            extendedConcentration: extendingSpell(spell),
             concentrationSlotLevel: slotLevel == 0 ? null : slotLevel,
-            concentrationTurnsRemaining: turns,
+            concentrationTurnsRemaining: extendingSpell(spell)
+                ? Metamagic.extendedSpellTurns(spell, slotLevel: slotLevel)
+                : turns,
           ),
     );
   }
