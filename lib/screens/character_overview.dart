@@ -38,6 +38,7 @@ import '../models/session_event.dart';
 import '../services/session_event_recorder.dart';
 
 import '../widgets/dialogue_action_button.dart';
+import '../widgets/empowered_spell_dialog.dart';
 import '../widgets/ability_score_editor_dialog.dart';
 import '../widgets/action_details_dialog.dart';
 import '../widgets/feature_editor_dialog.dart';
@@ -5168,7 +5169,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
       expression = expression.withModifierBonus(affinityBonus);
     }
     HapticFeedback.selectionClick();
-    final roll = expression.roll(action.name, diceRoller);
+    var roll = expression.roll(action.name, diceRoller);
+    if (action is Spell && !iceStorm) {
+      roll = await maybeEmpowerSpellDamage(action, roll);
+      if (!mounted) return;
+    }
     if (action is Spell && action.isCircleGrant && action.name == 'Ice Storm') {
       final cold = const DiceExpression(
         diceCount: 4,
@@ -5321,6 +5326,61 @@ class _CharacterOverviewState extends State<CharacterOverview>
       modeOverride: mode,
       minimumTotal: original.minimumTotal,
       darkLuckEligible: tableResolvedSave,
+    );
+  }
+
+  Future<DamageRoll> maybeEmpowerSpellDamage(
+    Spell spell,
+    DamageRoll roll,
+  ) async {
+    bool available() {
+      final points = resourceWithId(sorceryPointsResourceId);
+      return character.knowsMetamagic(Metamagic.empowered) &&
+          points != null &&
+          remainingUses(points) > 0 &&
+          characterState.canConcentrate &&
+          roll.dice.isNotEmpty &&
+          IncomingDamageType.values.any(
+            (type) =>
+                type != IncomingDamageType.other &&
+                type.label.toLowerCase() ==
+                    spell.damageType?.trim().toLowerCase(),
+          );
+    }
+
+    if (!available()) return roll;
+    final maximum = character
+        .abilityModifierFor(Ability.charisma)
+        .clamp(1, roll.dice.length);
+    final selected = await showDialog<Set<int>>(
+      context: context,
+      builder: (context) => EmpoweredSpellDialog(roll: roll, maximum: maximum),
+    );
+    if (!mounted ||
+        selected == null ||
+        selected.isEmpty ||
+        selected.length > maximum ||
+        selected.any((i) => i < 0 || i >= roll.dice.length) ||
+        !available() ||
+        !spendCastResource(sorceryPointsResourceId)) {
+      return roll;
+    }
+    final dice = [
+      for (var i = 0; i < roll.dice.length; i++)
+        selected.contains(i)
+            ? diceRoller.rollDie(roll.expression.dieSides)
+            : roll.dice[i],
+    ];
+    recordSessionEvent(
+      SessionEventType.roll,
+      'Empowered Spell · ${spell.name}',
+      detail:
+          '1 Sorcery Point spent. ${roll.dice.join(', ')} → ${dice.join(', ')}. New results retained; modifiers unchanged.',
+    );
+    return DamageRoll(
+      label: roll.label,
+      expression: roll.expression,
+      dice: dice,
     );
   }
 
@@ -10093,7 +10153,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
                     CheckboxListTile(
                       key: ValueKey('metamagic-${option.name}'),
                       title: Text(option.label),
-                      subtitle: Text('${option.pointCost} Sorcery Points'),
+                      subtitle: Text(
+                        '${option.pointCost} Sorcery Points · ${option.usageHint}',
+                      ),
                       value: chosen.contains(option),
                       onChanged:
                           chosen.contains(option) || chosen.length < capacity

@@ -15,6 +15,12 @@ enum Metamagic {
   const Metamagic(this.label, this.pointCost);
   final String label;
   final int pointCost;
+  String get usageHint => switch (this) {
+    quickened => 'Cast from spell details',
+    subtle || distant || extended => 'Preview from spell details',
+    empowered => 'Choose dice when rolling typed spell damage',
+    _ => 'Resolve this option at the table',
+  };
 
   static int capacity(int sorcererLevel) => switch (sorcererLevel) {
     >= 17 => 6,
