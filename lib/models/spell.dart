@@ -34,7 +34,7 @@ class Spell extends CharacterAction {
       '',
     );
     return RegExp(
-      r'\b\d[\d,]*(?:\.\d+)?\s*(?:[csegp]p|(?:copper|silver|electrum|gold|platinum) pieces?)\b'
+      r'\b\d[\d,]*(?:\.\d+)?\+?\s*(?:[csegp]p|(?:copper|silver|electrum|gold|platinum) pieces?)\b'
       r'|\b(?:consumes?|consumed|consuming)\b',
       caseSensitive: false,
     ).hasMatch(material);

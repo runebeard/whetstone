@@ -102,6 +102,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
   bool levelledSpellCastThisTurn = false;
   bool quickenedSpellUsedThisTurn = false;
   String? quickeningSpellId;
+  String? modifyingSpellId;
+  Metamagic? castingMetamagic;
   int flurryAttacksRemaining = 0;
   int attackActionAttacksRemaining = 0;
   CheckRoll? tacticalMindCheck;
@@ -1533,6 +1535,17 @@ class _CharacterOverviewState extends State<CharacterOverview>
                         : null,
                   ),
               ],
+              for (final option in [Metamagic.subtle, Metamagic.distant])
+                if (character.knowsMetamagic(option))
+                  ListTile(
+                    title: Text(option.label),
+                    subtitle: const Text(
+                      '1 Sorcery Point · Preview this casting',
+                    ),
+                    onTap: simpleMetamagicAvailable(spell, option)
+                        ? () => Navigator.pop(context, option.name)
+                        : null,
+                  ),
               if (scrolls.isNotEmpty)
                 ListTile(
                   leading: const Icon(Icons.description_outlined),
@@ -1653,6 +1666,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
         await castQuickenedSpell(spell);
       case 'quickened-free':
         await castQuickenedSpell(spell, useFreeCast: true);
+      case 'subtle':
+        await castSimpleMetamagic(spell, Metamagic.subtle);
+      case 'distant':
+        await castSimpleMetamagic(spell, Metamagic.distant);
       case 'concentration':
         updateCharacterState(
           characterState.copyWith(
@@ -2266,6 +2283,22 @@ class _CharacterOverviewState extends State<CharacterOverview>
       context: context,
       builder: (context) => ActionDetailsDialog(
         action: action,
+        onCastSubtle:
+            action is Spell &&
+                simpleMetamagicAvailable(action, Metamagic.subtle)
+            ? () {
+                Navigator.pop(context);
+                castSimpleMetamagic(action, Metamagic.subtle);
+              }
+            : null,
+        onCastDistant:
+            action is Spell &&
+                simpleMetamagicAvailable(action, Metamagic.distant)
+            ? () {
+                Navigator.pop(context);
+                castSimpleMetamagic(action, Metamagic.distant);
+              }
+            : null,
         onCastQuickenedFree:
             action is Spell &&
                 quickenedSpellAvailable(action) &&
@@ -2328,6 +2361,76 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
+  bool simpleMetamagicAvailable(Spell spell, Metamagic option) {
+    final points = resourceWithId(sorceryPointsResourceId);
+    final cost = spellActionCost(spell);
+    return {Metamagic.subtle, Metamagic.distant}.contains(option) &&
+        character.knowsMetamagic(option) &&
+        spell.isAvailableInCombat &&
+        points != null &&
+        remainingUses(points) >= option.pointCost &&
+        characterState.canConcentrate &&
+        !characterState.isRaging &&
+        (option != Metamagic.distant ||
+            Metamagic.distantRange(character.rangeForSpell(spell)) != null) &&
+        (currentMode != CharacterMode.combat ||
+            ((spell.isCantrip || !quickenedSpellUsedThisTurn) &&
+                (cost == null || !usedCombatActions.contains(cost))));
+  }
+
+  String metamagicPreview(Spell spell, Metamagic option) =>
+      option == Metamagic.distant
+      ? 'Range for this casting: ${Metamagic.distantRange(character.rangeForSpell(spell))}. Resolve distance and targets at the table.'
+      : 'Verbal and Somatic components waived. Components for this casting: '
+            '${character.benefitsFromDragonCompanion(spell) ? 'None (Dragon Companion waives Material)' : Metamagic.subtleComponents(spell)}. '
+            'Resolve component use at the table.';
+
+  Future<void> castSimpleMetamagic(Spell spell, Metamagic option) async {
+    if (quickeningSpellId != null ||
+        modifyingSpellId != null ||
+        !simpleMetamagicAvailable(spell, option)) {
+      return;
+    }
+    final freeCast = freeCastResource(spell);
+    final source = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${option.label} · ${spell.name}'),
+        content: Text(
+          '1 Sorcery Point. ${metamagicPreview(spell, option)}\n\nThe normal casting time still applies.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          if (freeCast != null && remainingUses(freeCast) > 0)
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Use Free Cast'),
+            ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cast with Metamagic'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        source == null ||
+        !simpleMetamagicAvailable(spell, option)) {
+      return;
+    }
+    modifyingSpellId = spell.id;
+    castingMetamagic = option;
+    try {
+      await castSpell(spell, useFreeCast: source);
+    } finally {
+      modifyingSpellId = null;
+      castingMetamagic = null;
+    }
+  }
+
   bool hasActionCastingTime(Spell spell) =>
       {'action', '1 action'}.contains(spell.castingTime?.trim().toLowerCase());
 
@@ -2350,7 +2453,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
     Spell spell, {
     bool useFreeCast = false,
   }) async {
-    if (quickeningSpellId != null || !quickenedSpellAvailable(spell)) return;
+    if (quickeningSpellId != null ||
+        modifyingSpellId != null ||
+        !quickenedSpellAvailable(spell)) {
+      return;
+    }
     quickeningSpellId = spell.id;
     try {
       await castSpell(spell, useFreeCast: useFreeCast);
@@ -2371,6 +2478,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   bool canSpendSpellAction(Spell spell, {bool fromScroll = false}) {
+    if (modifyingSpellId == spell.id &&
+        !simpleMetamagicAvailable(spell, castingMetamagic!)) {
+      return false;
+    }
     if (currentMode == CharacterMode.combat &&
         ((!spell.isCantrip && quickenedSpellUsedThisTurn) ||
             (quickeningSpellId == spell.id && levelledSpellCastThisTurn))) {
@@ -2420,22 +2531,30 @@ class _CharacterOverviewState extends State<CharacterOverview>
   void trackSpellAction(Spell spell, {bool newCast = true}) {
     if (newCast) elementalAffinityUsedSpellIds.remove(spell.id);
     final cost = spellActionCost(spell);
-    if (newCast && quickeningSpellId == spell.id) {
+    final option = quickeningSpellId == spell.id
+        ? Metamagic.quickened
+        : modifyingSpellId == spell.id
+        ? castingMetamagic
+        : null;
+    if (newCast && option != null) {
       final points = resourceWithId(sorceryPointsResourceId)!;
       updateCharacterState(
         characterState.copyWith(
           resourceValues: {
             ...characterState.resourceValues,
-            points.id: remainingUses(points) - 2,
+            points.id: remainingUses(points) - option.pointCost,
           },
         ),
       );
-      quickenedSpellUsedThisTurn = currentMode == CharacterMode.combat;
+      if (option == Metamagic.quickened) {
+        quickenedSpellUsedThisTurn = currentMode == CharacterMode.combat;
+      }
       recordSessionEvent(
         SessionEventType.combat,
-        'Quickened Spell · ${spell.name}',
-        detail:
-            '2 Sorcery Points spent. Cast as a Bonus Action; no further level 1+ spells this turn.',
+        '${option.label} · ${spell.name}',
+        detail: option == Metamagic.quickened
+            ? '2 Sorcery Points spent. Cast as a Bonus Action; no further level 1+ spells this turn.'
+            : '1 Sorcery Point spent. ${metamagicPreview(spell, option)}',
       );
     }
     if (newCast && !spell.isCantrip && currentMode == CharacterMode.combat) {
