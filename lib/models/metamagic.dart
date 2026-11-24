@@ -19,6 +19,7 @@ enum Metamagic {
     quickened => 'Cast from spell details',
     subtle || distant || extended => 'Preview from spell details',
     empowered => 'Choose dice when rolling typed spell damage',
+    seeking => 'Confirm a missed spell attack to reroll one d20',
     _ => 'Resolve this option at the table',
   };
 

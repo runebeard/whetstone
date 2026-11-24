@@ -4466,7 +4466,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
     final threshold = action is Weapon ? character.weaponCriticalThreshold : 20;
     final aimed = consumeSteadyAimAdvantage();
     if (retaliation) spendRetaliationReaction();
-    final roll = rollCheck(
+    var attackMode = D20Mode.normal;
+    var attackDice = <int>[];
+    var roll = rollCheck(
       '${action.name} Attack',
       modifier,
       strengthAttack: action is Weapon
@@ -4476,6 +4478,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       peerlessEligible: true,
       attackRoll: true,
       criticalThreshold: threshold,
+      onD20Rolled: (mode, dice) {
+        attackMode = mode;
+        attackDice = dice;
+      },
       hasAdvantage:
           packTactics ||
           aimed ||
@@ -4483,6 +4489,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
               action is Spell &&
               characterForPhysicalChecks.benefitsFromInnateSorcery(action)),
     );
+    if (action is Spell && scrollName == null) {
+      roll = await maybeSeekSpellAttack(action, roll, attackMode, attackDice);
+      if (!mounted) return;
+    }
     final critical = roll.naturalRoll >= threshold;
     pendingCriticalActionKey =
         critical &&
@@ -4509,6 +4519,96 @@ class _CharacterOverviewState extends State<CharacterOverview>
         detail: 'On a hit, a Medium or smaller target falls Prone.',
       );
     }
+  }
+
+  Future<CheckRoll> maybeSeekSpellAttack(
+    Spell spell,
+    CheckRoll original,
+    D20Mode mode,
+    List<int> dice,
+  ) async {
+    bool available() {
+      final points = resourceWithId(sorceryPointsResourceId);
+      return character.knowsMetamagic(Metamagic.seeking) &&
+          points != null &&
+          remainingUses(points) > 0 &&
+          characterState.canConcentrate &&
+          !original.isNaturalTwenty &&
+          dice.isNotEmpty;
+    }
+
+    if (!available()) return original;
+    final index = await showDialog<int>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text('Seeking Spell · ${spell.name}'),
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'Attack total ${original.total} · ${mode.label}. Use only if this attack missed. '
+              'Spend 1 Sorcery Point to reroll one d20 and keep its new result. '
+              'The other die and the original roll mode remain unchanged.',
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Keep Attack'),
+          ),
+          for (var i = 0; i < dice.length; i++)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, i),
+              child: Text('Miss · Reroll die ${i + 1} (${dice[i]})'),
+            ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        index == null ||
+        index < 0 ||
+        index >= dice.length ||
+        !available() ||
+        !spendCastResource(sorceryPointsResourceId)) {
+      return original;
+    }
+    final rerolled = [...dice];
+    rerolled[index] = diceRoller.rollD20();
+    final result = CheckRoll(
+      label: original.label,
+      naturalRoll: mode.select(
+        rerolled.first,
+        rerolled.length > 1 ? rerolled[1] : null,
+      ),
+      modifier: original.modifier,
+      minimumRoll: original.minimumRoll,
+      minimumTotal: original.minimumTotal,
+    );
+    if (hasPeerlessSkill) {
+      peerlessSkillRoll = result.isNaturalOne || result.isNaturalTwenty
+          ? null
+          : result;
+    }
+    addRollNotice(
+      title: '${spell.name} Attack · Seeking Spell',
+      calculation:
+          '${mode.label}: ${rerolled.join(', ')} → d20 ${result.naturalRoll} '
+          '${result.displayModifier} = ${result.total}',
+      total: result.total,
+      detail:
+          'Miss confirmed · 1 Sorcery Point spent · Die ${index + 1}: '
+          '${dice[index]} → ${rerolled[index]}. New result retained.'
+          '${result.isNaturalTwenty
+              ? ' Natural 20.'
+              : result.isNaturalOne
+              ? ' Natural 1.'
+              : ''}',
+      tone: result.isNaturalTwenty
+          ? RollNoticeTone.criticalSuccess
+          : result.isNaturalOne
+          ? RollNoticeTone.criticalFailure
+          : RollNoticeTone.normal,
+    );
+    return result;
   }
 
   Future<void> resolveWeaponMastery(
@@ -5401,6 +5501,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     int? minimumRoll,
     String? minimumRollReason,
     String Function(CheckRoll)? describe,
+    void Function(D20Mode, List<int>)? onD20Rolled,
   }) {
     tacticalMindCheck = null;
     peerlessSkillRoll = null;
@@ -5425,6 +5526,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     }
     final first = diceRoller.rollD20();
     final second = mode == D20Mode.normal ? null : diceRoller.rollD20();
+    onD20Rolled?.call(mode, [first, ?second]);
     final roll = CheckRoll(
       label: label,
       naturalRoll: mode.select(first, second),
