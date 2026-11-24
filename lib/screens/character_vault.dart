@@ -402,13 +402,16 @@ class _CharacterVaultState extends State<CharacterVault> {
     final updatedSession = CharacterSession(
       elementalAffinityUsedSpellIds: session.elementalAffinityUsedSpellIds,
       characterState: updated.hasFiendishResilience
-          ? updatedState.normalizeDragonCompanion(updated)
+          ? updatedState
+                .normalizeDragonCompanion(updated)
+                .normalizeSpellDamageTypes(updated)
           : updatedState
                 .copyWith(
                   clearFiendishResistance: true,
                   fiendishResilienceAvailable: false,
                 )
-                .normalizeDragonCompanion(updated),
+                .normalizeDragonCompanion(updated)
+                .normalizeSpellDamageTypes(updated),
       inventory: updated.initialInventory,
       archivedInventory: session.archivedInventory,
       isInCombat: session.isInCombat,

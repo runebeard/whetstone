@@ -12,6 +12,7 @@ class ActionDetailsDialog extends StatelessWidget {
   final VoidCallback? onCastSubtle;
   final VoidCallback? onCastDistant;
   final VoidCallback? onCastExtended;
+  final VoidCallback? onCastTransmuted;
   final int? spellSaveDc;
   final VoidCallback? onRollDamage;
   final String? spellDamageFormula;
@@ -28,6 +29,7 @@ class ActionDetailsDialog extends StatelessWidget {
     this.onCastSubtle,
     this.onCastDistant,
     this.onCastExtended,
+    this.onCastTransmuted,
     this.spellSaveDc,
     this.onRollDamage,
     this.spellDamageFormula,
@@ -89,6 +91,11 @@ class ActionDetailsDialog extends StatelessWidget {
         ),
       ),
       actions: [
+        if (onCastTransmuted != null)
+          TextButton(
+            onPressed: onCastTransmuted,
+            child: const Text('Transmuted Spell'),
+          ),
         if (onCastExtended != null)
           TextButton(
             onPressed: onCastExtended,

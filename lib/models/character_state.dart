@@ -1,4 +1,5 @@
 import 'character.dart';
+import 'metamagic.dart';
 
 const ragingCondition = 'Raging';
 const recklessAttackCondition = 'Reckless Attack';
@@ -113,6 +114,7 @@ class CharacterState {
   final int rageTurnsElapsed;
   final String? concentrationSpellId;
   final Map<String, String> spellSummons;
+  final Map<String, String> spellDamageTypes;
   final int? concentrationSlotLevel;
   final String? concentrationTarget;
   final int? concentrationTurnsRemaining;
@@ -147,6 +149,7 @@ class CharacterState {
     this.rageTurnsElapsed = 0,
     this.concentrationSpellId,
     this.spellSummons = const {},
+    this.spellDamageTypes = const {},
     this.concentrationSlotLevel,
     this.concentrationTarget,
     this.concentrationTurnsRemaining,
@@ -209,6 +212,7 @@ class CharacterState {
       if (concentrationSpellId != null && extendedConcentration)
         'extendedConcentration': true,
       if (spellSummons.isNotEmpty) 'spellSummons': spellSummons,
+      if (spellDamageTypes.isNotEmpty) 'spellDamageTypes': spellDamageTypes,
       'concentrationSlotLevel': ?concentrationSlotLevel,
       'concentrationTarget': ?concentrationTarget,
       'concentrationTurnsRemaining': ?concentrationTurnsRemaining,
@@ -264,6 +268,14 @@ class CharacterState {
       relentlessRageAttempts: json['relentlessRageAttempts'] as int? ?? 0,
       rageTurnsElapsed: ((json['rageTurnsElapsed'] as int?) ?? 0).clamp(0, 100),
       concentrationSpellId: json['concentrationSpellId'] as String?,
+      spellDamageTypes: {
+        for (final entry
+            in (json['spellDamageTypes'] as Map<String, Object?>? ?? const {})
+                .entries)
+          entry.key: ?Metamagic.transmutedType(
+            entry.value is String ? entry.value as String : null,
+          ),
+      },
       extendedConcentration:
           json['concentrationSpellId'] != null &&
           (json['extendedConcentration'] as bool? ?? false),
@@ -378,6 +390,17 @@ class CharacterState {
     };
   }
 
+  CharacterState normalizeSpellDamageTypes(Character character) =>
+      spellDamageTypes.isEmpty
+      ? this
+      : copyWith(
+          spellDamageTypes: {
+            for (final spell in character.spells)
+              if (Metamagic.transmutedType(spell.damageType) != null)
+                spell.id: ?Metamagic.transmutedType(spellDamageTypes[spell.id]),
+          },
+        );
+
   CharacterState endDragonCompanion() => copyWith(
     clearDragonCompanion: true,
     activeConditions: {...activeConditions}..remove(dragonCompanionCondition),
@@ -443,6 +466,7 @@ class CharacterState {
     int? rageTurnsElapsed,
     String? concentrationSpellId,
     Map<String, String>? spellSummons,
+    Map<String, String>? spellDamageTypes,
     int? concentrationSlotLevel,
     String? concentrationTarget,
     int? concentrationTurnsRemaining,
@@ -497,6 +521,7 @@ class CharacterState {
       concentrationSpellId: clearConcentration
           ? null
           : concentrationSpellId ?? this.concentrationSpellId,
+      spellDamageTypes: spellDamageTypes ?? this.spellDamageTypes,
       extendedConcentration:
           clearConcentration ||
               (concentrationSpellId ?? this.concentrationSpellId) == null

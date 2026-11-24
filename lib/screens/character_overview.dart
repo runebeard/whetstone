@@ -105,6 +105,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   String? quickeningSpellId;
   String? modifyingSpellId;
   Metamagic? castingMetamagic;
+  String? transmutingDamageType;
   int flurryAttacksRemaining = 0;
   int attackActionAttacksRemaining = 0;
   CheckRoll? tacticalMindCheck;
@@ -208,7 +209,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
     }
     diceRoller = widget.diceRoller ?? RandomDiceRoller();
     characterState = widget.initialSession.characterState
-        .normalizeDragonCompanion(character);
+        .normalizeDragonCompanion(character)
+        .normalizeSpellDamageTypes(character);
     if (!character.hasDragonWings) {
       characterState = characterState.copyWith(
         activeConditions: {...characterState.activeConditions}
@@ -314,6 +316,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       });
     }
     if (!characterState.canConcentrate ||
+        characterState.spellDamageTypes.length !=
+            widget.initialSession.characterState.spellDamageTypes.length ||
         characterState.dragonCompanionSpellId !=
             widget.initialSession.characterState.dragonCompanionSpellId ||
         characterState.fiendishResistance != null ||
@@ -379,6 +383,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void updateCharacterState(CharacterState updatedState) {
+    updatedState = updatedState.normalizeSpellDamageTypes(character);
     updatedState = updatedState.normalizeDragonCompanion(character);
     if (!character.hasDragonWings &&
         updatedState.activeConditions.contains(dragonWingsCondition)) {
@@ -1543,6 +1548,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
                 Metamagic.subtle,
                 Metamagic.distant,
                 Metamagic.extended,
+                Metamagic.transmuted,
               ])
                 if (character.knowsMetamagic(option))
                   ListTile(
@@ -1680,6 +1686,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
         await castSimpleMetamagic(spell, Metamagic.distant);
       case 'extended':
         await castSimpleMetamagic(spell, Metamagic.extended);
+      case 'transmuted':
+        await castSimpleMetamagic(spell, Metamagic.transmuted);
       case 'concentration':
         updateCharacterState(
           characterState.copyWith(
@@ -1917,6 +1925,13 @@ class _CharacterOverviewState extends State<CharacterOverview>
       initiallyPinnedActionKeys: pinnedActionKeys,
     );
     final updatedState = characterState.copyWith(
+      spellDamageTypes: {
+        for (final spell in spells)
+          if (character.spells.any(
+            (old) => old.id == spell.id && old.damageType == spell.damageType,
+          ))
+            spell.id: ?characterState.spellDamageTypes[spell.id],
+      },
       druidLand: land,
       clearConcentration: !spells.any(
         (spell) => spell.id == characterState.concentrationSpellId,
@@ -2293,6 +2308,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
       context: context,
       builder: (context) => ActionDetailsDialog(
         action: action,
+        onCastTransmuted:
+            action is Spell &&
+                simpleMetamagicAvailable(action, Metamagic.transmuted)
+            ? () {
+                Navigator.pop(context);
+                castSimpleMetamagic(action, Metamagic.transmuted);
+              }
+            : null,
         onCastExtended:
             action is Spell &&
                 simpleMetamagicAvailable(action, Metamagic.extended)
@@ -2379,6 +2402,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
+  String? effectiveSpellDamageType(Spell spell) =>
+      characterState.spellDamageTypes[spell.id] ?? spell.damageType;
+
   bool simpleMetamagicAvailable(Spell spell, Metamagic option) {
     final points = resourceWithId(sorceryPointsResourceId);
     final cost = spellActionCost(spell);
@@ -2386,6 +2412,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
           Metamagic.subtle,
           Metamagic.distant,
           Metamagic.extended,
+          Metamagic.transmuted,
         }.contains(option) &&
         character.knowsMetamagic(option) &&
         spell.isAvailableInCombat &&
@@ -2397,6 +2424,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
             Metamagic.distantRange(character.rangeForSpell(spell)) != null) &&
         (option != Metamagic.extended ||
             Metamagic.extendedTurns(spell.duration) != null) &&
+        (option != Metamagic.transmuted ||
+            (Metamagic.transmutedType(spell.damageType) != null &&
+                !(spell.isCircleGrant && spell.name == 'Ice Storm'))) &&
         (currentMode != CharacterMode.combat ||
             ((spell.isCantrip || !quickenedSpellUsedThisTurn) &&
                 (cost == null || !usedCombatActions.contains(cost))));
@@ -2405,8 +2435,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
   bool extendingSpell(Spell spell) =>
       modifyingSpellId == spell.id && castingMetamagic == Metamagic.extended;
 
-  String metamagicPreview(Spell spell, Metamagic option) =>
-      option == Metamagic.extended
+  String metamagicPreview(
+    Spell spell,
+    Metamagic option, {
+    String? damageType,
+  }) => option == Metamagic.transmuted
+      ? 'Damage type for this casting: ${damageType ?? transmutingDamageType}. '
+            'Track the latest casting of this spell here; resolve overlapping castings at the table.'
+      : option == Metamagic.extended
       ? 'Duration for this casting: ${Metamagic.extendedTurns(spell.duration)! ~/ 10} minutes (maximum 24 hours). '
             '${spell.concentration ? 'Concentration saves have Advantage while maintaining this spell.' : 'Track elapsed time at the table.'} '
             '${spell.canMoveConcentrationTarget ? 'Upcast duration is recalculated after slot selection.' : ''}'
@@ -2423,13 +2459,39 @@ class _CharacterOverviewState extends State<CharacterOverview>
         !simpleMetamagicAvailable(spell, option)) {
       return;
     }
+    String? damageType;
+    if (option == Metamagic.transmuted) {
+      damageType = await showDialog<String>(
+        context: context,
+        builder: (context) => SimpleDialog(
+          title: const Text('Transmuted Spell damage type'),
+          children: [
+            for (final type in Metamagic.transmutedTypes)
+              if (type != Metamagic.transmutedType(spell.damageType))
+                SimpleDialogOption(
+                  onPressed: () => Navigator.pop(context, type),
+                  child: Text(type),
+                ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted ||
+          damageType == null ||
+          !simpleMetamagicAvailable(spell, option)) {
+        return;
+      }
+    }
     final freeCast = freeCastResource(spell);
     final source = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('${option.label} · ${spell.name}'),
         content: Text(
-          '1 Sorcery Point. ${metamagicPreview(spell, option)}\n\nThe normal casting time still applies.',
+          '1 Sorcery Point. ${metamagicPreview(spell, option, damageType: damageType)}\n\nThe normal casting time still applies.',
         ),
         actions: [
           TextButton(
@@ -2455,11 +2517,13 @@ class _CharacterOverviewState extends State<CharacterOverview>
     }
     modifyingSpellId = spell.id;
     castingMetamagic = option;
+    transmutingDamageType = damageType;
     try {
       await castSpell(spell, useFreeCast: source);
     } finally {
       modifyingSpellId = null;
       castingMetamagic = null;
+      transmutingDamageType = null;
     }
   }
 
@@ -2568,6 +2632,15 @@ class _CharacterOverviewState extends State<CharacterOverview>
         : modifyingSpellId == spell.id
         ? castingMetamagic
         : null;
+    if (newCast &&
+        (characterState.spellDamageTypes.containsKey(spell.id) ||
+            option == Metamagic.transmuted)) {
+      final types = {...characterState.spellDamageTypes}..remove(spell.id);
+      if (option == Metamagic.transmuted && transmutingDamageType != null) {
+        types[spell.id] = transmutingDamageType!;
+      }
+      updateCharacterState(characterState.copyWith(spellDamageTypes: types));
+    }
     if (newCast && option != null) {
       final points = resourceWithId(sorceryPointsResourceId)!;
       updateCharacterState(
@@ -5063,16 +5136,19 @@ class _CharacterOverviewState extends State<CharacterOverview>
     bool useFreeCast = false,
     String? scrollName,
   }) async {
+    var damageType = action is Spell
+        ? effectiveSpellDamageType(action)
+        : action.damageType;
     final formAttack = activeWildShape;
     if (formAttack?.fixedDamage != null &&
         action.id == formAttack!.combatAttack.id) {
       pendingCriticalActionKey = null;
       addRollNotice(
         title: '${action.name} Damage',
-        calculation: '${formAttack.fixedDamage} ${action.damageType} damage',
+        calculation: '${formAttack.fixedDamage} $damageType damage',
         total: formAttack.fixedDamage!,
         tone: RollNoticeTone.damage,
-        detail: '${action.damageType} damage',
+        detail: '$damageType damage',
       );
       return;
     }
@@ -5239,6 +5315,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
     }
     if (useAttackSlot) pendingAttackSlot = null;
     if (critical) pendingCriticalActionKey = null;
+    damageType = action is Spell
+        ? effectiveSpellDamageType(action)
+        : action.damageType;
     if (noDamage) {
       addRollNotice(
         title: repeatingEffect
@@ -5247,9 +5326,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         calculation: 'Successful save · No damage',
         total: 0,
         tone: RollNoticeTone.damage,
-        detail: action.damageType == null
-            ? null
-            : '${action.damageType} damage',
+        detail: damageType == null ? null : '$damageType damage',
       );
       return;
     }
@@ -5261,7 +5338,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     final affinityBonus = action is Spell
         ? await confirmElementalAffinityBonus(
             action,
-            iceStorm ? 'cold' : action.damageType,
+            iceStorm ? 'cold' : damageType,
           )
         : 0;
     if (!mounted) return;
@@ -5315,9 +5392,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
           '${adjustedTotal != roll.total ? ' → $adjustedTotal minimum damage' : ''}'
           '${halfDamage ? ' → $total after save' : ''}',
       total: total,
-      detail: action.damageType == null
-          ? 'Damage'
-          : '${action.damageType} damage',
+      detail: damageType == null ? 'Damage' : '$damageType damage',
       tone: RollNoticeTone.damage,
     );
     if (action is Weapon && action.isMelee) {
@@ -5328,7 +5403,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       await resolveFrenzy(
         usesStrength: action.usesStrength,
         critical: critical,
-        damageType: action.damageType,
+        damageType: damageType,
       );
     }
   }

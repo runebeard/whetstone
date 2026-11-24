@@ -17,7 +17,7 @@ enum Metamagic {
   final int pointCost;
   String get usageHint => switch (this) {
     quickened => 'Cast from spell details',
-    subtle || distant || extended => 'Preview from spell details',
+    subtle || distant || extended || transmuted => 'Preview from spell details',
     empowered => 'Choose dice when rolling typed spell damage',
     seeking => 'Confirm a missed spell attack to reroll one d20',
     _ => 'Resolve this option at the table',
@@ -29,6 +29,17 @@ enum Metamagic {
     >= 2 => 2,
     _ => 0,
   };
+  static const transmutedTypes = [
+    'Acid',
+    'Cold',
+    'Fire',
+    'Lightning',
+    'Poison',
+    'Thunder',
+  ];
+  static String? transmutedType(String? value) => transmutedTypes
+      .where((type) => type.toLowerCase() == value?.trim().toLowerCase())
+      .firstOrNull;
 
   static String? distantRange(String? range) {
     if (range?.trim().toLowerCase() == 'touch') return '30 feet';
