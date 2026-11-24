@@ -5,6 +5,7 @@ import 'character_resource.dart';
 import 'feature.dart';
 import 'inventory_item.dart';
 import 'journal_entry.dart';
+import 'metamagic.dart';
 import 'skill.dart';
 import 'spell.dart';
 import 'weapon.dart';
@@ -46,6 +47,7 @@ class Character {
   final ElementalFury? elementalFury;
   final Set<String> druidCantripIds;
   final Set<String> sorcererSpellIds;
+  final Set<Metamagic> metamagicOptions;
   final int? draconicHpBonus;
   final DraconicAffinity? elementalAffinity;
   // A live effect supplied by the session; never serialized in the definition.
@@ -85,6 +87,7 @@ class Character {
     this.elementalFury,
     this.druidCantripIds = const {},
     this.sorcererSpellIds = const {},
+    this.metamagicOptions = const {},
     this.draconicHpBonus,
     this.elementalAffinity,
     this.innateSorceryActive = false,
@@ -124,6 +127,7 @@ class Character {
     bool clearElementalFury = false,
     Set<String>? druidCantripIds,
     Set<String>? sorcererSpellIds,
+    Set<Metamagic>? metamagicOptions,
     int? draconicHpBonus,
     DraconicAffinity? elementalAffinity,
     bool? innateSorceryActive,
@@ -161,6 +165,7 @@ class Character {
           : elementalFury ?? this.elementalFury,
       druidCantripIds: druidCantripIds ?? this.druidCantripIds,
       sorcererSpellIds: sorcererSpellIds ?? this.sorcererSpellIds,
+      metamagicOptions: metamagicOptions ?? this.metamagicOptions,
       draconicHpBonus: draconicHpBonus ?? this.draconicHpBonus,
       elementalAffinity: elementalAffinity ?? this.elementalAffinity,
       innateSorceryActive: innateSorceryActive ?? this.innateSorceryActive,
@@ -206,6 +211,10 @@ class Character {
         'druidCantripIds': druidCantripIds.toList(),
       if (sorcererSpellIds.isNotEmpty)
         'sorcererSpellIds': sorcererSpellIds.toList(),
+      if (metamagicOptions.isNotEmpty)
+        'metamagicOptions': metamagicOptions
+            .map((option) => option.name)
+            .toList(),
       'draconicHpBonus': ?draconicHpBonus,
       'elementalAffinity': ?elementalAffinity?.name,
       'savedClassRules': ?savedClassRules,
@@ -323,6 +332,12 @@ class Character {
           .cast<String>()
           .toSet(),
       draconicHpBonus: (json['draconicHpBonus'] as int?)?.clamp(0, 20),
+      metamagicOptions: {
+        for (final name
+            in json['metamagicOptions'] as List<Object?>? ?? const [])
+          for (final option in Metamagic.values)
+            if (option.name == name) option,
+      },
       elementalAffinity: DraconicAffinity.values
           .where((value) => value.name == json['elementalAffinity'])
           .firstOrNull,
@@ -486,6 +501,10 @@ class Character {
   bool get hasDragonCompanion =>
       levelInClass('Sorcerer') >= 18 &&
       subclasses['Sorcerer'] == 'Draconic Sorcery';
+  bool knowsMetamagic(Metamagic option) =>
+      Metamagic.capacity(levelInClass('Sorcerer')) > 0 &&
+      metamagicOptions.length <= Metamagic.capacity(levelInClass('Sorcerer')) &&
+      metamagicOptions.contains(option);
   bool benefitsFromDragonCompanion(Spell spell) =>
       hasDragonCompanion &&
       isDraconicClassSpell(spell) &&

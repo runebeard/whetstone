@@ -7,6 +7,8 @@ class ActionDetailsDialog extends StatelessWidget {
   final CharacterAction action;
   final VoidCallback? onCast;
   final VoidCallback? onCastRitual;
+  final VoidCallback? onCastQuickened;
+  final VoidCallback? onCastQuickenedFree;
   final int? spellSaveDc;
   final VoidCallback? onRollDamage;
   final String? spellDamageFormula;
@@ -18,6 +20,8 @@ class ActionDetailsDialog extends StatelessWidget {
     required this.action,
     this.onCast,
     this.onCastRitual,
+    this.onCastQuickened,
+    this.onCastQuickenedFree,
     this.spellSaveDc,
     this.onRollDamage,
     this.spellDamageFormula,
@@ -36,6 +40,10 @@ class ActionDetailsDialog extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(action.summary),
+            if (onCastQuickened != null)
+              const Text(
+                'Quickened Spell: 2 Sorcery Points; this cast uses a Bonus Action.',
+              ),
             if (spell != null) ...[
               if (spell.savingThrowAbility case final ability?)
                 Text(
@@ -75,6 +83,16 @@ class ActionDetailsDialog extends StatelessWidget {
         ),
       ),
       actions: [
+        if (onCastQuickenedFree != null)
+          TextButton(
+            onPressed: onCastQuickenedFree,
+            child: const Text('Quickened Spell · Free cast'),
+          ),
+        if (onCastQuickened != null)
+          TextButton(
+            onPressed: onCastQuickened,
+            child: const Text('Quickened Spell'),
+          ),
         if (onRollDamage != null)
           TextButton(onPressed: onRollDamage, child: const Text('Roll Damage')),
         if (onCastRitual != null)

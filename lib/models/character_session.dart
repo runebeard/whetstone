@@ -39,6 +39,8 @@ class CharacterSession {
   final bool recklessAttackArmed;
   final bool frenzyUsedThisTurn;
   final bool hurlThroughHellUsedThisTurn;
+  final bool levelledSpellCastThisTurn;
+  final bool quickenedSpellUsedThisTurn;
   final int flurryAttacksRemaining;
   final int attackActionAttacksRemaining;
   final List<SessionEvent> timeline;
@@ -69,6 +71,8 @@ class CharacterSession {
     this.recklessAttackArmed = false,
     this.frenzyUsedThisTurn = false,
     this.hurlThroughHellUsedThisTurn = false,
+    this.levelledSpellCastThisTurn = false,
+    this.quickenedSpellUsedThisTurn = false,
     this.flurryAttacksRemaining = 0,
     this.attackActionAttacksRemaining = 0,
     this.timeline = const [],
@@ -109,6 +113,10 @@ class CharacterSession {
       if (isInCombat && frenzyUsedThisTurn) 'frenzyUsedThisTurn': true,
       if (isInCombat && hurlThroughHellUsedThisTurn)
         'hurlThroughHellUsedThisTurn': true,
+      if (isInCombat && levelledSpellCastThisTurn)
+        'levelledSpellCastThisTurn': true,
+      if (isInCombat && quickenedSpellUsedThisTurn)
+        'quickenedSpellUsedThisTurn': true,
       if (isInCombat && stunningStrikeUsedThisTurn)
         'stunningStrikeUsedThisTurn': true,
       if (isInCombat && selfRestorationUsedThisTurn)
@@ -143,6 +151,10 @@ class CharacterSession {
           (json['elementalAffinityUsedSpellIds'] as List<Object?>? ?? const [])
               .cast<String>()
               .toSet(),
+      levelledSpellCastThisTurn:
+          json['levelledSpellCastThisTurn'] as bool? ?? false,
+      quickenedSpellUsedThisTurn:
+          json['quickenedSpellUsedThisTurn'] as bool? ?? false,
       characterState: CharacterState.fromJson(
         json['characterState'] as Map<String, Object?>,
       ),

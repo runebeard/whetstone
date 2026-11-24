@@ -21,6 +21,7 @@ class ProfileModeView extends StatelessWidget {
   final VoidCallback? onPrimalKnowledge;
   final VoidCallback? onLoreProficiencies;
   final VoidCallback? onBardExpertise;
+  final VoidCallback? onMetamagic;
 
   const ProfileModeView({
     super.key,
@@ -36,6 +37,7 @@ class ProfileModeView extends StatelessWidget {
     this.onPrimalKnowledge,
     this.onLoreProficiencies,
     this.onBardExpertise,
+    this.onMetamagic,
   });
 
   String get displayProficiencyBonus {
@@ -50,6 +52,23 @@ class ProfileModeView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (onMetamagic != null)
+            Card(
+              child: ListTile(
+                key: const ValueKey('choose-metamagic'),
+                leading: const Icon(Icons.auto_fix_high),
+                title: const Text('Metamagic'),
+                subtitle: Text(
+                  character.metamagicOptions.isEmpty
+                      ? 'Choose your known options'
+                      : character.metamagicOptions
+                            .map((option) => option.label)
+                            .join(' · '),
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: onMetamagic,
+              ),
+            ),
           Card(
             child: ListTile(
               leading: const CircleAvatar(child: Icon(Icons.person_outline)),

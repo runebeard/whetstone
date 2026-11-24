@@ -27,6 +27,7 @@ import '../models/feature.dart';
 import '../models/inventory_item.dart';
 import '../models/journal_entry.dart';
 import '../models/library_content_copy.dart';
+import '../models/metamagic.dart';
 import '../models/rest.dart';
 import '../models/roll_notice.dart';
 import '../models/skill.dart';
@@ -98,6 +99,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
   bool recklessAttackArmed = false;
   bool frenzyUsedThisTurn = false;
   bool hurlThroughHellUsedThisTurn = false;
+  bool levelledSpellCastThisTurn = false;
+  bool quickenedSpellUsedThisTurn = false;
+  String? quickeningSpellId;
   int flurryAttacksRemaining = 0;
   int attackActionAttacksRemaining = 0;
   CheckRoll? tacticalMindCheck;
@@ -218,6 +222,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
         ? widget.initialSession.combatRound
         : 1;
     if (widget.initialSession.isInCombat) {
+      levelledSpellCastThisTurn =
+          widget.initialSession.levelledSpellCastThisTurn;
+      quickenedSpellUsedThisTurn =
+          widget.initialSession.quickenedSpellUsedThisTurn;
       frenzyUsedThisTurn = widget.initialSession.frenzyUsedThisTurn;
       hurlThroughHellUsedThisTurn =
           widget.initialSession.hurlThroughHellUsedThisTurn;
@@ -352,6 +360,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
         recklessAttackArmed: recklessAttackArmed,
         frenzyUsedThisTurn: frenzyUsedThisTurn,
         hurlThroughHellUsedThisTurn: hurlThroughHellUsedThisTurn,
+        levelledSpellCastThisTurn: levelledSpellCastThisTurn,
+        quickenedSpellUsedThisTurn: quickenedSpellUsedThisTurn,
         flurryAttacksRemaining: flurryAttacksRemaining,
         attackActionAttacksRemaining: attackActionAttacksRemaining,
         timeline: [...timeline],
@@ -1499,6 +1509,30 @@ class _CharacterOverviewState extends State<CharacterOverview>
                       ? () => Navigator.pop(context, 'free-cast')
                       : null,
                 ),
+              if (character.knowsMetamagic(Metamagic.quickened) &&
+                  hasActionCastingTime(spell)) ...[
+                ListTile(
+                  title: const Text('Quickened Spell'),
+                  subtitle: const Text(
+                    '2 Sorcery Points · Cast as a Bonus Action',
+                  ),
+                  onTap: quickenedSpellAvailable(spell)
+                      ? () => Navigator.pop(context, 'quickened')
+                      : null,
+                ),
+                if (freeCast != null)
+                  ListTile(
+                    title: const Text('Quickened Spell · Free cast'),
+                    subtitle: Text(
+                      '2 Sorcery Points · ${remainingUses(freeCast)} free casts remaining',
+                    ),
+                    onTap:
+                        quickenedSpellAvailable(spell) &&
+                            remainingUses(freeCast) > 0
+                        ? () => Navigator.pop(context, 'quickened-free')
+                        : null,
+                  ),
+              ],
               if (scrolls.isNotEmpty)
                 ListTile(
                   leading: const Icon(Icons.description_outlined),
@@ -1615,6 +1649,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
           SessionEventType.combat,
           '${spell.name} summon dismissed',
         );
+      case 'quickened':
+        await castQuickenedSpell(spell);
+      case 'quickened-free':
+        await castQuickenedSpell(spell, useFreeCast: true);
       case 'concentration':
         updateCharacterState(
           characterState.copyWith(
@@ -2228,6 +2266,22 @@ class _CharacterOverviewState extends State<CharacterOverview>
       context: context,
       builder: (context) => ActionDetailsDialog(
         action: action,
+        onCastQuickenedFree:
+            action is Spell &&
+                quickenedSpellAvailable(action) &&
+                freeCastResource(action) != null &&
+                remainingUses(freeCastResource(action)!) > 0
+            ? () {
+                Navigator.pop(context);
+                castQuickenedSpell(action, useFreeCast: true);
+              }
+            : null,
+        onCastQuickened: action is Spell && quickenedSpellAvailable(action)
+            ? () {
+                Navigator.pop(context);
+                castQuickenedSpell(action);
+              }
+            : null,
         spellComponents:
             action is Spell && character.benefitsFromDragonCompanion(action)
             ? 'V, S · Dragon Companion waives the Material component'
@@ -2274,8 +2328,40 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
+  bool hasActionCastingTime(Spell spell) =>
+      {'action', '1 action'}.contains(spell.castingTime?.trim().toLowerCase());
+
+  bool quickenedSpellAvailable(Spell spell) {
+    final points = resourceWithId(sorceryPointsResourceId);
+    return character.knowsMetamagic(Metamagic.quickened) &&
+        hasActionCastingTime(spell) &&
+        spell.isAvailableInCombat &&
+        points != null &&
+        remainingUses(points) >= 2 &&
+        characterState.canConcentrate &&
+        !characterState.isRaging &&
+        (currentMode != CharacterMode.combat ||
+            (!levelledSpellCastThisTurn &&
+                !quickenedSpellUsedThisTurn &&
+                !usedCombatActions.contains(CombatActionCost.bonusAction)));
+  }
+
+  Future<void> castQuickenedSpell(
+    Spell spell, {
+    bool useFreeCast = false,
+  }) async {
+    if (quickeningSpellId != null || !quickenedSpellAvailable(spell)) return;
+    quickeningSpellId = spell.id;
+    try {
+      await castSpell(spell, useFreeCast: useFreeCast);
+    } finally {
+      quickeningSpellId = null;
+    }
+  }
+
   CombatActionCost? spellActionCost(Spell spell) {
     if (currentMode != CharacterMode.combat) return null;
+    if (quickeningSpellId == spell.id) return CombatActionCost.bonusAction;
     return switch (spell.castingTime?.trim().toLowerCase()) {
       'action' || '1 action' => CombatActionCost.action,
       'bonus action' || '1 bonus action' => CombatActionCost.bonusAction,
@@ -2285,6 +2371,21 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   bool canSpendSpellAction(Spell spell, {bool fromScroll = false}) {
+    if (currentMode == CharacterMode.combat &&
+        ((!spell.isCantrip && quickenedSpellUsedThisTurn) ||
+            (quickeningSpellId == spell.id && levelledSpellCastThisTurn))) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Quickened Spell prevents another level 1+ spell on this turn.',
+          ),
+        ),
+      );
+      return false;
+    }
+    if (quickeningSpellId == spell.id && !quickenedSpellAvailable(spell)) {
+      return false;
+    }
     final transformed = characterState.wildShapeForm != null;
     final canCastInForm = character.levelInClass('Druid') >= 18;
     if (transformed &&
@@ -2319,6 +2420,27 @@ class _CharacterOverviewState extends State<CharacterOverview>
   void trackSpellAction(Spell spell, {bool newCast = true}) {
     if (newCast) elementalAffinityUsedSpellIds.remove(spell.id);
     final cost = spellActionCost(spell);
+    if (newCast && quickeningSpellId == spell.id) {
+      final points = resourceWithId(sorceryPointsResourceId)!;
+      updateCharacterState(
+        characterState.copyWith(
+          resourceValues: {
+            ...characterState.resourceValues,
+            points.id: remainingUses(points) - 2,
+          },
+        ),
+      );
+      quickenedSpellUsedThisTurn = currentMode == CharacterMode.combat;
+      recordSessionEvent(
+        SessionEventType.combat,
+        'Quickened Spell · ${spell.name}',
+        detail:
+            '2 Sorcery Points spent. Cast as a Bonus Action; no further level 1+ spells this turn.',
+      );
+    }
+    if (newCast && !spell.isCantrip && currentMode == CharacterMode.combat) {
+      levelledSpellCastThisTurn = true;
+    }
     if (cost != null) setCombatActionUsed(cost, true);
     if (cost == null) publishSession();
   }
@@ -7123,6 +7245,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
           roller: diceRoller,
         );
     if (useSorcerousRestoration) plan = plan.recoverSorceryPoints(character);
+    levelledSpellCastThisTurn = false;
+    quickenedSpellUsedThisTurn = false;
     peerlessSkillRoll = null;
     darkLuckRoll = null;
     updateCharacterState(plan.updatedState);
@@ -8222,6 +8346,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
   void beginCombat() {
     frenzyUsedThisTurn = false;
     hurlThroughHellUsedThisTurn = false;
+    levelledSpellCastThisTurn = false;
+    quickenedSpellUsedThisTurn = false;
     attackRollMadeThisTurn = false;
     recklessAttackArmed = false;
     setState(() {
@@ -8907,6 +9033,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
   void advanceCombatTurn() {
     frenzyUsedThisTurn = false;
     hurlThroughHellUsedThisTurn = false;
+    levelledSpellCastThisTurn = false;
+    quickenedSpellUsedThisTurn = false;
     attackRollMadeThisTurn = false;
     recklessAttackArmed = false;
     tacticalMindCheck = null;
@@ -8978,6 +9106,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
   void endCombat() {
     frenzyUsedThisTurn = false;
     hurlThroughHellUsedThisTurn = false;
+    levelledSpellCastThisTurn = false;
+    quickenedSpellUsedThisTurn = false;
     attackRollMadeThisTurn = false;
     recklessAttackArmed = false;
     var ended = characterState.endRage();
@@ -9783,10 +9913,78 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
+  Future<void> chooseMetamagic() async {
+    final capacity = Metamagic.capacity(character.levelInClass('Sorcerer'));
+    if (capacity == 0) return;
+    final chosen = {...character.metamagicOptions};
+    final result = await showDialog<Set<Metamagic>>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, updateDialog) => AlertDialog(
+          title: const Text('Known Metamagic'),
+          content: SizedBox(
+            width: 420,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Choose up to $capacity options. Recovery corrections are allowed here; confirm level-up replacements at the table.',
+                  ),
+                  for (final option in Metamagic.values)
+                    CheckboxListTile(
+                      key: ValueKey('metamagic-${option.name}'),
+                      title: Text(option.label),
+                      subtitle: Text('${option.pointCost} Sorcery Points'),
+                      value: chosen.contains(option),
+                      onChanged:
+                          chosen.contains(option) || chosen.length < capacity
+                          ? (value) => updateDialog(() {
+                              if (value == true) {
+                                chosen.add(option);
+                              } else {
+                                chosen.remove(option);
+                              }
+                            })
+                          : null,
+                    ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: chosen.length <= capacity
+                  ? () => Navigator.pop(context, chosen)
+                  : null,
+              child: const Text('Save Metamagic'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted ||
+        result == null ||
+        result.length >
+            Metamagic.capacity(character.levelInClass('Sorcerer'))) {
+      return;
+    }
+    setState(() => character = character.copyWith(metamagicOptions: result));
+    widget.onCharacterChanged(character);
+    publishSession();
+  }
+
   Widget buildProfileMode() {
     return ProfileModeView(
       character: character,
       characterState: characterState,
+      onMetamagic: Metamagic.capacity(character.levelInClass('Sorcerer')) > 0
+          ? chooseMetamagic
+          : null,
       onFeatureTap: handleActionTap,
       onManageFeature: manageFeature,
       onAddFeature: addFeature,
