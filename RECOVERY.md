@@ -19,7 +19,7 @@ A Beta 5 exported pack and a portable character export for an authored class wou
 
 ## Milestone backups
 
-Use a Git checkout of the upstream repository and bring the recovered files into the recovery/beta5 branch. This ZIP-derived copy does not contain Git history or an origin remote. The publishing script expects Git, Flutter, and an authenticated origin with write access.
+Use this Git checkout of the upstream repository on recovery/beta5. The publishing script expects Git, Flutter, and an authenticated origin with write access.
 
 After committing a milestone on recovery/beta5, run:
 
@@ -54,3 +54,4 @@ Schema-3 packs with class definitions can now be installed as library previews. 
 The character editor now offers a first playable slice for noncasting schema-3 classes with descriptive level-1 and level-2 grants, no early resource grants or progression choices, and at most one starting equipment option. It uses the existing proficiency controls for class skill picks, stores a recovery-format snapshot, and uses a fixed-average hit point increase at level 2. Starting gold is a zero-weight inventory entry and linked equipment is represented as inventory. Training enforcement, early resource progression, choices, action automation and schema 22 remain open. These changes have not been built or run.
 
 Authored class creation and first advancement now handle grantLevels and baseByLevel. A maximum change preserves the number of spent uses. The advancement dialog previews later feature grants and resource changes, including Deathstalker's Mark Prey and Deathmarks. Levels 3–20 have no save path. Advanced choices, training and action rules still need implementation.
+
