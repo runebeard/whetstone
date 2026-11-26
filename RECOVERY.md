@@ -25,7 +25,9 @@ After committing a milestone on recovery/beta5, run:
 
     ./scripts/Publish-Milestone.ps1 -Milestone recovery-baseline
 
-The script runs Flutter analysis and tests, then atomically pushes the checked commit to the recovery branch and to the remote tag milestone/recovery-baseline. Use a fresh name for each milestone. The script was syntax-checked only.
+The script runs Flutter analysis and tests, then atomically pushes the checked commit to the recovery branch and to the remote tag milestone/recovery-baseline. Use a fresh name for each milestone. This workflow has passed repeated full test/build/backup runs.
+
+For an Android milestone, include `-BuildAndroid` and a dated milestone name, for example `./scripts/Publish-Milestone.ps1 -Milestone casting-recovery-2026-11-26 -BuildAndroid`. This also verifies the Recovery package, launcher label and signing certificate, preserves a uniquely named APK in the parent workspace's `outputs` folder, and writes its source commit, test count and SHA-256 record beside it. `Save-MilestoneApk.ps1` performs this preservation step after the build and clean-source check. A conflicting artifact or source record is rejected; choose a fresh milestone name. APKs remain local, while source and milestone tags are pushed to GitHub.
 
 ## Recovered Lantern authoring draft
 

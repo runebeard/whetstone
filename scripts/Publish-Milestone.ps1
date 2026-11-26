@@ -64,7 +64,10 @@ try {
     $tag = "milestone/$Milestone"
 
     Invoke-RecoveryFlutter @('analyze', '--no-pub')
-    Invoke-RecoveryFlutter @('test', '--no-pub')
+    $logDirectory = Join-Path (Get-Location) 'build/milestones'
+    New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
+    $testLog = Join-Path $logDirectory "$Milestone-tests.log"
+    Invoke-RecoveryFlutter @('test', '--no-pub') | Tee-Object -FilePath $testLog
     if ($BuildAndroid) {
         & (Join-Path $PSScriptRoot 'Build-Android.ps1')
     }
@@ -73,6 +76,10 @@ try {
     $changes = Invoke-Checked git @('status', '--porcelain')
     if ($currentCommit -ne $commit -or $changes) {
         throw 'The checkout changed during verification. Review it and retry.'
+    }
+
+    if ($BuildAndroid) {
+        & (Join-Path $PSScriptRoot 'Save-MilestoneApk.ps1') -Milestone $Milestone -SourceCommit $commit -TestLog $testLog
     }
 
     Invoke-Checked git @(
