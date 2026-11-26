@@ -21,10 +21,11 @@ enum Metamagic {
     distant ||
     extended ||
     transmuted ||
+    careful ||
+    heightened ||
     twinned => 'Preview from spell details',
     empowered => 'Choose dice when rolling typed spell damage',
     seeking => 'Confirm a missed spell attack to reroll one d20',
-    _ => 'Resolve this option at the table',
   };
 
   static int capacity(int sorcererLevel) => switch (sorcererLevel) {
@@ -115,5 +116,39 @@ enum Metamagic {
       if (name == 'hex' && level == 2) return 4800;
     }
     return baseline;
+  }
+}
+
+class SpellSaveEffect {
+  final Metamagic option;
+  final List<String> targets;
+  const SpellSaveEffect(this.option, this.targets);
+
+  String get guidance => option == Metamagic.careful
+      ? 'Careful Spell: ${targets.join(', ')} automatically succeed on saves; take no damage when a successful save normally halves damage.'
+      : 'Heightened Spell: ${targets.single} has Disadvantage on saves against this spell. Cancel Advantage normally; other targets are unaffected.';
+
+  Map<String, Object> toJson() => {'option': option.name, 'targets': targets};
+  static SpellSaveEffect? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final option = Metamagic.values
+        .where((o) => o.name == value['option'])
+        .firstOrNull;
+    if (option != Metamagic.careful && option != Metamagic.heightened) {
+      return null;
+    }
+    final raw = value['targets'];
+    if (raw is! List) return null;
+    final names = raw
+        .whereType<String>()
+        .map((n) => n.trim())
+        .where((n) => n.isNotEmpty && n.length <= 80)
+        .toSet()
+        .toList();
+    if (names.isEmpty ||
+        names.length > (option == Metamagic.heightened ? 1 : 10)) {
+      return null;
+    }
+    return SpellSaveEffect(option!, List.unmodifiable(names));
   }
 }

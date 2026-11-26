@@ -115,6 +115,7 @@ class CharacterState {
   final String? concentrationSpellId;
   final Map<String, String> spellSummons;
   final Map<String, String> spellDamageTypes;
+  final Map<String, SpellSaveEffect> spellSaveEffects;
   final int? concentrationSlotLevel;
   final String? concentrationTarget;
   final int? concentrationTurnsRemaining;
@@ -150,6 +151,7 @@ class CharacterState {
     this.concentrationSpellId,
     this.spellSummons = const {},
     this.spellDamageTypes = const {},
+    this.spellSaveEffects = const {},
     this.concentrationSlotLevel,
     this.concentrationTarget,
     this.concentrationTurnsRemaining,
@@ -213,6 +215,10 @@ class CharacterState {
         'extendedConcentration': true,
       if (spellSummons.isNotEmpty) 'spellSummons': spellSummons,
       if (spellDamageTypes.isNotEmpty) 'spellDamageTypes': spellDamageTypes,
+      if (spellSaveEffects.isNotEmpty)
+        'spellSaveEffects': spellSaveEffects.map(
+          (key, value) => MapEntry(key, value.toJson()),
+        ),
       'concentrationSlotLevel': ?concentrationSlotLevel,
       'concentrationTarget': ?concentrationTarget,
       'concentrationTurnsRemaining': ?concentrationTurnsRemaining,
@@ -268,6 +274,12 @@ class CharacterState {
       relentlessRageAttempts: json['relentlessRageAttempts'] as int? ?? 0,
       rageTurnsElapsed: ((json['rageTurnsElapsed'] as int?) ?? 0).clamp(0, 100),
       concentrationSpellId: json['concentrationSpellId'] as String?,
+      spellSaveEffects: {
+        for (final entry
+            in (json['spellSaveEffects'] as Map<String, Object?>? ?? const {})
+                .entries)
+          entry.key: ?SpellSaveEffect.fromJson(entry.value),
+      },
       spellDamageTypes: {
         for (final entry
             in (json['spellDamageTypes'] as Map<String, Object?>? ?? const {})
@@ -391,9 +403,14 @@ class CharacterState {
   }
 
   CharacterState normalizeSpellDamageTypes(Character character) =>
-      spellDamageTypes.isEmpty
+      spellDamageTypes.isEmpty && spellSaveEffects.isEmpty
       ? this
       : copyWith(
+          spellSaveEffects: {
+            for (final spell in character.spells)
+              if (spell.savingThrowAbility != null)
+                spell.id: ?spellSaveEffects[spell.id],
+          },
           spellDamageTypes: {
             for (final spell in character.spells)
               if (Metamagic.transmutedType(spell.damageType) != null)
@@ -467,6 +484,7 @@ class CharacterState {
     String? concentrationSpellId,
     Map<String, String>? spellSummons,
     Map<String, String>? spellDamageTypes,
+    Map<String, SpellSaveEffect>? spellSaveEffects,
     int? concentrationSlotLevel,
     String? concentrationTarget,
     int? concentrationTurnsRemaining,
@@ -522,6 +540,7 @@ class CharacterState {
           ? null
           : concentrationSpellId ?? this.concentrationSpellId,
       spellDamageTypes: spellDamageTypes ?? this.spellDamageTypes,
+      spellSaveEffects: spellSaveEffects ?? this.spellSaveEffects,
       extendedConcentration:
           clearConcentration ||
               (concentrationSpellId ?? this.concentrationSpellId) == null

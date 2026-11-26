@@ -106,6 +106,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   String? modifyingSpellId;
   Metamagic? castingMetamagic;
   String? transmutingDamageType;
+  SpellSaveEffect? pendingSaveEffect;
   int flurryAttacksRemaining = 0;
   int attackActionAttacksRemaining = 0;
   CheckRoll? tacticalMindCheck;
@@ -316,6 +317,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       });
     }
     if (!characterState.canConcentrate ||
+        characterState.spellSaveEffects.length !=
+            widget.initialSession.characterState.spellSaveEffects.length ||
         characterState.spellDamageTypes.length !=
             widget.initialSession.characterState.spellDamageTypes.length ||
         characterState.dragonCompanionSpellId !=
@@ -1550,6 +1553,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
                 Metamagic.extended,
                 Metamagic.transmuted,
                 Metamagic.twinned,
+                Metamagic.careful,
+                Metamagic.heightened,
               ])
                 if (character.knowsMetamagic(option))
                   ListTile(
@@ -1691,6 +1696,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
         await castSimpleMetamagic(spell, Metamagic.transmuted);
       case 'twinned':
         await castSimpleMetamagic(spell, Metamagic.twinned);
+      case 'careful':
+        await castSimpleMetamagic(spell, Metamagic.careful);
+      case 'heightened':
+        await castSimpleMetamagic(spell, Metamagic.heightened);
       case 'concentration':
         updateCharacterState(
           characterState.copyWith(
@@ -2311,6 +2320,22 @@ class _CharacterOverviewState extends State<CharacterOverview>
       context: context,
       builder: (context) => ActionDetailsDialog(
         action: action,
+        onCastCareful:
+            action is Spell &&
+                simpleMetamagicAvailable(action, Metamagic.careful)
+            ? () {
+                Navigator.pop(context);
+                castSimpleMetamagic(action, Metamagic.careful);
+              }
+            : null,
+        onCastHeightened:
+            action is Spell &&
+                simpleMetamagicAvailable(action, Metamagic.heightened)
+            ? () {
+                Navigator.pop(context);
+                castSimpleMetamagic(action, Metamagic.heightened);
+              }
+            : null,
         onCastTwinned:
             action is Spell &&
                 simpleMetamagicAvailable(action, Metamagic.twinned)
@@ -2425,6 +2450,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
           Metamagic.extended,
           Metamagic.transmuted,
           Metamagic.twinned,
+          Metamagic.careful,
+          Metamagic.heightened,
         }.contains(option) &&
         character.knowsMetamagic(option) &&
         spell.isAvailableInCombat &&
@@ -2440,9 +2467,70 @@ class _CharacterOverviewState extends State<CharacterOverview>
             (Metamagic.transmutedType(spell.damageType) != null &&
                 !(spell.isCircleGrant && spell.name == 'Ice Storm'))) &&
         (option != Metamagic.twinned || Metamagic.supportsTwinned(spell)) &&
+        (!{Metamagic.careful, Metamagic.heightened}.contains(option) ||
+            spell.savingThrowAbility != null) &&
         (currentMode != CharacterMode.combat ||
             ((spell.isCantrip || !quickenedSpellUsedThisTurn) &&
                 (cost == null || !usedCombatActions.contains(cost))));
+  }
+
+  SpellSaveEffect? saveEffectFor(Spell spell, {bool newCast = false}) => newCast
+      ? modifyingSpellId == spell.id
+            ? pendingSaveEffect
+            : null
+      : characterState.spellSaveEffects[spell.id];
+
+  Future<SpellSaveEffect?> chooseSpellSaveTargets(Metamagic option) async {
+    var text = '';
+    final maximum = option == Metamagic.heightened
+        ? 1
+        : character.abilityModifierFor(Ability.charisma).clamp(1, 10);
+    List<String> names() => text
+        .split(',')
+        .map((n) => n.trim())
+        .where((n) => n.isNotEmpty)
+        .toSet()
+        .toList();
+    return showDialog<SpellSaveEffect>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: Text('${option.label} targets'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Name ${option == Metamagic.heightened ? 'one target' : 'up to $maximum protected creatures'}. Separate names with commas. Confirm creature eligibility at the table.',
+              ),
+              TextField(
+                key: const ValueKey('metamagic-save-targets'),
+                maxLength: 800,
+                decoration: const InputDecoration(labelText: 'Target names'),
+                onChanged: (value) => update(() => text = value),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed:
+                  names().isNotEmpty &&
+                      names().length <= maximum &&
+                      names().every((n) => n.length <= 80)
+                  ? () => Navigator.pop(
+                      context,
+                      SpellSaveEffect(option, List.unmodifiable(names())),
+                    )
+                  : null,
+              child: const Text('Confirm Targets'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   bool extendingSpell(Spell spell) =>
@@ -2452,7 +2540,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
     Spell spell,
     Metamagic option, {
     String? damageType,
-  }) => option == Metamagic.twinned
+    SpellSaveEffect? saveEffect,
+  }) => {Metamagic.careful, Metamagic.heightened}.contains(option)
+      ? (saveEffect ?? pendingSaveEffect)!.guidance
+      : option == Metamagic.twinned
       ? 'For Command, Fly or Charm Monster, increase the effective casting level by 1 for an additional target. '
             'Spend the selected slot normally; ninth-level slots are unavailable for this option. '
             'Resolve creature eligibility, target selection, range and saves at the table.'
@@ -2477,6 +2568,15 @@ class _CharacterOverviewState extends State<CharacterOverview>
       return;
     }
     String? damageType;
+    SpellSaveEffect? saveEffect;
+    if ({Metamagic.careful, Metamagic.heightened}.contains(option)) {
+      saveEffect = await chooseSpellSaveTargets(option);
+      if (!mounted ||
+          saveEffect == null ||
+          !simpleMetamagicAvailable(spell, option)) {
+        return;
+      }
+    }
     if (option == Metamagic.transmuted) {
       damageType = await showDialog<String>(
         context: context,
@@ -2508,7 +2608,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       builder: (context) => AlertDialog(
         title: Text('${option.label} · ${spell.name}'),
         content: Text(
-          '1 Sorcery Point. ${metamagicPreview(spell, option, damageType: damageType)}\n\nThe normal casting time still applies.',
+          '${option.pointCost} Sorcery Points. ${metamagicPreview(spell, option, damageType: damageType, saveEffect: saveEffect)}\n\nThe normal casting time still applies.',
         ),
         actions: [
           TextButton(
@@ -2535,12 +2635,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
     modifyingSpellId = spell.id;
     castingMetamagic = option;
     transmutingDamageType = damageType;
+    pendingSaveEffect = saveEffect;
     try {
       await castSpell(spell, useFreeCast: source);
     } finally {
       modifyingSpellId = null;
       castingMetamagic = null;
       transmutingDamageType = null;
+      pendingSaveEffect = null;
     }
   }
 
@@ -2650,6 +2752,15 @@ class _CharacterOverviewState extends State<CharacterOverview>
         ? castingMetamagic
         : null;
     if (newCast &&
+        (characterState.spellSaveEffects.containsKey(spell.id) ||
+            pendingSaveEffect != null)) {
+      final effects = {...characterState.spellSaveEffects}..remove(spell.id);
+      if (modifyingSpellId == spell.id && pendingSaveEffect != null) {
+        effects[spell.id] = pendingSaveEffect!;
+      }
+      updateCharacterState(characterState.copyWith(spellSaveEffects: effects));
+    }
+    if (newCast &&
         (characterState.spellDamageTypes.containsKey(spell.id) ||
             option == Metamagic.transmuted)) {
       final types = {...characterState.spellDamageTypes}..remove(spell.id);
@@ -2676,7 +2787,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         '${option.label} · ${spell.name}',
         detail: option == Metamagic.quickened
             ? '2 Sorcery Points spent. Cast as a Bonus Action; no further level 1+ spells this turn.'
-            : '1 Sorcery Point spent. ${metamagicPreview(spell, option)}',
+            : '${option.pointCost} Sorcery Points spent. ${metamagicPreview(spell, option)}',
       );
     }
     if (newCast && !spell.isCantrip && currentMode == CharacterMode.combat) {
@@ -3045,6 +3156,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         );
       }
       if ((spell.isCircleGrant ||
+              saveEffectFor(spell) != null ||
               (spell.isDraconicGrant &&
                   {'Command', 'Fear', 'Charm Monster'}.contains(spell.name))) &&
           spell.savingThrowAbility != null) {
@@ -3073,13 +3185,18 @@ class _CharacterOverviewState extends State<CharacterOverview>
         title: Text('${spell.name} target save'),
         content: Text(
           '${dc == null ? '' : 'DC $dc '}${ability.label} saving throw.\n\n'
-          '${spell.summary}',
+          '${spell.summary}\n${saveEffectFor(spell)?.guidance ?? ''}',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Resolve at Table'),
           ),
+          if (saveEffectFor(spell)?.option == Metamagic.careful)
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Protected target · Automatic save'),
+            ),
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Failed save'),
@@ -3101,7 +3218,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
               : outcome
               ? 'Successful save'
               : 'Failed save'}'
-          '${dc == null ? '' : ' · DC $dc'} ${ability.label}. ${spell.summary}',
+          '${dc == null ? '' : ' · DC $dc'} ${ability.label}. ${spell.summary} ${saveEffectFor(spell)?.guidance ?? ''}',
     );
   }
 
@@ -5267,6 +5384,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     }
     var halfDamage = false;
     var noDamage = false;
+    var protectedTarget = false;
     if (action case Spell(
       savingThrowAbility: final ability?,
       damageFormula: final formula?,
@@ -5282,11 +5400,19 @@ class _CharacterOverviewState extends State<CharacterOverview>
         builder: (context) => AlertDialog(
           title: Text(action.name),
           content: Text(
-            dc == null
-                ? 'Did the target succeed on its ${ability.label} save?'
-                : 'Did the target succeed on its DC $dc ${ability.label} save?',
+            '${dc == null ? 'Did the target succeed on its ${ability.label} save?' : 'Did the target succeed on its DC $dc ${ability.label} save?'}'
+            '\n${saveEffectFor(action, newCast: castingSpell)?.guidance ?? ''}',
           ),
           actions: [
+            if (saveEffectFor(action, newCast: castingSpell)?.option ==
+                Metamagic.careful)
+              TextButton(
+                onPressed: () {
+                  protectedTarget = true;
+                  Navigator.pop(context, true);
+                },
+                child: const Text('Protected target · Automatic save'),
+              ),
             TextButton(
               onPressed: () => Navigator.pop(context, false),
               child: const Text('Failed save'),
@@ -5299,8 +5425,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
         ),
       );
       if (!mounted || result == null) return;
-      halfDamage = result && action.halfDamageOnSave;
-      noDamage = result && !action.halfDamageOnSave;
+      halfDamage = result && action.halfDamageOnSave && !protectedTarget;
+      noDamage = protectedTarget || (result && !action.halfDamageOnSave);
     }
     var formula = character.damageFormulaFor(
       action,
@@ -5376,7 +5502,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
         title: repeatingEffect
             ? '${action.name} Repeat Effect'
             : '${action.name} Damage',
-        calculation: 'Successful save · No damage',
+        calculation: protectedTarget
+            ? 'Careful Spell · Protected target · No damage'
+            : 'Successful save · No damage',
         total: 0,
         tone: RollNoticeTone.damage,
         detail: damageType == null ? null : '$damageType damage',
