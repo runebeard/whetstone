@@ -41,6 +41,8 @@ class CharacterSession {
   final bool hurlThroughHellUsedThisTurn;
   final bool levelledSpellCastThisTurn;
   final bool quickenedSpellUsedThisTurn;
+  final bool apotheosisUsedThisTurn;
+  final bool apotheosisArmed;
   final int flurryAttacksRemaining;
   final int attackActionAttacksRemaining;
   final List<SessionEvent> timeline;
@@ -73,6 +75,8 @@ class CharacterSession {
     this.hurlThroughHellUsedThisTurn = false,
     this.levelledSpellCastThisTurn = false,
     this.quickenedSpellUsedThisTurn = false,
+    this.apotheosisUsedThisTurn = false,
+    this.apotheosisArmed = false,
     this.flurryAttacksRemaining = 0,
     this.attackActionAttacksRemaining = 0,
     this.timeline = const [],
@@ -117,6 +121,8 @@ class CharacterSession {
         'levelledSpellCastThisTurn': true,
       if (isInCombat && quickenedSpellUsedThisTurn)
         'quickenedSpellUsedThisTurn': true,
+      if (isInCombat && apotheosisUsedThisTurn) 'apotheosisUsedThisTurn': true,
+      if (isInCombat && apotheosisArmed) 'apotheosisArmed': true,
       if (isInCombat && stunningStrikeUsedThisTurn)
         'stunningStrikeUsedThisTurn': true,
       if (isInCombat && selfRestorationUsedThisTurn)
@@ -155,6 +161,8 @@ class CharacterSession {
           json['levelledSpellCastThisTurn'] as bool? ?? false,
       quickenedSpellUsedThisTurn:
           json['quickenedSpellUsedThisTurn'] as bool? ?? false,
+      apotheosisUsedThisTurn: json['apotheosisUsedThisTurn'] as bool? ?? false,
+      apotheosisArmed: json['apotheosisArmed'] as bool? ?? false,
       characterState: CharacterState.fromJson(
         json['characterState'] as Map<String, Object?>,
       ),

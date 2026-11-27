@@ -16,6 +16,8 @@ class ActionDetailsDialog extends StatelessWidget {
   final VoidCallback? onCastTwinned;
   final VoidCallback? onCastCareful;
   final VoidCallback? onCastHeightened;
+  final VoidCallback? onArcaneApotheosis;
+  final bool freeMetamagic;
   final int? spellSaveDc;
   final VoidCallback? onRollDamage;
   final String? spellDamageFormula;
@@ -36,6 +38,8 @@ class ActionDetailsDialog extends StatelessWidget {
     this.onCastTwinned,
     this.onCastCareful,
     this.onCastHeightened,
+    this.onArcaneApotheosis,
+    this.freeMetamagic = false,
     this.spellSaveDc,
     this.onRollDamage,
     this.spellDamageFormula,
@@ -54,9 +58,13 @@ class ActionDetailsDialog extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(action.summary),
-            if (onCastQuickened != null)
+            if (freeMetamagic)
               const Text(
-                'Quickened Spell: 2 Sorcery Points; this cast uses a Bonus Action.',
+                'Arcane Apotheosis: the next supported Metamagic option is free on this turn.',
+              ),
+            if (onCastQuickened != null)
+              Text(
+                'Quickened Spell: ${freeMetamagic ? '0' : '2'} Sorcery Points; this cast uses a Bonus Action.',
               ),
             if (spell != null) ...[
               if (spell.savingThrowAbility case final ability?)
@@ -97,6 +105,15 @@ class ActionDetailsDialog extends StatelessWidget {
         ),
       ),
       actions: [
+        if (onArcaneApotheosis != null)
+          TextButton(
+            onPressed: onArcaneApotheosis,
+            child: Text(
+              freeMetamagic
+                  ? 'Cancel free Metamagic'
+                  : 'My turn · Arm free Metamagic',
+            ),
+          ),
         if (onCastCareful != null)
           TextButton(
             onPressed: onCastCareful,

@@ -4,11 +4,13 @@ import '../models/check_roll.dart';
 class EmpoweredSpellDialog extends StatefulWidget {
   final DamageRoll roll;
   final int maximum;
+  final int pointCost;
 
   const EmpoweredSpellDialog({
     super.key,
     required this.roll,
     required this.maximum,
+    this.pointCost = 1,
   });
 
   @override
@@ -27,7 +29,7 @@ class _EmpoweredSpellDialogState extends State<EmpoweredSpellDialog> {
       children: [
         Text(
           '${widget.roll.label}: ${widget.roll.expression.notation}. '
-          'Spend 1 Sorcery Point to reroll up to ${widget.maximum} damage dice. '
+          'Spend ${widget.pointCost} Sorcery Points to reroll up to ${widget.maximum} damage dice. '
           'Keep the new results, even if lower. No action is spent.',
         ),
         for (var i = 0; i < widget.roll.dice.length; i++)

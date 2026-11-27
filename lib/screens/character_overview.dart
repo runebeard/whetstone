@@ -102,6 +102,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
   bool hurlThroughHellUsedThisTurn = false;
   bool levelledSpellCastThisTurn = false;
   bool quickenedSpellUsedThisTurn = false;
+  bool apotheosisUsedThisTurn = false;
+  bool apotheosisArmed = false;
   String? quickeningSpellId;
   String? modifyingSpellId;
   Metamagic? castingMetamagic;
@@ -228,6 +230,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
         ? widget.initialSession.combatRound
         : 1;
     if (widget.initialSession.isInCombat) {
+      apotheosisUsedThisTurn = widget.initialSession.apotheosisUsedThisTurn;
+      apotheosisArmed =
+          widget.initialSession.apotheosisArmed &&
+          !apotheosisUsedThisTurn &&
+          character.levelInClass('Sorcerer') >= 20 &&
+          characterState.activeConditions.contains(innateSorceryCondition);
       levelledSpellCastThisTurn =
           widget.initialSession.levelledSpellCastThisTurn;
       quickenedSpellUsedThisTurn =
@@ -317,6 +325,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       });
     }
     if (!characterState.canConcentrate ||
+        apotheosisArmed != widget.initialSession.apotheosisArmed ||
         characterState.spellSaveEffects.length !=
             widget.initialSession.characterState.spellSaveEffects.length ||
         characterState.spellDamageTypes.length !=
@@ -372,6 +381,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
         hurlThroughHellUsedThisTurn: hurlThroughHellUsedThisTurn,
         levelledSpellCastThisTurn: levelledSpellCastThisTurn,
         quickenedSpellUsedThisTurn: quickenedSpellUsedThisTurn,
+        apotheosisUsedThisTurn: apotheosisUsedThisTurn,
+        apotheosisArmed: apotheosisArmed,
         flurryAttacksRemaining: flurryAttacksRemaining,
         attackActionAttacksRemaining: attackActionAttacksRemaining,
         timeline: [...timeline],
@@ -386,6 +397,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void updateCharacterState(CharacterState updatedState) {
+    if (character.levelInClass('Sorcerer') < 20 ||
+        !updatedState.activeConditions.contains(innateSorceryCondition)) {
+      apotheosisArmed = false;
+    }
     updatedState = updatedState.normalizeSpellDamageTypes(character);
     updatedState = updatedState.normalizeDragonCompanion(character);
     if (!character.hasDragonWings &&
@@ -2320,6 +2335,16 @@ class _CharacterOverviewState extends State<CharacterOverview>
       context: context,
       builder: (context) => ActionDetailsDialog(
         action: action,
+        freeMetamagic:
+            action is Spell && apotheosisArmed && apotheosisAvailable,
+        onArcaneApotheosis: action is Spell && apotheosisAvailable
+            ? () {
+                setState(() => apotheosisArmed = !apotheosisArmed);
+                publishSession();
+                Navigator.pop(context);
+                showActionDetails(action);
+              }
+            : null,
         onCastCareful:
             action is Spell &&
                 simpleMetamagicAvailable(action, Metamagic.careful)
@@ -2441,6 +2466,47 @@ class _CharacterOverviewState extends State<CharacterOverview>
   String? effectiveSpellDamageType(Spell spell) =>
       characterState.spellDamageTypes[spell.id] ?? spell.damageType;
 
+  bool get apotheosisAvailable =>
+      currentMode == CharacterMode.combat &&
+      character.levelInClass('Sorcerer') >= 20 &&
+      innateSorceryActive &&
+      characterState.canConcentrate &&
+      !apotheosisUsedThisTurn;
+
+  int metamagicPointCost(Metamagic option) =>
+      apotheosisArmed && apotheosisAvailable ? 0 : option.pointCost;
+
+  bool canPayMetamagic(Metamagic option) {
+    final points = resourceWithId(sorceryPointsResourceId);
+    return metamagicPointCost(option) == 0 ||
+        (points != null && remainingUses(points) >= option.pointCost);
+  }
+
+  bool spendMetamagic(Metamagic option) {
+    if (!canPayMetamagic(option)) return false;
+    if (metamagicPointCost(option) == 0) {
+      apotheosisUsedThisTurn = true;
+      apotheosisArmed = false;
+      recordSessionEvent(
+        SessionEventType.resource,
+        'Arcane Apotheosis · ${option.label}',
+        detail:
+            'Own turn confirmed. One free Metamagic option used; no Sorcery Points spent.',
+      );
+      return true;
+    }
+    final points = resourceWithId(sorceryPointsResourceId)!;
+    updateCharacterState(
+      characterState.copyWith(
+        resourceValues: {
+          ...characterState.resourceValues,
+          points.id: remainingUses(points) - option.pointCost,
+        },
+      ),
+    );
+    return true;
+  }
+
   bool simpleMetamagicAvailable(Spell spell, Metamagic option) {
     final points = resourceWithId(sorceryPointsResourceId);
     final cost = spellActionCost(spell);
@@ -2456,7 +2522,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         character.knowsMetamagic(option) &&
         spell.isAvailableInCombat &&
         points != null &&
-        remainingUses(points) >= option.pointCost &&
+        canPayMetamagic(option) &&
         characterState.canConcentrate &&
         !characterState.isRaging &&
         (option != Metamagic.distant ||
@@ -2608,7 +2674,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       builder: (context) => AlertDialog(
         title: Text('${option.label} · ${spell.name}'),
         content: Text(
-          '${option.pointCost} Sorcery Points. ${metamagicPreview(spell, option, damageType: damageType, saveEffect: saveEffect)}\n\nThe normal casting time still applies.',
+          '${metamagicPointCost(option)} Sorcery Points. ${metamagicPreview(spell, option, damageType: damageType, saveEffect: saveEffect)}\n\nThe normal casting time still applies.',
         ),
         actions: [
           TextButton(
@@ -2655,7 +2721,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         hasActionCastingTime(spell) &&
         spell.isAvailableInCombat &&
         points != null &&
-        remainingUses(points) >= 2 &&
+        canPayMetamagic(Metamagic.quickened) &&
         characterState.canConcentrate &&
         !characterState.isRaging &&
         (currentMode != CharacterMode.combat ||
@@ -2770,15 +2836,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       updateCharacterState(characterState.copyWith(spellDamageTypes: types));
     }
     if (newCast && option != null) {
-      final points = resourceWithId(sorceryPointsResourceId)!;
-      updateCharacterState(
-        characterState.copyWith(
-          resourceValues: {
-            ...characterState.resourceValues,
-            points.id: remainingUses(points) - option.pointCost,
-          },
-        ),
-      );
+      final cost = metamagicPointCost(option);
+      if (!spendMetamagic(option)) return;
       if (option == Metamagic.quickened) {
         quickenedSpellUsedThisTurn = currentMode == CharacterMode.combat;
       }
@@ -2786,8 +2845,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
         SessionEventType.combat,
         '${option.label} · ${spell.name}',
         detail: option == Metamagic.quickened
-            ? '2 Sorcery Points spent. Cast as a Bonus Action; no further level 1+ spells this turn.'
-            : '${option.pointCost} Sorcery Points spent. ${metamagicPreview(spell, option)}',
+            ? '$cost Sorcery Points spent. Cast as a Bonus Action; no further level 1+ spells this turn.'
+            : '$cost Sorcery Points spent. ${metamagicPreview(spell, option)}',
       );
     }
     if (newCast && !spell.isCantrip && currentMode == CharacterMode.combat) {
@@ -3551,6 +3610,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void beginAnotherCreatureTurn() {
+    apotheosisArmed = false;
     fleetStepUsedThisTurn = true;
     sneakAttackUsedThisTurn = false;
     stunningStrikeUsedThisTurn = false;
@@ -4774,7 +4834,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       final points = resourceWithId(sorceryPointsResourceId);
       return character.knowsMetamagic(Metamagic.seeking) &&
           points != null &&
-          remainingUses(points) > 0 &&
+          canPayMetamagic(Metamagic.seeking) &&
           characterState.canConcentrate &&
           !original.isNaturalTwenty &&
           dice.isNotEmpty;
@@ -4790,7 +4850,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
             padding: const EdgeInsets.all(16),
             child: Text(
               'Attack total ${original.total} · ${mode.label}. Use only if this attack missed. '
-              'Spend 1 Sorcery Point to reroll one d20 and keep its new result. '
+              'Spend ${metamagicPointCost(Metamagic.seeking)} Sorcery Points to reroll one d20 and keep its new result. '
               'The other die and the original roll mode remain unchanged.',
             ),
           ),
@@ -4806,12 +4866,13 @@ class _CharacterOverviewState extends State<CharacterOverview>
         ],
       ),
     );
+    final cost = metamagicPointCost(Metamagic.seeking);
     if (!mounted ||
         index == null ||
         index < 0 ||
         index >= dice.length ||
         !available() ||
-        !spendCastResource(sorceryPointsResourceId)) {
+        !spendMetamagic(Metamagic.seeking)) {
       return original;
     }
     final rerolled = [...dice];
@@ -4838,7 +4899,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
           '${result.displayModifier} = ${result.total}',
       total: result.total,
       detail:
-          'Miss confirmed · 1 Sorcery Point spent · Die ${index + 1}: '
+          'Miss confirmed · $cost Sorcery Points spent · Die ${index + 1}: '
           '${dice[index]} → ${rerolled[index]}. New result retained.'
           '${result.isNaturalTwenty
               ? ' Natural 20.'
@@ -5693,7 +5754,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       final points = resourceWithId(sorceryPointsResourceId);
       return character.knowsMetamagic(Metamagic.empowered) &&
           points != null &&
-          remainingUses(points) > 0 &&
+          canPayMetamagic(Metamagic.empowered) &&
           characterState.canConcentrate &&
           roll.dice.isNotEmpty &&
           IncomingDamageType.values.any(
@@ -5710,15 +5771,20 @@ class _CharacterOverviewState extends State<CharacterOverview>
         .clamp(1, roll.dice.length);
     final selected = await showDialog<Set<int>>(
       context: context,
-      builder: (context) => EmpoweredSpellDialog(roll: roll, maximum: maximum),
+      builder: (context) => EmpoweredSpellDialog(
+        roll: roll,
+        maximum: maximum,
+        pointCost: metamagicPointCost(Metamagic.empowered),
+      ),
     );
+    final cost = metamagicPointCost(Metamagic.empowered);
     if (!mounted ||
         selected == null ||
         selected.isEmpty ||
         selected.length > maximum ||
         selected.any((i) => i < 0 || i >= roll.dice.length) ||
         !available() ||
-        !spendCastResource(sorceryPointsResourceId)) {
+        !spendMetamagic(Metamagic.empowered)) {
       return roll;
     }
     final dice = [
@@ -5731,7 +5797,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       SessionEventType.roll,
       'Empowered Spell · ${spell.name}',
       detail:
-          '1 Sorcery Point spent. ${roll.dice.join(', ')} → ${dice.join(', ')}. New results retained; modifiers unchanged.',
+          '$cost Sorcery Points spent. ${roll.dice.join(', ')} → ${dice.join(', ')}. New results retained; modifiers unchanged.',
     );
     return DamageRoll(
       label: roll.label,
@@ -7823,6 +7889,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
     if (useSorcerousRestoration) plan = plan.recoverSorceryPoints(character);
     levelledSpellCastThisTurn = false;
     quickenedSpellUsedThisTurn = false;
+    apotheosisUsedThisTurn = false;
+    apotheosisArmed = false;
     peerlessSkillRoll = null;
     darkLuckRoll = null;
     updateCharacterState(plan.updatedState);
@@ -8924,6 +8992,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
     hurlThroughHellUsedThisTurn = false;
     levelledSpellCastThisTurn = false;
     quickenedSpellUsedThisTurn = false;
+    apotheosisUsedThisTurn = false;
+    apotheosisArmed = false;
     attackRollMadeThisTurn = false;
     recklessAttackArmed = false;
     setState(() {
@@ -9611,6 +9681,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
     hurlThroughHellUsedThisTurn = false;
     levelledSpellCastThisTurn = false;
     quickenedSpellUsedThisTurn = false;
+    apotheosisUsedThisTurn = false;
+    apotheosisArmed = false;
     attackRollMadeThisTurn = false;
     recklessAttackArmed = false;
     tacticalMindCheck = null;
@@ -9684,6 +9756,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
     hurlThroughHellUsedThisTurn = false;
     levelledSpellCastThisTurn = false;
     quickenedSpellUsedThisTurn = false;
+    apotheosisUsedThisTurn = false;
+    apotheosisArmed = false;
     attackRollMadeThisTurn = false;
     recklessAttackArmed = false;
     var ended = characterState.endRage();
