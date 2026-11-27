@@ -2610,7 +2610,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }) => {Metamagic.careful, Metamagic.heightened}.contains(option)
       ? (saveEffect ?? pendingSaveEffect)!.guidance
       : option == Metamagic.twinned
-      ? 'For Command, Fly or Charm Monster, increase the effective casting level by 1 for an additional target. '
+      ? 'Increase this supported spell’s effective casting level by 1 for an additional target. '
             'Spend the selected slot normally; ninth-level slots are unavailable for this option. '
             'Resolve creature eligibility, target selection, range and saves at the table.'
       : option == Metamagic.transmuted
@@ -3188,7 +3188,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
           'Twinned Spell targets · ${spell.name}',
           detail:
               '${useFreeCast ? 'Free cast' : 'Level $actualLevel slot spent'} · '
-              'Effective level $effectiveLevel · ${1 + effectiveLevel - spell.level} targets. Resolve targets at the table.',
+              'Effective level $effectiveLevel · ${Metamagic.twinnedTargetCount(spell, actualLevel)} targets. Resolve targets at the table.',
         );
       }
       if (companionCast) {
@@ -3321,7 +3321,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
                 : slotLevel,
             concentrationTurnsRemaining: extendingSpell(spell)
                 ? Metamagic.extendedSpellTurns(spell, slotLevel: slotLevel)
-                : turns,
+                : turns ??
+                      (modifyingSpellId == spell.id &&
+                              castingMetamagic == Metamagic.twinned
+                          ? Metamagic.durationTurns(spell.duration)
+                          : null),
           ),
     );
   }

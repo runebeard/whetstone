@@ -70,7 +70,7 @@ enum Metamagic {
         : spell.components!.substring(match.start);
   }
 
-  static int? extendedTurns(String? duration) {
+  static int? durationTurns(String? duration) {
     final match = RegExp(
       r'^(?:concentration,\s*)?(?:up to\s*)?(\d+)\s*(minute|hour|day)s?$',
       caseSensitive: false,
@@ -85,15 +85,28 @@ enum Metamagic {
           'hour' => 600,
           _ => 14400,
         };
-    return turns >= 10 && turns <= 14400 ? (turns * 2).clamp(10, 14400) : null;
+    return turns >= 10 && turns <= 14400 ? turns : null;
   }
 
+  static int? extendedTurns(String? duration) {
+    final turns = durationTurns(duration);
+    return turns == null ? null : (turns * 2).clamp(10, 14400);
+  }
+
+  // Verified 2024 definitions: base spell level and base target capacity.
+  static const twinnedSpells = {
+    'command': (1, 1),
+    'fly': (3, 1),
+    'charm monster': (4, 1),
+    'charm person': (1, 1),
+    'hold person': (2, 1),
+    'hold monster': (5, 1),
+    'invisibility': (2, 1),
+    'bless': (1, 3),
+  };
+
   static bool supportsTwinned(Spell spell) {
-    final baseLevel = const {
-      'command': 1,
-      'fly': 3,
-      'charm monster': 4,
-    }[Spell.normalizedName(spell.name)];
+    final baseLevel = twinnedSpells[Spell.normalizedName(spell.name)]?.$1;
     return baseLevel == spell.level &&
         spell.damageFormula == null &&
         spell.rollModifier == null &&
@@ -104,6 +117,14 @@ enum Metamagic {
       supportsTwinned(spell) && slotLevel >= spell.level && slotLevel < 9
       ? slotLevel + 1
       : null;
+
+  static int? twinnedTargetCount(Spell spell, int slotLevel) {
+    final effective = twinnedEffectiveLevel(spell, slotLevel);
+    if (effective == null) return null;
+    return twinnedSpells[Spell.normalizedName(spell.name)]!.$2 +
+        effective -
+        spell.level;
+  }
 
   static int? extendedSpellTurns(Spell spell, {int? slotLevel}) {
     final baseline = extendedTurns(spell.duration);
