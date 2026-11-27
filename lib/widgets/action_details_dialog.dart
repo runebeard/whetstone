@@ -60,6 +60,93 @@ class ActionDetailsDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final spell = action is Spell ? action as Spell : null;
+    final controls = <Widget>[
+      if (onSubtlePair != null)
+        TextButton(
+          onPressed: onSubtlePair,
+          child: const Text('Subtle + another option'),
+        ),
+      if (onDistantPair != null)
+        TextButton(
+          onPressed: onDistantPair,
+          child: const Text('Distant + another option'),
+        ),
+      if (onExtendedPair != null)
+        TextButton(
+          onPressed: onExtendedPair,
+          child: const Text('Extended + another option'),
+        ),
+      if (onEffectPair != null)
+        TextButton(
+          onPressed: onEffectPair,
+          child: const Text('Other Metamagic combinations'),
+        ),
+      if (onQuickenedPair != null)
+        TextButton(
+          onPressed: onQuickenedPair,
+          child: const Text('Quickened + another option'),
+        ),
+      if (onArcaneApotheosis != null)
+        TextButton(
+          onPressed: onArcaneApotheosis,
+          child: Text(
+            freeMetamagic
+                ? 'Cancel free Metamagic'
+                : 'My turn · Arm free Metamagic',
+          ),
+        ),
+      if (onCastCareful != null)
+        TextButton(
+          onPressed: onCastCareful,
+          child: const Text('Careful Spell'),
+        ),
+      if (onCastHeightened != null)
+        TextButton(
+          onPressed: onCastHeightened,
+          child: const Text('Heightened Spell'),
+        ),
+      if (onCastTwinned != null)
+        TextButton(
+          onPressed: onCastTwinned,
+          child: const Text('Twinned Spell'),
+        ),
+      if (onCastTransmuted != null)
+        TextButton(
+          onPressed: onCastTransmuted,
+          child: const Text('Transmuted Spell'),
+        ),
+      if (onCastExtended != null)
+        TextButton(
+          onPressed: onCastExtended,
+          child: const Text('Extended Spell'),
+        ),
+      if (onCastSubtle != null)
+        TextButton(onPressed: onCastSubtle, child: const Text('Subtle Spell')),
+      if (onCastDistant != null)
+        TextButton(
+          onPressed: onCastDistant,
+          child: const Text('Distant Spell'),
+        ),
+      if (onCastQuickenedFree != null)
+        TextButton(
+          onPressed: onCastQuickenedFree,
+          child: const Text('Quickened Spell · Free cast'),
+        ),
+      if (onCastQuickened != null)
+        TextButton(
+          onPressed: onCastQuickened,
+          child: const Text('Quickened Spell'),
+        ),
+      if (onRollDamage != null)
+        TextButton(onPressed: onRollDamage, child: const Text('Roll Damage')),
+      if (onCastRitual != null)
+        TextButton(
+          onPressed: onCastRitual,
+          child: const Text('Cast as Ritual'),
+        ),
+      if (onCast != null)
+        TextButton(onPressed: onCast, child: const Text('Cast')),
+    ];
     return AlertDialog(
       title: Text(action.name),
       content: SingleChildScrollView(
@@ -111,98 +198,12 @@ class ActionDetailsDialog extends StatelessWidget {
               const Text('Requires concentration'),
               if (spell!.repeatableEffect) const Text('Repeatable effect'),
             ],
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, runSpacing: 4, children: controls),
           ],
         ),
       ),
       actions: [
-        if (onSubtlePair != null)
-          TextButton(
-            onPressed: onSubtlePair,
-            child: const Text('Subtle + another option'),
-          ),
-        if (onDistantPair != null)
-          TextButton(
-            onPressed: onDistantPair,
-            child: const Text('Distant + another option'),
-          ),
-        if (onExtendedPair != null)
-          TextButton(
-            onPressed: onExtendedPair,
-            child: const Text('Extended + another option'),
-          ),
-        if (onEffectPair != null)
-          TextButton(
-            onPressed: onEffectPair,
-            child: const Text('Other Metamagic combinations'),
-          ),
-        if (onQuickenedPair != null)
-          TextButton(
-            onPressed: onQuickenedPair,
-            child: const Text('Quickened + another option'),
-          ),
-        if (onArcaneApotheosis != null)
-          TextButton(
-            onPressed: onArcaneApotheosis,
-            child: Text(
-              freeMetamagic
-                  ? 'Cancel free Metamagic'
-                  : 'My turn · Arm free Metamagic',
-            ),
-          ),
-        if (onCastCareful != null)
-          TextButton(
-            onPressed: onCastCareful,
-            child: const Text('Careful Spell'),
-          ),
-        if (onCastHeightened != null)
-          TextButton(
-            onPressed: onCastHeightened,
-            child: const Text('Heightened Spell'),
-          ),
-        if (onCastTwinned != null)
-          TextButton(
-            onPressed: onCastTwinned,
-            child: const Text('Twinned Spell'),
-          ),
-        if (onCastTransmuted != null)
-          TextButton(
-            onPressed: onCastTransmuted,
-            child: const Text('Transmuted Spell'),
-          ),
-        if (onCastExtended != null)
-          TextButton(
-            onPressed: onCastExtended,
-            child: const Text('Extended Spell'),
-          ),
-        if (onCastSubtle != null)
-          TextButton(
-            onPressed: onCastSubtle,
-            child: const Text('Subtle Spell'),
-          ),
-        if (onCastDistant != null)
-          TextButton(
-            onPressed: onCastDistant,
-            child: const Text('Distant Spell'),
-          ),
-        if (onCastQuickenedFree != null)
-          TextButton(
-            onPressed: onCastQuickenedFree,
-            child: const Text('Quickened Spell · Free cast'),
-          ),
-        if (onCastQuickened != null)
-          TextButton(
-            onPressed: onCastQuickened,
-            child: const Text('Quickened Spell'),
-          ),
-        if (onRollDamage != null)
-          TextButton(onPressed: onRollDamage, child: const Text('Roll Damage')),
-        if (onCastRitual != null)
-          TextButton(
-            onPressed: onCastRitual,
-            child: const Text('Cast as Ritual'),
-          ),
-        if (onCast != null)
-          TextButton(onPressed: onCast, child: const Text('Cast')),
         FilledButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Done'),
