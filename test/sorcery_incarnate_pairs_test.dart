@@ -14,7 +14,7 @@ import 'metamagic_test.dart' as base;
 import 'save_metamagic_test.dart' as saves;
 import 'support/sequence_dice_roller.dart';
 
-Spell pairedSpell(Metamagic option) => Spell(
+Spell pairedSpell(Metamagic option, {bool lasting = false}) => Spell(
   id: 'paired',
   name: 'Paired Spell',
   level: 1,
@@ -22,8 +22,8 @@ Spell pairedSpell(Metamagic option) => Spell(
   castingTime: 'Action',
   range: '60 feet',
   components: 'V, S',
-  concentration: option == Metamagic.extended,
-  duration: option == Metamagic.extended
+  concentration: option == Metamagic.extended || lasting,
+  duration: option == Metamagic.extended || lasting
       ? 'Concentration, up to 1 minute'
       : 'Instantaneous',
   damageType: option == Metamagic.extended ? null : 'Fire',

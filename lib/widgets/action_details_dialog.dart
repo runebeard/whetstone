@@ -20,6 +20,7 @@ class ActionDetailsDialog extends StatelessWidget {
   final VoidCallback? onQuickenedPair;
   final VoidCallback? onSubtlePair;
   final VoidCallback? onDistantPair;
+  final VoidCallback? onExtendedPair;
   final bool freeMetamagic;
   final int? spellSaveDc;
   final VoidCallback? onRollDamage;
@@ -45,6 +46,7 @@ class ActionDetailsDialog extends StatelessWidget {
     this.onQuickenedPair,
     this.onSubtlePair,
     this.onDistantPair,
+    this.onExtendedPair,
     this.freeMetamagic = false,
     this.spellSaveDc,
     this.onRollDamage,
@@ -120,6 +122,11 @@ class ActionDetailsDialog extends StatelessWidget {
           TextButton(
             onPressed: onDistantPair,
             child: const Text('Distant + another option'),
+          ),
+        if (onExtendedPair != null)
+          TextButton(
+            onPressed: onExtendedPair,
+            child: const Text('Extended + another option'),
           ),
         if (onQuickenedPair != null)
           TextButton(

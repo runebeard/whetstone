@@ -2359,6 +2359,17 @@ class _CharacterOverviewState extends State<CharacterOverview>
                 choosePreviewPair(action, Metamagic.distant);
               }
             : null,
+        onExtendedPair:
+            action is Spell &&
+                Metamagic.values.any(
+                  (option) =>
+                      previewPairAvailable(action, option, Metamagic.extended),
+                )
+            ? () {
+                Navigator.pop(context);
+                choosePreviewPair(action, Metamagic.extended);
+              }
+            : null,
         onQuickenedPair:
             action is Spell &&
                 Metamagic.values.any(
@@ -2550,10 +2561,16 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   bool previewPairAvailable(Spell spell, Metamagic option, Metamagic primary) {
     final points = resourceWithId(sorceryPointsResourceId);
-    return {Metamagic.subtle, Metamagic.distant}.contains(primary) &&
+    return {
+          Metamagic.subtle,
+          Metamagic.distant,
+          Metamagic.extended,
+        }.contains(primary) &&
         option != primary &&
         // Subtle + Distant is offered once, through the Subtle picker.
         !(primary == Metamagic.distant && option == Metamagic.subtle) &&
+        !(primary == Metamagic.extended &&
+            {Metamagic.subtle, Metamagic.distant}.contains(option)) &&
         character.levelInClass('Sorcerer') >= 7 &&
         innateSorceryActive &&
         simpleMetamagicAvailable(spell, primary) &&
@@ -2727,7 +2744,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   bool extendingSpell(Spell spell) =>
-      modifyingSpellId == spell.id && castingMetamagic == Metamagic.extended;
+      (modifyingSpellId == spell.id &&
+          castingMetamagic == Metamagic.extended) ||
+      (previewPairSpellId == spell.id &&
+          previewPairOption == Metamagic.extended);
 
   String metamagicPreview(
     Spell spell,
@@ -8810,7 +8830,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
               : 'Spend ${pointCost ? '2 Sorcery Points using Sorcery Incarnate' : 'one Innate Sorcery use'}${currentMode == CharacterMode.combat ? ' and your Bonus Action' : ''}. '
                     'For 1 minute, marked Sorcerer spells gain +1 to their save DC and Advantage on attack rolls. Mark eligible spells in their Spellbook menu. '
                     'The effect lasts 10 tracked turns; track elapsed time outside combat at the table. It does not require concentration. '
-                    '${character.levelInClass('Sorcerer') >= 7 ? 'While active, combine Quickened, Subtle or Distant with another supported option in spell details. Other Metamagic pairs remain table-managed.' : ''}',
+                    '${character.levelInClass('Sorcerer') >= 7 ? 'While active, combine Quickened, Subtle, Distant or Extended with another supported option in spell details. Other Metamagic pairs remain table-managed.' : ''}',
         ),
         actions: [
           TextButton(

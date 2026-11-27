@@ -14,9 +14,12 @@ import 'sorcery_incarnate_pairs_test.dart' as pairs;
 import 'support/sequence_dice_roller.dart';
 
 void main() {
-  for (final primary in [Metamagic.subtle, Metamagic.distant]) {
-    final pairButton =
-        '${primary == Metamagic.subtle ? 'Subtle' : 'Distant'} + another option';
+  for (final primary in [
+    Metamagic.subtle,
+    Metamagic.distant,
+    Metamagic.extended,
+  ]) {
+    final pairButton = '${primary.label.split(' ').first} + another option';
     for (final option in [
       Metamagic.distant,
       Metamagic.extended,
@@ -26,6 +29,9 @@ void main() {
       Metamagic.heightened,
     ]) {
       if (option == primary) continue;
+      if (primary == Metamagic.extended && option == Metamagic.distant) {
+        continue;
+      }
       testWidgets(
         '${primary.label} plus ${option.label} preserves both effects and costs',
         (tester) async {
@@ -42,7 +48,10 @@ void main() {
                   components: 'V, S, M (a small iron bar)',
                   summary: 'A concentrating control spell.',
                 )
-              : pairs.pairedSpell(option);
+              : pairs.pairedSpell(
+                  option,
+                  lasting: primary == Metamagic.extended,
+                );
           var character = base.sorcerer().copyWith(
             spells: [spell],
             metamagicOptions: {primary, option},
@@ -96,16 +105,17 @@ void main() {
             await saves.targets(tester, 'Target');
           }
           expect(
-            find.textContaining(
-              primary == Metamagic.subtle
-                  ? 'Verbal and Somatic components waived'
-                  : 'Range for this casting: 120 feet',
-            ),
+            find.textContaining(switch (primary) {
+              Metamagic.subtle => 'Verbal and Somatic components waived',
+              Metamagic.distant => 'Range for this casting: 120 feet',
+              _ => 'Duration for this casting: 2 minutes',
+            }),
             findsOneWidget,
           );
           await helpers.tap(tester, find.text('Cast with Metamagic'));
           if (option == Metamagic.distant ||
-              (primary == Metamagic.distant && option == Metamagic.extended)) {
+              (primary == Metamagic.distant && option == Metamagic.extended) ||
+              (primary == Metamagic.extended && option == Metamagic.twinned)) {
             await tester.binding.handlePopRoute();
             await tester.pumpAndSettle();
             expect(
@@ -158,16 +168,26 @@ void main() {
               hasLength(1),
             );
           }
-          if (option == Metamagic.extended) {
+          if (option == Metamagic.extended || primary == Metamagic.extended) {
             expect(session.characterState.extendedConcentration, isTrue);
             expect(session.characterState.concentrationTurnsRemaining, 20);
+            final restored = CharacterSession.fromJson(session.toJson());
+            expect(restored.characterState.extendedConcentration, isTrue);
+            expect(restored.characterState.concentrationTurnsRemaining, 20);
+            expect(
+              restored.characterState.resourceValues,
+              session.characterState.resourceValues,
+            );
           }
           if (option == Metamagic.transmuted) {
             expect(session.characterState.spellDamageTypes[spell.id], 'Cold');
           }
           if (option == Metamagic.twinned) {
             expect(session.characterState.concentrationSlotLevel, 3);
-            expect(session.characterState.concentrationTurnsRemaining, 10);
+            expect(
+              session.characterState.concentrationTurnsRemaining,
+              primary == Metamagic.extended ? 20 : 10,
+            );
           }
           if (option == Metamagic.careful) {
             expect(session.timeline.first.title, 'Paired Spell Damage: 0');
@@ -191,12 +211,12 @@ void main() {
       testWidgets(
         '${primary.label} pair gate $level/$active/$points/$actionUsed',
         (tester) async {
-          final spell = pairs.pairedSpell(Metamagic.extended);
+          final spell = pairs.pairedSpell(Metamagic.heightened, lasting: true);
           final character = base
               .sorcerer(level: level)
               .copyWith(
                 spells: [spell],
-                metamagicOptions: {primary, Metamagic.extended},
+                metamagicOptions: {primary, Metamagic.heightened},
                 initiallyPinnedActionKeys: {spell.actionKey},
               );
           final session = CharacterSession(
@@ -232,7 +252,7 @@ void main() {
     testWidgets(
       '${primary.label} pair waives Heightened only with one Apotheosis use',
       (tester) async {
-        final spell = pairs.pairedSpell(Metamagic.heightened);
+        final spell = pairs.pairedSpell(Metamagic.heightened, lasting: true);
         final character = base
             .sorcerer(level: 20)
             .copyWith(
