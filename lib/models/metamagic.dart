@@ -151,13 +151,24 @@ enum Metamagic {
 class SpellSaveEffect {
   final Metamagic option;
   final List<String> targets;
-  const SpellSaveEffect(this.option, this.targets);
+  final String? heightenedTarget;
+  const SpellSaveEffect(this.option, this.targets, {this.heightenedTarget});
 
-  String get guidance => option == Metamagic.careful
-      ? 'Careful Spell: ${targets.join(', ')} automatically succeed on saves; take no damage when a successful save normally halves damage.'
-      : 'Heightened Spell: ${targets.single} has Disadvantage on saves against this spell. Cancel Advantage normally; other targets are unaffected.';
+  String get guidance {
+    final baseline = option == Metamagic.careful
+        ? 'Careful Spell: ${targets.join(', ')} automatically succeed on saves; take no damage when a successful save normally halves damage.'
+        : 'Heightened Spell: ${targets.single} has Disadvantage on saves against this spell. Cancel Advantage normally; other targets are unaffected.';
+    return option == Metamagic.careful && heightenedTarget != null
+        ? '$baseline Heightened Spell: $heightenedTarget has Disadvantage on saves against this spell. Cancel Advantage normally; other targets are unaffected.'
+        : baseline;
+  }
 
-  Map<String, Object> toJson() => {'option': option.name, 'targets': targets};
+  Map<String, Object> toJson() => {
+    'option': option.name,
+    'targets': targets,
+    if (option == Metamagic.careful && heightenedTarget != null)
+      'heightenedTarget': heightenedTarget!,
+  };
   static SpellSaveEffect? fromJson(Object? value) {
     if (value is! Map) return null;
     final option = Metamagic.values
@@ -178,6 +189,18 @@ class SpellSaveEffect {
         names.length > (option == Metamagic.heightened ? 1 : 10)) {
       return null;
     }
-    return SpellSaveEffect(option!, List.unmodifiable(names));
+    final extra = value['heightenedTarget'];
+    final heightened =
+        option == Metamagic.careful &&
+            extra is String &&
+            extra.trim().isNotEmpty &&
+            extra.trim().length <= 80
+        ? extra.trim()
+        : null;
+    return SpellSaveEffect(
+      option!,
+      List.unmodifiable(names),
+      heightenedTarget: heightened,
+    );
   }
 }

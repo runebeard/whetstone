@@ -2372,7 +2372,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
             : null,
         onEffectPair:
             action is Spell &&
-                [Metamagic.transmuted, Metamagic.twinned].any(
+                [
+                  Metamagic.transmuted,
+                  Metamagic.twinned,
+                  Metamagic.careful,
+                ].any(
                   (primary) => Metamagic.values.any(
                     (option) => previewPairAvailable(action, option, primary),
                   ),
@@ -2583,7 +2587,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       Metamagic.heightened,
     ];
     return order.contains(primary) &&
-        order.indexOf(primary) <= order.indexOf(Metamagic.twinned) &&
+        order.indexOf(primary) <= order.indexOf(Metamagic.careful) &&
         order.indexOf(option) > order.indexOf(primary) &&
         // None of the current Twinned catalog has structured elemental damage.
         !(primary == Metamagic.transmuted && option == Metamagic.twinned) &&
@@ -2601,7 +2605,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
       builder: (context) => SimpleDialog(
         title: const Text('Sorcery Incarnate · First option'),
         children: [
-          for (final primary in [Metamagic.transmuted, Metamagic.twinned])
+          for (final primary in [
+            Metamagic.transmuted,
+            Metamagic.twinned,
+            Metamagic.careful,
+          ])
             if (Metamagic.values.any(
               (option) => previewPairAvailable(spell, option, primary),
             ))
@@ -2831,7 +2839,18 @@ class _CharacterOverviewState extends State<CharacterOverview>
     }
     String? damageType;
     SpellSaveEffect? saveEffect;
-    if ({Metamagic.careful, Metamagic.heightened}.contains(option)) {
+    if (previewCompanion == Metamagic.careful &&
+        option == Metamagic.heightened) {
+      final protected = await chooseSpellSaveTargets(Metamagic.careful);
+      if (!mounted || protected == null || !available()) return;
+      final heightened = await chooseSpellSaveTargets(Metamagic.heightened);
+      if (!mounted || heightened == null || !available()) return;
+      saveEffect = SpellSaveEffect(
+        Metamagic.careful,
+        protected.targets,
+        heightenedTarget: heightened.targets.single,
+      );
+    } else if ({Metamagic.careful, Metamagic.heightened}.contains(option)) {
       saveEffect = await chooseSpellSaveTargets(option);
       if (!mounted || saveEffect == null || !available()) {
         return;
@@ -2873,7 +2892,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
               ? previewPairCost(option, previewCompanion)
               : metamagicPointCost(option)} Sorcery Points. '
           '${asQuickened ? 'Quickened Spell plus ${option.label}. Bonus Action in combat; any armed Apotheosis use covers Quickened only. ' : ''}'
-          '${previewCompanion != null ? '${previewCompanion.label} plus ${option.label}. Any armed Apotheosis use covers ${option.label} only. ${metamagicPreview(spell, previewCompanion, damageType: damageType)}\n\n' : ''}'
+          '${previewCompanion != null ? '${previewCompanion.label} plus ${option.label}. Any armed Apotheosis use covers ${option.label} only. ${metamagicPreview(spell, previewCompanion, damageType: damageType, saveEffect: saveEffect)}\n\n' : ''}'
           '${metamagicPreview(spell, option, damageType: damageType, saveEffect: saveEffect)}\n\n'
           '${asQuickened ? 'Quickened turn restrictions apply.' : 'The normal casting time still applies.'}',
         ),
@@ -8863,7 +8882,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
               : 'Spend ${pointCost ? '2 Sorcery Points using Sorcery Incarnate' : 'one Innate Sorcery use'}${currentMode == CharacterMode.combat ? ' and your Bonus Action' : ''}. '
                     'For 1 minute, marked Sorcerer spells gain +1 to their save DC and Advantage on attack rolls. Mark eligible spells in their Spellbook menu. '
                     'The effect lasts 10 tracked turns; track elapsed time outside combat at the table. It does not require concentration. '
-                    '${character.levelInClass('Sorcerer') >= 7 ? 'While active, combine two supported Metamagic options in spell details. Careful + Heightened and other unsupported combinations remain table-managed.' : ''}',
+                    '${character.levelInClass('Sorcerer') >= 7 ? 'While active, combine two supported Metamagic options in spell details. Unsupported spell metadata and target resolution remain table-managed.' : ''}',
         ),
         actions: [
           TextButton(
