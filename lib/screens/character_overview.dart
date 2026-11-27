@@ -2370,6 +2370,18 @@ class _CharacterOverviewState extends State<CharacterOverview>
                 choosePreviewPair(action, Metamagic.extended);
               }
             : null,
+        onEffectPair:
+            action is Spell &&
+                [Metamagic.transmuted, Metamagic.twinned].any(
+                  (primary) => Metamagic.values.any(
+                    (option) => previewPairAvailable(action, option, primary),
+                  ),
+                )
+            ? () {
+                Navigator.pop(context);
+                chooseEffectPair(action);
+              }
+            : null,
         onQuickenedPair:
             action is Spell &&
                 Metamagic.values.any(
@@ -2561,22 +2573,50 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   bool previewPairAvailable(Spell spell, Metamagic option, Metamagic primary) {
     final points = resourceWithId(sorceryPointsResourceId);
-    return {
-          Metamagic.subtle,
-          Metamagic.distant,
-          Metamagic.extended,
-        }.contains(primary) &&
-        option != primary &&
-        // Subtle + Distant is offered once, through the Subtle picker.
-        !(primary == Metamagic.distant && option == Metamagic.subtle) &&
-        !(primary == Metamagic.extended &&
-            {Metamagic.subtle, Metamagic.distant}.contains(option)) &&
+    const order = [
+      Metamagic.subtle,
+      Metamagic.distant,
+      Metamagic.extended,
+      Metamagic.transmuted,
+      Metamagic.twinned,
+      Metamagic.careful,
+      Metamagic.heightened,
+    ];
+    return order.contains(primary) &&
+        order.indexOf(primary) <= order.indexOf(Metamagic.twinned) &&
+        order.indexOf(option) > order.indexOf(primary) &&
+        // None of the current Twinned catalog has structured elemental damage.
+        !(primary == Metamagic.transmuted && option == Metamagic.twinned) &&
         character.levelInClass('Sorcerer') >= 7 &&
         innateSorceryActive &&
         simpleMetamagicAvailable(spell, primary) &&
         simpleMetamagicAvailable(spell, option) &&
         points != null &&
         remainingUses(points) >= previewPairCost(option, primary);
+  }
+
+  Future<void> chooseEffectPair(Spell spell) async {
+    final primary = await showDialog<Metamagic>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Sorcery Incarnate · First option'),
+        children: [
+          for (final primary in [Metamagic.transmuted, Metamagic.twinned])
+            if (Metamagic.values.any(
+              (option) => previewPairAvailable(spell, option, primary),
+            ))
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, primary),
+                child: Text(primary.label),
+              ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (mounted && primary != null) await choosePreviewPair(spell, primary);
   }
 
   Future<void> choosePreviewPair(Spell spell, Metamagic primary) async {
@@ -2743,11 +2783,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
+  bool applyingMetamagic(Spell spell, Metamagic option) =>
+      (modifyingSpellId == spell.id && castingMetamagic == option) ||
+      (previewPairSpellId == spell.id && previewPairOption == option);
+
   bool extendingSpell(Spell spell) =>
-      (modifyingSpellId == spell.id &&
-          castingMetamagic == Metamagic.extended) ||
-      (previewPairSpellId == spell.id &&
-          previewPairOption == Metamagic.extended);
+      applyingMetamagic(spell, Metamagic.extended);
 
   String metamagicPreview(
     Spell spell,
@@ -2796,7 +2837,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
         return;
       }
     }
-    if (option == Metamagic.transmuted) {
+    if (option == Metamagic.transmuted ||
+        previewCompanion == Metamagic.transmuted) {
       damageType = await showDialog<String>(
         context: context,
         builder: (context) => SimpleDialog(
@@ -2831,7 +2873,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
               ? previewPairCost(option, previewCompanion)
               : metamagicPointCost(option)} Sorcery Points. '
           '${asQuickened ? 'Quickened Spell plus ${option.label}. Bonus Action in combat; any armed Apotheosis use covers Quickened only. ' : ''}'
-          '${previewCompanion != null ? '${previewCompanion.label} plus ${option.label}. Any armed Apotheosis use covers ${option.label} only. ${metamagicPreview(spell, previewCompanion)}\n\n' : ''}'
+          '${previewCompanion != null ? '${previewCompanion.label} plus ${option.label}. Any armed Apotheosis use covers ${option.label} only. ${metamagicPreview(spell, previewCompanion, damageType: damageType)}\n\n' : ''}'
           '${metamagicPreview(spell, option, damageType: damageType, saveEffect: saveEffect)}\n\n'
           '${asQuickened ? 'Quickened turn restrictions apply.' : 'The normal casting time still applies.'}',
         ),
@@ -2995,9 +3037,6 @@ class _CharacterOverviewState extends State<CharacterOverview>
       if (previewPairSpellId == spell.id && previewPairOption != null)
         previewPairOption!,
     ];
-    final option = modifyingSpellId == spell.id
-        ? castingMetamagic
-        : options.lastOrNull;
     if (newCast &&
         (characterState.spellSaveEffects.containsKey(spell.id) ||
             pendingSaveEffect != null)) {
@@ -3009,9 +3048,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
     }
     if (newCast &&
         (characterState.spellDamageTypes.containsKey(spell.id) ||
-            option == Metamagic.transmuted)) {
+            options.contains(Metamagic.transmuted))) {
       final types = {...characterState.spellDamageTypes}..remove(spell.id);
-      if (option == Metamagic.transmuted && transmutingDamageType != null) {
+      if (options.contains(Metamagic.transmuted) &&
+          transmutingDamageType != null) {
         types[spell.id] = transmutingDamageType!;
       }
       updateCharacterState(characterState.copyWith(spellDamageTypes: types));
@@ -3132,10 +3172,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   Future<(int, String)?> chooseTrackedSlot(Spell spell) => chooseAvailableSlot(
     spell.level,
     '${spell.name} slot level',
-    maximumLevel:
-        modifyingSpellId == spell.id && castingMetamagic == Metamagic.twinned
-        ? 8
-        : 9,
+    maximumLevel: applyingMetamagic(spell, Metamagic.twinned) ? 8 : 9,
   );
 
   Future<(int, String)?> chooseAvailableSlot(
@@ -3357,8 +3394,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         startSpellConcentration(spell, slotLevel: slotLevel);
       }
       trackSpellAction(spell);
-      if (modifyingSpellId == spell.id &&
-          castingMetamagic == Metamagic.twinned) {
+      if (applyingMetamagic(spell, Metamagic.twinned)) {
         final actualLevel = slotLevel ?? spell.level;
         final effectiveLevel = Metamagic.twinnedEffectiveLevel(
           spell,
@@ -3490,9 +3526,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
           .copyWith(
             concentrationSpellId: spell.id,
             extendedConcentration: extendingSpell(spell),
-            concentrationSlotLevel:
-                modifyingSpellId == spell.id &&
-                    castingMetamagic == Metamagic.twinned
+            concentrationSlotLevel: applyingMetamagic(spell, Metamagic.twinned)
                 ? Metamagic.twinnedEffectiveLevel(
                     spell,
                     slotLevel ?? spell.level,
@@ -3503,8 +3537,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
             concentrationTurnsRemaining: extendingSpell(spell)
                 ? Metamagic.extendedSpellTurns(spell, slotLevel: slotLevel)
                 : turns ??
-                      (modifyingSpellId == spell.id &&
-                              castingMetamagic == Metamagic.twinned
+                      (applyingMetamagic(spell, Metamagic.twinned)
                           ? Metamagic.durationTurns(spell.duration)
                           : null),
           ),
@@ -8830,7 +8863,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
               : 'Spend ${pointCost ? '2 Sorcery Points using Sorcery Incarnate' : 'one Innate Sorcery use'}${currentMode == CharacterMode.combat ? ' and your Bonus Action' : ''}. '
                     'For 1 minute, marked Sorcerer spells gain +1 to their save DC and Advantage on attack rolls. Mark eligible spells in their Spellbook menu. '
                     'The effect lasts 10 tracked turns; track elapsed time outside combat at the table. It does not require concentration. '
-                    '${character.levelInClass('Sorcerer') >= 7 ? 'While active, combine Quickened, Subtle, Distant or Extended with another supported option in spell details. Other Metamagic pairs remain table-managed.' : ''}',
+                    '${character.levelInClass('Sorcerer') >= 7 ? 'While active, combine two supported Metamagic options in spell details. Careful + Heightened and other unsupported combinations remain table-managed.' : ''}',
         ),
         actions: [
           TextButton(
