@@ -33,6 +33,18 @@ Spell spellWith({
 );
 
 void main() {
+  test('Distant doubles supported mile ranges without changing areas', () {
+    for (final (range, result) in [
+      ('1 mile', '2 miles'),
+      ('2 miles', '4 miles'),
+      (' 3 MI. ', '6 miles'),
+      ('0 miles', null),
+      ('Self (1-mile radius)', null),
+      ('Sight (1 mile)', null),
+    ]) {
+      expect(Metamagic.distantRange(range), result);
+    }
+  });
   test(
     'Distant range supports feet and Touch without enlarging Self areas',
     () {

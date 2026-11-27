@@ -48,6 +48,14 @@ enum Metamagic {
 
   static String? distantRange(String? range) {
     if (range?.trim().toLowerCase() == 'touch') return '30 feet';
+    final miles = RegExp(
+      r'^(\d+)\s*(?:mile|miles|mi\.?)$',
+      caseSensitive: false,
+    ).firstMatch(range?.trim() ?? '');
+    if (miles != null) {
+      final count = int.tryParse(miles.group(1)!);
+      return count != null && count > 0 ? '${count * 2} miles' : null;
+    }
     final match = RegExp(
       r'^(\d+)\s*(?:feet|foot|ft\.?)$',
       caseSensitive: false,

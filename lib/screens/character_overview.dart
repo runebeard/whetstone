@@ -105,7 +105,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
   bool apotheosisUsedThisTurn = false;
   bool apotheosisArmed = false;
   String? quickeningSpellId;
-  String? subtlePairSpellId;
+  String? previewPairSpellId;
+  Metamagic? previewPairOption;
   String? modifyingSpellId;
   Metamagic? castingMetamagic;
   String? transmutingDamageType;
@@ -2339,11 +2340,23 @@ class _CharacterOverviewState extends State<CharacterOverview>
         onSubtlePair:
             action is Spell &&
                 Metamagic.values.any(
-                  (option) => subtlePairAvailable(action, option),
+                  (option) =>
+                      previewPairAvailable(action, option, Metamagic.subtle),
                 )
             ? () {
                 Navigator.pop(context);
-                chooseSubtlePair(action);
+                choosePreviewPair(action, Metamagic.subtle);
+              }
+            : null,
+        onDistantPair:
+            action is Spell &&
+                Metamagic.values.any(
+                  (option) =>
+                      previewPairAvailable(action, option, Metamagic.distant),
+                )
+            ? () {
+                Navigator.pop(context);
+                choosePreviewPair(action, Metamagic.distant);
               }
             : null,
         onQuickenedPair:
@@ -2532,32 +2545,35 @@ class _CharacterOverviewState extends State<CharacterOverview>
       metamagicPointCost(Metamagic.quickened) + option.pointCost;
 
   // Apply any armed free use to the secondary option, which may cost more.
-  int subtlePairCost(Metamagic option) =>
-      Metamagic.subtle.pointCost + metamagicPointCost(option);
+  int previewPairCost(Metamagic option, Metamagic primary) =>
+      primary.pointCost + metamagicPointCost(option);
 
-  bool subtlePairAvailable(Spell spell, Metamagic option) {
+  bool previewPairAvailable(Spell spell, Metamagic option, Metamagic primary) {
     final points = resourceWithId(sorceryPointsResourceId);
-    return option != Metamagic.subtle &&
+    return {Metamagic.subtle, Metamagic.distant}.contains(primary) &&
+        option != primary &&
+        // Subtle + Distant is offered once, through the Subtle picker.
+        !(primary == Metamagic.distant && option == Metamagic.subtle) &&
         character.levelInClass('Sorcerer') >= 7 &&
         innateSorceryActive &&
-        simpleMetamagicAvailable(spell, Metamagic.subtle) &&
+        simpleMetamagicAvailable(spell, primary) &&
         simpleMetamagicAvailable(spell, option) &&
         points != null &&
-        remainingUses(points) >= subtlePairCost(option);
+        remainingUses(points) >= previewPairCost(option, primary);
   }
 
-  Future<void> chooseSubtlePair(Spell spell) async {
+  Future<void> choosePreviewPair(Spell spell, Metamagic primary) async {
     final option = await showDialog<Metamagic>(
       context: context,
       builder: (context) => SimpleDialog(
         title: const Text('Sorcery Incarnate · Second option'),
         children: [
           for (final option in Metamagic.values)
-            if (subtlePairAvailable(spell, option))
+            if (previewPairAvailable(spell, option, primary))
               SimpleDialogOption(
                 onPressed: () => Navigator.pop(context, option),
                 child: Text(
-                  '${option.label} · ${subtlePairCost(option)} total Sorcery Points',
+                  '${option.label} · ${previewPairCost(option, primary)} total Sorcery Points',
                 ),
               ),
           SimpleDialogOption(
@@ -2567,10 +2583,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
         ],
       ),
     );
-    if (!mounted || option == null || !subtlePairAvailable(spell, option)) {
+    if (!mounted ||
+        option == null ||
+        !previewPairAvailable(spell, option, primary)) {
       return;
     }
-    await castSimpleMetamagic(spell, option, asSubtle: true);
+    await castSimpleMetamagic(spell, option, previewCompanion: primary);
   }
 
   bool quickenedPairAvailable(Spell spell, Metamagic option) {
@@ -2740,12 +2758,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
     Spell spell,
     Metamagic option, {
     bool asQuickened = false,
-    bool asSubtle = false,
+    Metamagic? previewCompanion,
   }) async {
     bool available() => asQuickened
         ? quickenedPairAvailable(spell, option)
-        : asSubtle
-        ? subtlePairAvailable(spell, option)
+        : previewCompanion != null
+        ? previewPairAvailable(spell, option, previewCompanion)
         : simpleMetamagicAvailable(spell, option);
     if (quickeningSpellId != null || modifyingSpellId != null || !available()) {
       return;
@@ -2789,11 +2807,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
         content: Text(
           '${asQuickened
               ? quickenedPairCost(option)
-              : asSubtle
-              ? subtlePairCost(option)
+              : previewCompanion != null
+              ? previewPairCost(option, previewCompanion)
               : metamagicPointCost(option)} Sorcery Points. '
           '${asQuickened ? 'Quickened Spell plus ${option.label}. Bonus Action in combat; any armed Apotheosis use covers Quickened only. ' : ''}'
-          '${asSubtle ? 'Subtle Spell plus ${option.label}. Any armed Apotheosis use covers ${option.label} only. ${metamagicPreview(spell, Metamagic.subtle)}\n\n' : ''}'
+          '${previewCompanion != null ? '${previewCompanion.label} plus ${option.label}. Any armed Apotheosis use covers ${option.label} only. ${metamagicPreview(spell, previewCompanion)}\n\n' : ''}'
           '${metamagicPreview(spell, option, damageType: damageType, saveEffect: saveEffect)}\n\n'
           '${asQuickened ? 'Quickened turn restrictions apply.' : 'The normal casting time still applies.'}',
         ),
@@ -2819,7 +2837,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
     }
     modifyingSpellId = spell.id;
     if (asQuickened) quickeningSpellId = spell.id;
-    if (asSubtle) subtlePairSpellId = spell.id;
+    if (previewCompanion != null) {
+      previewPairSpellId = spell.id;
+      previewPairOption = previewCompanion;
+    }
     castingMetamagic = option;
     transmutingDamageType = damageType;
     pendingSaveEffect = saveEffect;
@@ -2828,7 +2849,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
     } finally {
       modifyingSpellId = null;
       if (asQuickened) quickeningSpellId = null;
-      if (asSubtle) subtlePairSpellId = null;
+      previewPairSpellId = null;
+      previewPairOption = null;
       castingMetamagic = null;
       transmutingDamageType = null;
       pendingSaveEffect = null;
@@ -2882,9 +2904,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   bool canSpendSpellAction(Spell spell, {bool fromScroll = false}) {
-    if (subtlePairSpellId == spell.id &&
+    if (previewPairSpellId == spell.id &&
         castingMetamagic != null &&
-        !subtlePairAvailable(spell, castingMetamagic!)) {
+        !previewPairAvailable(spell, castingMetamagic!, previewPairOption!)) {
       return false;
     }
     if (quickeningSpellId == spell.id &&
@@ -2950,7 +2972,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       if (quickeningSpellId == spell.id) Metamagic.quickened,
       if (modifyingSpellId == spell.id && castingMetamagic != null)
         castingMetamagic!,
-      if (subtlePairSpellId == spell.id) Metamagic.subtle,
+      if (previewPairSpellId == spell.id && previewPairOption != null)
+        previewPairOption!,
     ];
     final option = modifyingSpellId == spell.id
         ? castingMetamagic
@@ -8787,7 +8810,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
               : 'Spend ${pointCost ? '2 Sorcery Points using Sorcery Incarnate' : 'one Innate Sorcery use'}${currentMode == CharacterMode.combat ? ' and your Bonus Action' : ''}. '
                     'For 1 minute, marked Sorcerer spells gain +1 to their save DC and Advantage on attack rolls. Mark eligible spells in their Spellbook menu. '
                     'The effect lasts 10 tracked turns; track elapsed time outside combat at the table. It does not require concentration. '
-                    '${character.levelInClass('Sorcerer') >= 7 ? 'While active, combine Quickened or Subtle with another supported option in spell details. Other Metamagic pairs remain table-managed.' : ''}',
+                    '${character.levelInClass('Sorcerer') >= 7 ? 'While active, combine Quickened, Subtle or Distant with another supported option in spell details. Other Metamagic pairs remain table-managed.' : ''}',
         ),
         actions: [
           TextButton(
