@@ -17,6 +17,7 @@ class ActionDetailsDialog extends StatelessWidget {
   final VoidCallback? onCastCareful;
   final VoidCallback? onCastHeightened;
   final VoidCallback? onArcaneApotheosis;
+  final VoidCallback? onQuickenedPair;
   final bool freeMetamagic;
   final int? spellSaveDc;
   final VoidCallback? onRollDamage;
@@ -39,6 +40,7 @@ class ActionDetailsDialog extends StatelessWidget {
     this.onCastCareful,
     this.onCastHeightened,
     this.onArcaneApotheosis,
+    this.onQuickenedPair,
     this.freeMetamagic = false,
     this.spellSaveDc,
     this.onRollDamage,
@@ -105,6 +107,11 @@ class ActionDetailsDialog extends StatelessWidget {
         ),
       ),
       actions: [
+        if (onQuickenedPair != null)
+          TextButton(
+            onPressed: onQuickenedPair,
+            child: const Text('Quickened + another option'),
+          ),
         if (onArcaneApotheosis != null)
           TextButton(
             onPressed: onArcaneApotheosis,

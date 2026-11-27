@@ -2335,6 +2335,16 @@ class _CharacterOverviewState extends State<CharacterOverview>
       context: context,
       builder: (context) => ActionDetailsDialog(
         action: action,
+        onQuickenedPair:
+            action is Spell &&
+                Metamagic.values.any(
+                  (option) => quickenedPairAvailable(action, option),
+                )
+            ? () {
+                Navigator.pop(context);
+                chooseQuickenedPair(action);
+              }
+            : null,
         freeMetamagic:
             action is Spell && apotheosisArmed && apotheosisAvailable,
         onArcaneApotheosis: action is Spell && apotheosisAvailable
@@ -2507,9 +2517,55 @@ class _CharacterOverviewState extends State<CharacterOverview>
     return true;
   }
 
-  bool simpleMetamagicAvailable(Spell spell, Metamagic option) {
+  int quickenedPairCost(Metamagic option) =>
+      metamagicPointCost(Metamagic.quickened) + option.pointCost;
+
+  bool quickenedPairAvailable(Spell spell, Metamagic option) {
     final points = resourceWithId(sorceryPointsResourceId);
-    final cost = spellActionCost(spell);
+    return character.levelInClass('Sorcerer') >= 7 &&
+        innateSorceryActive &&
+        quickenedSpellAvailable(spell) &&
+        simpleMetamagicAvailable(spell, option, asQuickened: true) &&
+        points != null &&
+        remainingUses(points) >= quickenedPairCost(option);
+  }
+
+  Future<void> chooseQuickenedPair(Spell spell) async {
+    final option = await showDialog<Metamagic>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Sorcery Incarnate · Second option'),
+        children: [
+          for (final option in Metamagic.values)
+            if (quickenedPairAvailable(spell, option))
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, option),
+                child: Text(
+                  '${option.label} · ${quickenedPairCost(option)} total Sorcery Points',
+                ),
+              ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || option == null || !quickenedPairAvailable(spell, option)) {
+      return;
+    }
+    await castSimpleMetamagic(spell, option, asQuickened: true);
+  }
+
+  bool simpleMetamagicAvailable(
+    Spell spell,
+    Metamagic option, {
+    bool asQuickened = false,
+  }) {
+    final points = resourceWithId(sorceryPointsResourceId);
+    final cost = asQuickened && currentMode == CharacterMode.combat
+        ? CombatActionCost.bonusAction
+        : spellActionCost(spell);
     return {
           Metamagic.subtle,
           Metamagic.distant,
@@ -2627,19 +2683,22 @@ class _CharacterOverviewState extends State<CharacterOverview>
             '${character.benefitsFromDragonCompanion(spell) ? 'None (Dragon Companion waives Material)' : Metamagic.subtleComponents(spell)}. '
             'Resolve component use at the table.';
 
-  Future<void> castSimpleMetamagic(Spell spell, Metamagic option) async {
-    if (quickeningSpellId != null ||
-        modifyingSpellId != null ||
-        !simpleMetamagicAvailable(spell, option)) {
+  Future<void> castSimpleMetamagic(
+    Spell spell,
+    Metamagic option, {
+    bool asQuickened = false,
+  }) async {
+    bool available() => asQuickened
+        ? quickenedPairAvailable(spell, option)
+        : simpleMetamagicAvailable(spell, option);
+    if (quickeningSpellId != null || modifyingSpellId != null || !available()) {
       return;
     }
     String? damageType;
     SpellSaveEffect? saveEffect;
     if ({Metamagic.careful, Metamagic.heightened}.contains(option)) {
       saveEffect = await chooseSpellSaveTargets(option);
-      if (!mounted ||
-          saveEffect == null ||
-          !simpleMetamagicAvailable(spell, option)) {
+      if (!mounted || saveEffect == null || !available()) {
         return;
       }
     }
@@ -2662,9 +2721,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
           ],
         ),
       );
-      if (!mounted ||
-          damageType == null ||
-          !simpleMetamagicAvailable(spell, option)) {
+      if (!mounted || damageType == null || !available()) {
         return;
       }
     }
@@ -2674,7 +2731,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       builder: (context) => AlertDialog(
         title: Text('${option.label} · ${spell.name}'),
         content: Text(
-          '${metamagicPointCost(option)} Sorcery Points. ${metamagicPreview(spell, option, damageType: damageType, saveEffect: saveEffect)}\n\nThe normal casting time still applies.',
+          '${asQuickened ? quickenedPairCost(option) : metamagicPointCost(option)} Sorcery Points. '
+          '${asQuickened ? 'Quickened Spell plus ${option.label}. Bonus Action in combat; any armed Apotheosis use covers Quickened only. ' : ''}'
+          '${metamagicPreview(spell, option, damageType: damageType, saveEffect: saveEffect)}\n\n'
+          '${asQuickened ? 'Quickened turn restrictions apply.' : 'The normal casting time still applies.'}',
         ),
         actions: [
           TextButton(
@@ -2693,12 +2753,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
         ],
       ),
     );
-    if (!mounted ||
-        source == null ||
-        !simpleMetamagicAvailable(spell, option)) {
+    if (!mounted || source == null || !available()) {
       return;
     }
     modifyingSpellId = spell.id;
+    if (asQuickened) quickeningSpellId = spell.id;
     castingMetamagic = option;
     transmutingDamageType = damageType;
     pendingSaveEffect = saveEffect;
@@ -2706,6 +2765,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       await castSpell(spell, useFreeCast: source);
     } finally {
       modifyingSpellId = null;
+      if (asQuickened) quickeningSpellId = null;
       castingMetamagic = null;
       transmutingDamageType = null;
       pendingSaveEffect = null;
@@ -2759,6 +2819,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   bool canSpendSpellAction(Spell spell, {bool fromScroll = false}) {
+    if (quickeningSpellId == spell.id &&
+        modifyingSpellId == spell.id &&
+        castingMetamagic != null &&
+        !quickenedPairAvailable(spell, castingMetamagic!)) {
+      return false;
+    }
     if (modifyingSpellId == spell.id &&
         !simpleMetamagicAvailable(spell, castingMetamagic!)) {
       return false;
@@ -2812,11 +2878,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
   void trackSpellAction(Spell spell, {bool newCast = true}) {
     if (newCast) elementalAffinityUsedSpellIds.remove(spell.id);
     final cost = spellActionCost(spell);
-    final option = quickeningSpellId == spell.id
-        ? Metamagic.quickened
-        : modifyingSpellId == spell.id
-        ? castingMetamagic
-        : null;
+    final options = <Metamagic>[
+      if (quickeningSpellId == spell.id) Metamagic.quickened,
+      if (modifyingSpellId == spell.id && castingMetamagic != null)
+        castingMetamagic!,
+    ];
+    final option = options.lastOrNull;
     if (newCast &&
         (characterState.spellSaveEffects.containsKey(spell.id) ||
             pendingSaveEffect != null)) {
@@ -2835,18 +2902,18 @@ class _CharacterOverviewState extends State<CharacterOverview>
       }
       updateCharacterState(characterState.copyWith(spellDamageTypes: types));
     }
-    if (newCast && option != null) {
-      final cost = metamagicPointCost(option);
-      if (!spendMetamagic(option)) return;
-      if (option == Metamagic.quickened) {
+    for (final appliedOption in newCast ? options : const <Metamagic>[]) {
+      final cost = metamagicPointCost(appliedOption);
+      if (!spendMetamagic(appliedOption)) return;
+      if (appliedOption == Metamagic.quickened) {
         quickenedSpellUsedThisTurn = currentMode == CharacterMode.combat;
       }
       recordSessionEvent(
         SessionEventType.combat,
-        '${option.label} · ${spell.name}',
-        detail: option == Metamagic.quickened
+        '${appliedOption.label} · ${spell.name}',
+        detail: appliedOption == Metamagic.quickened
             ? '$cost Sorcery Points spent. Cast as a Bonus Action; no further level 1+ spells this turn.'
-            : '$cost Sorcery Points spent. ${metamagicPreview(spell, option)}',
+            : '$cost Sorcery Points spent. ${metamagicPreview(spell, appliedOption)}',
       );
     }
     if (newCast && !spell.isCantrip && currentMode == CharacterMode.combat) {
@@ -8649,7 +8716,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
               : 'Spend ${pointCost ? '2 Sorcery Points using Sorcery Incarnate' : 'one Innate Sorcery use'}${currentMode == CharacterMode.combat ? ' and your Bonus Action' : ''}. '
                     'For 1 minute, marked Sorcerer spells gain +1 to their save DC and Advantage on attack rolls. Mark eligible spells in their Spellbook menu. '
                     'The effect lasts 10 tracked turns; track elapsed time outside combat at the table. It does not require concentration. '
-                    '${character.levelInClass('Sorcerer') >= 7 ? 'While active, Sorcery Incarnate permits two Metamagic options on a spell; resolve those options at the table.' : ''}',
+                    '${character.levelInClass('Sorcerer') >= 7 ? 'While active, use Quickened + another option in spell details. Other Metamagic pairs remain table-managed.' : ''}',
         ),
         actions: [
           TextButton(
