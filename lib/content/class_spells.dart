@@ -3,11 +3,28 @@ import '../models/character.dart';
 import '../models/character_state.dart';
 import '../models/spell.dart';
 import 'circle_spells.dart';
+import 'life_domain_spells.dart';
 
 List<Spell> withClassSpells(Character character, DruidLand? land) =>
-    withDraconicSpells(
+    withBuiltInSpellGrants(
       character.copyWith(spells: withCircleSpells(character, land)),
-    );
+    ).spells;
+
+Character withBuiltInSpellGrants(Character character) {
+  final draconic = withDraconicSpellGrants(character);
+  final spells = withLifeDomainSpells(draconic);
+  final removed = {
+    for (final spell in draconic.spells)
+      if (spell.isLifeDomainGrant && !spells.any((s) => s.id == spell.id))
+        spell.actionKey,
+  };
+  return draconic.copyWith(
+    spells: spells,
+    initiallyPinnedActionKeys: draconic.initiallyPinnedActionKeys.difference(
+      removed,
+    ),
+  );
+}
 
 List<Spell> withDraconicSpells(Character character) {
   final owned = character.spells

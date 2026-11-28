@@ -376,7 +376,7 @@ class _CharacterEditorState extends State<CharacterEditor> {
       features: [...features, ...?authored?.grants(1)],
       journalEntries: [...?widget.character?.journalEntries],
     );
-    Navigator.pop(context, withDraconicSpellGrants(character));
+    Navigator.pop(context, withBuiltInSpellGrants(character));
   }
 
   @override

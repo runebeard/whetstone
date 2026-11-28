@@ -3519,7 +3519,13 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   void startSpellConcentration(Spell spell, {int? slotLevel}) {
     if (!characterState.canConcentrate || characterState.isRaging) return;
-    final turns = spell.isDraconicGrant
+    final turns = spell.isLifeDomainGrant
+        ? switch (spell.name) {
+            'Bless' => 10,
+            'Aura of Life' => 100,
+            _ => null,
+          }
+        : spell.isDraconicGrant
         ? switch (spell.name) {
             'Alter Self' || 'Arcane Eye' || 'Summon Dragon' => 600,
             "Dragon's Breath" || 'Fear' => 10,
@@ -7095,7 +7101,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
               ),
               FilledButton(
                 onPressed: valid
-                      ? () => Navigator.pop(context, (self, others))
+                    ? () => Navigator.pop(context, (self, others))
                     : null,
                 child: const Text('Use Preserve Life'),
               ),

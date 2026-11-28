@@ -702,7 +702,13 @@ class Character {
   }
 
   bool isAlwaysPreparedSpell(Spell spell) =>
-      spell.isCircleGrant || isDraconicClassSpell(spell);
+      spell.isCircleGrant ||
+      isDraconicClassSpell(spell) ||
+      (spell.isLifeDomainGrant &&
+          subclasses['Cleric'] == 'Life Domain' &&
+          levelInClass('Cleric') >=
+              (Spell.lifeDomainGrants[Spell.normalizedName(spell.name)]?.$1 ??
+                  99));
 
   int scoreFor(Ability ability) {
     return abilityScores[ability] ?? 10;

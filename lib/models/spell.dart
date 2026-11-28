@@ -6,7 +6,22 @@ class Spell extends CharacterAction {
   bool get isCircleGrant => id.startsWith(circleGrantPrefix);
   static const draconicGrantPrefix = 'whetstone:draconic-spell:';
   bool get isDraconicGrant => id.startsWith(draconicGrantPrefix);
-  bool get isClassGrant => isCircleGrant || isDraconicGrant;
+  static const lifeDomainGrantPrefix = 'whetstone:life-domain-spell:';
+  bool get isLifeDomainGrant => id.startsWith(lifeDomainGrantPrefix);
+  bool get isClassGrant =>
+      isCircleGrant || isDraconicGrant || isLifeDomainGrant;
+  static const lifeDomainGrants = {
+    'aid': (3, 2),
+    'bless': (3, 1),
+    'cure wounds': (3, 1),
+    'lesser restoration': (3, 2),
+    'mass healing word': (5, 3),
+    'revivify': (5, 3),
+    'aura of life': (7, 4),
+    'death ward': (7, 4),
+    'greater restoration': (9, 5),
+    'mass cure wounds': (9, 5),
+  };
   static String normalizedName(String name) =>
       name.trim().toLowerCase().replaceAll('’', "'");
   static const draconicGrants = {
