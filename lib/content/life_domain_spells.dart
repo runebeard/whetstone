@@ -72,7 +72,7 @@ Spell _lifeSpell(String key, int level) {
       'Touch',
       '8 hours',
       'V, S',
-      'Protect the target from one qualifying lethal event. Track the protection, trigger and expiry at the table.',
+      'For yourself, the first damage that would drop you to 0 HP leaves you at 1 HP and ends the ward. Other targets and instant-death effects are resolved at the table; manually end the ward if it negates instant death.',
     ),
     'greater restoration' => (
       'Greater Restoration',

@@ -9,6 +9,7 @@ const disengagingCondition = 'Disengaging';
 const naturesSanctuaryCondition = 'Nature’s Sanctuary';
 const freedomOfMovementCondition = 'Freedom of Movement';
 const divineSenseCondition = 'Divine Sense';
+const deathWardCondition = 'Death Ward';
 const steadyAimCondition = 'Steady Aim';
 const superiorDefenseCondition = 'Superior Defense';
 const innateSorceryCondition = 'Innate Sorcery';
@@ -316,11 +317,21 @@ class CharacterState {
     if (damage <= 0) return this;
     final absorbed = damage.clamp(0, temporaryHp).toInt();
     final remaining = damage - absorbed;
+    final warded =
+        currentHp > 0 &&
+        remaining >= currentHp &&
+        activeConditions.contains(deathWardCondition);
     final failedSave = currentHp == 0 && remaining > 0 && deathSaveFailures < 3;
     return copyWith(
       temporaryHp: temporaryHp - absorbed,
-      clearConcentration: currentHp <= remaining,
-      currentHp: (currentHp - remaining).clamp(0, maxHp).toInt(),
+      clearConcentration: !warded && currentHp <= remaining,
+      currentHp: warded ? 1 : (currentHp - remaining).clamp(0, maxHp).toInt(),
+      activeConditions: warded
+          ? ({...activeConditions}..remove(deathWardCondition))
+          : null,
+      conditionTurns: warded
+          ? ({...conditionTurns}..remove(deathWardCondition))
+          : null,
       deathSaveSuccesses: failedSave && deathSaveSuccesses == 3
           ? 0
           : deathSaveSuccesses,

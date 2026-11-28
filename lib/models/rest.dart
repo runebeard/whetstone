@@ -183,6 +183,14 @@ class RestPlan {
         dragonWingsCondition,
         dragonCompanionCondition,
       });
+    final wardTurns = currentState.conditionTurns[deathWardCondition];
+    final wardRemaining = wardTurns == null
+        ? null
+        : wardTurns - (type == RestType.shortRest ? 600 : 4800);
+    if ((wardRemaining != null && wardRemaining <= 0) ||
+        (wardTurns == null && type == RestType.longRest)) {
+      restConditions.remove(deathWardCondition);
+    }
     final ended = currentState.activeConditions.difference(restConditions);
     if (ended.isNotEmpty) changes.add('Ended ${ended.join(', ')}');
 
@@ -278,6 +286,11 @@ class RestPlan {
         memorizeSpellAvailable:
             type == RestType.shortRest && character.levelInClass('Wizard') >= 5,
         activeConditions: restConditions,
+        conditionTurns: {
+          ...currentState.conditionTurns,
+          if (wardRemaining != null && wardRemaining > 0)
+            deathWardCondition: wardRemaining,
+        },
         currentHp: currentHp,
         hitDiceSpent: type == RestType.longRest
             ? 0

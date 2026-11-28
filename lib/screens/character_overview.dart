@@ -3534,6 +3534,37 @@ class _CharacterOverviewState extends State<CharacterOverview>
       if (!mounted || choice == null || !canSpendSpellAction(spell)) return;
       companionWithoutConcentration = choice;
     }
+    bool? deathWardTarget;
+    if (spell.isLifeDomainGrant && spell.name == 'Death Ward') {
+      deathWardTarget = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Death Ward · Target'),
+          content: const Text(
+            'Confirm the target is within this casting’s range. Your ward tracks damage prevention here; other targets and instant-death effects are resolved at the table. End the tracked ward manually if it negates an instant-death effect.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Another creature'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Yourself'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted ||
+          deathWardTarget == null ||
+          !canSpendSpellAction(spell, fromScroll: scrollName != null)) {
+        return;
+      }
+    }
     bool? freedomTarget;
     if (spell.isClassGrant && spell.name == 'Freedom of Movement') {
       freedomTarget = await showDialog<bool>(
@@ -3622,6 +3653,30 @@ class _CharacterOverviewState extends State<CharacterOverview>
         startSpellConcentration(spell, slotLevel: slotLevel);
       }
       trackSpellAction(spell);
+      if (deathWardTarget != null) {
+        if (deathWardTarget) {
+          updateCharacterState(
+            characterState.copyWith(
+              activeConditions: {
+                ...characterState.activeConditions,
+                deathWardCondition,
+              },
+              conditionTurns: {
+                ...characterState.conditionTurns,
+                deathWardCondition: extendingSpell(spell) ? 9600 : 4800,
+              },
+            ),
+          );
+        }
+        recordSessionEvent(
+          SessionEventType.combat,
+          'Death Ward cast',
+          detail: deathWardTarget
+              ? 'Damage that would drop you to 0 HP leaves you at 1 HP and consumes the ward. Instant-death effects remain table-confirmed.'
+              : 'Apply Death Ward to the other target at the table. Your conditions are unchanged.',
+        );
+        return;
+      }
       if (lifeRestorationTarget != null) {
         final (self, condition) = lifeRestorationTarget;
         if (self) {

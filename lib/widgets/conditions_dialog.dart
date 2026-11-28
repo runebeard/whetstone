@@ -93,7 +93,10 @@ class _ConditionsDialogState extends State<ConditionsDialog> {
           child: ListView(
             shrinkWrap: true,
             children: [
-              for (final condition in standardConditions)
+              for (final condition in {
+                ...standardConditions,
+                ...widget.activeConditions,
+              })
                 CheckboxListTile(
                   value: selectedConditions.contains(condition),
                   onChanged: (value) =>
