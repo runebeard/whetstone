@@ -205,24 +205,11 @@ void main() {
       await helpers.tap(tester, find.text('Edit'));
       for (var i = 0; i < 8; i++) {
         tester.testTextInput.hide();
-        tester
-            .widget<FilledButton>(find.byKey(ValueKey('creator-continue-$i')))
-            .onPressed!();
-        await tester.pumpAndSettle();
+        await helpers.tap(tester, find.byKey(ValueKey('creator-continue-$i')));
         expect(tester.widget<Stepper>(find.byType(Stepper)).currentStep, i + 1);
       }
       tester.testTextInput.hide();
-      await tester.scrollUntilVisible(
-        find.byKey(const ValueKey('creator-save')),
-        300,
-        scrollable: find.byType(Scrollable).first,
-        maxScrolls: 40,
-      );
-      await tester.pumpAndSettle();
-      tester
-          .widget<FilledButton>(find.byKey(const ValueKey('creator-save')))
-          .onPressed!();
-      await tester.pumpAndSettle();
+      await helpers.tap(tester, find.byKey(const ValueKey('creator-save')));
       expect(find.byType(CharacterEditor), findsNothing);
       expect(character.divineOrder, order);
       expect(character.currentHp, 13);

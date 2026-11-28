@@ -59,6 +59,8 @@ class _CharacterEditorState extends State<CharacterEditor> {
   late final List<InventoryItem> inventory;
   late final List<Feature> features;
   int currentStep = 0;
+  final stepScrollController = ScrollController();
+  final stepTitleKeys = List.generate(9, (_) => GlobalKey());
   AuthoredClass? authoredClass;
   BuiltInClass? builtInClass;
   PrimalOrder? primalOrder;
@@ -114,6 +116,7 @@ class _CharacterEditorState extends State<CharacterEditor> {
 
   @override
   void dispose() {
+    stepScrollController.dispose();
     nameController.dispose();
     classController.dispose();
     levelController.dispose();
@@ -149,10 +152,36 @@ class _CharacterEditorState extends State<CharacterEditor> {
             ));
   }
 
+  void goToStep(int step) {
+    setState(() => currentStep = step);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || currentStep != step || !stepScrollController.hasClients) {
+        return;
+      }
+      var target = stepTitleKeys[step].currentContext;
+      if (target == null) {
+        stepScrollController.jumpTo(
+          stepScrollController.position.maxScrollExtent,
+        );
+        WidgetsBinding.instance.scheduleFrame();
+        await WidgetsBinding.instance.endOfFrame;
+        if (!mounted || currentStep != step) return;
+        target = stepTitleKeys[step].currentContext;
+      }
+      if (target != null && target.mounted) {
+        await Scrollable.ensureVisible(
+          target,
+          alignment: 0,
+          duration: const Duration(milliseconds: 200),
+        );
+      }
+    });
+  }
+
   void continueFromStep() {
     final valid = switch (currentStep) {
-      0 => identityFormKey.currentState!.validate(),
-      1 => abilitiesFormKey.currentState!.validate(),
+      0 => identityFormKey.currentState?.validate() ?? false,
+      1 => abilitiesFormKey.currentState?.validate() ?? false,
       2 =>
         builtInSkillsComplete &&
             (authoredClass == null ||
@@ -163,6 +192,7 @@ class _CharacterEditorState extends State<CharacterEditor> {
       _ => true,
     };
     if (!valid) {
+      goToStep(currentStep);
       if (currentStep == 2) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -182,11 +212,16 @@ class _CharacterEditorState extends State<CharacterEditor> {
       final hp = max(1, hitDie + ((constitution - 10) / 2).floor());
       maxHpController.text = '$hp';
     }
-    setState(() => currentStep += 1);
+    goToStep(currentStep + 1);
   }
 
   void saveCharacter() {
-    if (!nameFormKey.currentState!.validate() || !builtInSkillsComplete) {
+    final form = nameFormKey.currentState;
+    if (form == null) {
+      goToStep(8);
+      return;
+    }
+    if (!form.validate() || !builtInSkillsComplete) {
       return;
     }
     final authored = authoredClass;
@@ -345,99 +380,104 @@ class _CharacterEditorState extends State<CharacterEditor> {
 
   @override
   Widget build(BuildContext context) {
+    final isFinalStep = currentStep == 8;
     return Scaffold(
       appBar: AppBar(
         title: Text(isEditing ? 'Edit Character' : 'Create Character'),
       ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              FilledButton(
+                key: ValueKey(
+                  isFinalStep
+                      ? 'creator-save'
+                      : 'creator-continue-$currentStep',
+                ),
+                onPressed: isFinalStep ? saveCharacter : continueFromStep,
+                child: Text(
+                  isFinalStep
+                      ? (isEditing ? 'Save Changes' : 'Create Character')
+                      : 'Continue',
+                ),
+              ),
+              if (currentStep > 0)
+                TextButton(
+                  onPressed: () => goToStep(currentStep - 1),
+                  child: const Text('Back'),
+                ),
+            ],
+          ),
+        ),
+      ),
       body: Stepper(
+        controller: stepScrollController,
         currentStep: currentStep,
         onStepTapped: (step) {
           if (step <= currentStep) {
-            setState(() => currentStep = step);
+            goToStep(step);
           }
         },
-        controlsBuilder: (context, details) {
-          final isFinalStep = details.stepIndex == 8;
-          return Padding(
-            padding: const EdgeInsets.only(top: 20),
-            child: Row(
-              children: [
-                FilledButton(
-                  key: ValueKey(
-                    isFinalStep
-                        ? 'creator-save'
-                        : 'creator-continue-${details.stepIndex}',
-                  ),
-                  onPressed: isFinalStep ? saveCharacter : continueFromStep,
-                  child: Text(
-                    isFinalStep
-                        ? (isEditing ? 'Save Changes' : 'Create Character')
-                        : 'Continue',
-                  ),
-                ),
-                if (details.stepIndex > 0) ...[
-                  const SizedBox(width: 12),
-                  TextButton(
-                    onPressed: () =>
-                        setState(() => currentStep = details.stepIndex - 1),
-                    child: const Text('Back'),
-                  ),
-                ],
-              ],
-            ),
-          );
-        },
+        controlsBuilder: (context, details) => const SizedBox.shrink(),
         steps: [
           Step(
-            title: const Text('Class & Essentials'),
+            title: Text('Class & Essentials', key: stepTitleKeys[0]),
             isActive: currentStep >= 0,
             state: currentStep > 0 ? StepState.complete : StepState.indexed,
             content: identityStep(),
           ),
           Step(
-            title: const Text('Ability Scores'),
+            title: Text('Ability Scores', key: stepTitleKeys[1]),
             isActive: currentStep >= 1,
             state: currentStep > 1 ? StepState.complete : StepState.indexed,
             content: abilitiesStep(),
           ),
           Step(
-            title: const Text('Proficiencies'),
+            title: Text('Proficiencies', key: stepTitleKeys[2]),
             isActive: currentStep >= 2,
             state: currentStep > 2 ? StepState.complete : StepState.indexed,
             content: proficienciesStep(),
           ),
           Step(
-            title: const Text('Weapons'),
+            title: Text('Weapons', key: stepTitleKeys[3]),
             isActive: currentStep >= 3,
             state: currentStep > 3 ? StepState.complete : StepState.indexed,
             content: weaponsStep(),
           ),
           Step(
-            title: const Text('Spells'),
+            title: Text('Spells', key: stepTitleKeys[4]),
             isActive: currentStep >= 4,
             state: currentStep > 4 ? StepState.complete : StepState.indexed,
             content: spellsStep(),
           ),
           Step(
-            title: const Text('Resources'),
+            title: Text('Resources', key: stepTitleKeys[5]),
             isActive: currentStep >= 5,
             state: currentStep > 5 ? StepState.complete : StepState.indexed,
             content: resourcesStep(),
           ),
           Step(
-            title: Text(isEditing ? 'Inventory' : 'Starting Inventory'),
+            title: Text(
+              isEditing ? 'Inventory' : 'Starting Inventory',
+              key: stepTitleKeys[6],
+            ),
             isActive: currentStep >= 6,
             state: currentStep > 6 ? StepState.complete : StepState.indexed,
             content: inventoryStep(),
           ),
           Step(
-            title: const Text('Features & Actions'),
+            title: Text('Features & Actions', key: stepTitleKeys[7]),
             isActive: currentStep >= 7,
             state: currentStep > 7 ? StepState.complete : StepState.indexed,
             content: featuresStep(),
           ),
           Step(
-            title: const Text('Name & Review'),
+            title: Text('Name & Review', key: stepTitleKeys[8]),
             isActive: currentStep >= 8,
             content: reviewStep(),
           ),
@@ -826,10 +866,12 @@ class _CharacterEditorState extends State<CharacterEditor> {
           )
         else
           for (final skill in standardSkills)
-            Row(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(child: Text(skill.name)),
+                Text(skill.name),
                 DropdownButton<SkillProficiency>(
+                  isExpanded: true,
                   value: skillProficiencies[skill.id] ?? SkillProficiency.none,
                   items: const [
                     DropdownMenuItem(
