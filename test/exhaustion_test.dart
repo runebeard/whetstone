@@ -219,6 +219,18 @@ void main() {
       await tester.pumpAndSettle();
       expect(session.characterState.exhaustionLevel, 5);
       expect(find.text('• Exhaustion · 5 / 6'), findsOneWidget);
+      expect(
+        session.timeline.any((event) => event.title == 'Exhaustion: 6 → 5'),
+        isTrue,
+      );
+      expect(
+        session.timeline.any(
+          (event) =>
+              event.title == 'Exhaustion: 5 → 6' &&
+              event.detail!.contains('death'),
+        ),
+        isTrue,
+      );
       expect(tester.takeException(), isNull);
     },
   );

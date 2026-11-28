@@ -22,6 +22,19 @@ class SessionEventRecorder {
     required Iterable<CharacterResource> resources,
   }) {
     final events = <SessionEvent>[];
+    if (updated.exhaustionLevel != previous.exhaustionLevel) {
+      events.add(
+        create(
+          SessionEventType.condition,
+          'Exhaustion: ${previous.exhaustionLevel} → ${updated.exhaustionLevel}',
+          detail: updated.exhaustionLevel == 6
+              ? 'Six Exhaustion levels cause death. Resolve revival at the table.'
+              : updated.exhaustionLevel == 0
+              ? 'Exhaustion cleared. Its D20 Test penalty and Speed reduction have ended.'
+              : 'D20 Tests −${updated.exhaustionPenalty}. Reduce Speed by ${updated.exhaustionSpeedReduction} feet at the table.',
+        ),
+      );
+    }
     if (updated.currentHp != previous.currentHp) {
       final difference = updated.currentHp - previous.currentHp;
       events.add(

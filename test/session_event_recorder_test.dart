@@ -60,4 +60,37 @@ void main() {
 
     expect(first.id, isNot(second.id));
   });
+  for (final (before, after) in [(0, 2), (5, 6), (3, 0), (3, 2), (2, 2)]) {
+    test(
+      'Exhaustion history $before to $after records only an actual change',
+      () {
+        final recorder = SessionEventRecorder();
+        final events = recorder.stateChanges(
+          previous: initial.copyWith(exhaustionLevel: before),
+          updated: initial.copyWith(exhaustionLevel: after),
+          resources: [],
+        );
+        if (before == after) {
+          expect(events, isEmpty);
+          return;
+        }
+        final event = events.single;
+        expect(event.type, SessionEventType.condition);
+        expect(event.title, 'Exhaustion: $before → $after');
+        expect(
+          event.detail,
+          contains(
+            after == 6
+                ? 'death'
+                : after == 0
+                ? 'cleared'
+                : 'D20 Tests −${2 * after}',
+          ),
+        );
+        final restored = SessionEvent.fromJson(event.toJson());
+        expect(restored.title, event.title);
+        expect(restored.detail, event.detail);
+      },
+    );
+  }
 }
