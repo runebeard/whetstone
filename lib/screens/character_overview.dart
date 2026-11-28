@@ -6445,6 +6445,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
       await useWholenessOfBody(resource);
     } else if (resource.id == layOnHandsResourceId) {
       await useLayOnHands(resource);
+    } else if (resource.id == clericChannelDivinityId &&
+        character.levelInClass('Cleric') >= 2) {
+      await useClericChannelDivinity(resource);
     } else if (resource.id == paladinChannelDivinityId &&
         character.levelInClass('Paladin') >= 3) {
       await usePaladinChannelDivinity(resource);
@@ -6859,6 +6862,150 @@ class _CharacterOverviewState extends State<CharacterOverview>
       total: die,
       detail:
           'Subtract $die from the creature’s ${choice.toLowerCase()}. One Bardic Inspiration and Reaction spent. Resolve the reduced total and outcome at the table.',
+    );
+  }
+
+  Future<void> useClericChannelDivinity(CharacterResource resource) async {
+    final level = character.levelInClass('Cleric');
+    bool canUse() =>
+        level >= 2 &&
+        characterState.canConcentrate &&
+        remainingUses(resource) > 0 &&
+        (currentMode != CharacterMode.combat ||
+            !usedCombatActions.contains(CombatActionCost.action));
+    if (!canUse()) return;
+    final wisdom = character.abilityModifierFor(Ability.wisdom);
+    final dc = 8 + character.proficiencyBonus + wisdom;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Cleric Channel Divinity'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'Use your Holy Symbol and one Channel Divinity use. Magic Action in combat. '
+              'Divine Spark targets another creature you can see within 30 feet; resolve target eligibility and defenses at the table.',
+            ),
+          ),
+          for (final (value, label) in [
+            ('heal', 'Divine Spark · Heal another creature'),
+            ('radiant', 'Divine Spark · Radiant damage'),
+            ('necrotic', 'Divine Spark · Necrotic damage'),
+            ('turn', 'Turn Undead'),
+            if (level >= 5) ('sear', 'Turn Undead + Sear Undead'),
+          ])
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, value),
+              child: Text(label),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null || !canUse()) return;
+    bool? successfulSave;
+    final turning = choice == 'turn' || choice == 'sear';
+    if (turning || choice != 'heal') {
+      final outcome = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(
+            turning
+                ? 'Turn Undead · Confirm targets'
+                : 'Divine Spark · Target save',
+          ),
+          content: Text(
+            turning
+                ? 'Choose Undead within 30 feet. Each makes a DC $dc Wisdom save. '
+                      'A failed save causes Frightened and Incapacitated for 1 minute, with movement away from you. '
+                      'Ends early on a target if it takes damage, or if you become Incapacitated or die. '
+                      '${choice == 'sear' ? 'Sear Undead adds Radiant damage to each failed save without ending this effect. ' : ''}'
+                      'Resolve individual targets, saves and expiry at the table.'
+                : 'Another visible creature within 30 feet makes a DC $dc Constitution save. '
+                      'A success halves damage, rounded down. Confirm its outcome or resolve the rolled total at the table.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            if (!turning) ...[
+              TextButton(
+                onPressed: () => Navigator.pop(context, 'failed'),
+                child: const Text('Failed save'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, 'success'),
+                child: const Text('Successful save'),
+              ),
+            ],
+            FilledButton(
+              onPressed: () => Navigator.pop(context, 'table'),
+              child: Text(turning ? 'Confirm Turn Undead' : 'Resolve at Table'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || outcome == null || !canUse()) return;
+      successfulSave = outcome == 'table' ? null : outcome == 'success';
+    }
+    final dice = turning
+        ? (choice == 'sear' ? wisdom.clamp(1, 99) : 0)
+        : level >= 18
+        ? 4
+        : level >= 13
+        ? 3
+        : level >= 7
+        ? 2
+        : 1;
+    final supremeHealing =
+        choice == 'heal' &&
+        level >= 17 &&
+        character.subclasses['Cleric'] == 'Life Domain';
+    final rolls = [
+      for (var i = 0; i < dice; i++) supremeHealing ? 8 : diceRoller.rollDie(8),
+    ];
+    final total =
+        (rolls.fold(0, (sum, die) => sum + die) + (turning ? 0 : wisdom)).clamp(
+          0,
+          9999,
+        );
+    final result = successfulSave == true ? total ~/ 2 : total;
+    if (currentMode == CharacterMode.combat) {
+      usedCombatActions.add(CombatActionCost.action);
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        resourceValues: {
+          ...characterState.resourceValues,
+          resource.id: remainingUses(resource) - 1,
+        },
+      ),
+    );
+    final type = choice == 'necrotic' ? 'Necrotic' : 'Radiant';
+    recordSessionEvent(
+      SessionEventType.combat,
+      turning
+          ? (choice == 'sear' ? 'Turn Undead + Sear Undead' : 'Turn Undead')
+          : choice == 'heal'
+          ? 'Divine Spark healing: $total'
+          : 'Divine Spark $type: $result',
+      detail: turning
+          ? 'DC $dc Wisdom saves · Undead within 30 feet. Frightened and Incapacitated for 1 minute on failure; move away. '
+                'Damage, your Incapacitation or your death ends the effect. '
+                '${choice == 'sear' ? '${rolls.join(' + ')} = $total Radiant damage per failed save; this damage does not end turning. ' : ''}'
+                'Targets, saves, movement and expiry remain table-managed.'
+          : '${supremeHealing ? 'Supreme Healing: dice maximized. ' : ''}${rolls.join(' + ')} + Wisdom $wisdom = $total. '
+                '${choice == 'heal' ? 'Apply $total HP to the other creature; your HP is unchanged.' : 'DC $dc Constitution · ${successfulSave == null
+                          ? 'Apply target save and defenses at the table; displayed damage is before the save'
+                          : successfulSave
+                          ? 'Successful save; damage halved'
+                          : 'Failed save'}. $type damage.'} '
+                'One Cleric Channel Divinity use spent.',
     );
   }
 
