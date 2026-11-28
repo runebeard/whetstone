@@ -25,6 +25,7 @@ const wildShapeResourceId = 'whetstone:class:wild-shape';
 const bardicInspirationResourceId = 'whetstone:class:bardic-inspiration';
 const layOnHandsResourceId = 'whetstone:class:lay-on-hands';
 const clericChannelDivinityId = 'whetstone:class:cleric-channel-divinity';
+const divineInterventionResourceId = 'whetstone:class:divine-intervention';
 const paladinChannelDivinityId = 'whetstone:class:paladin-channel-divinity';
 
 const progressingClassResourceIds = {
@@ -49,6 +50,7 @@ const progressingClassResourceIds = {
   bardicInspirationResourceId,
   layOnHandsResourceId,
   clericChannelDivinityId,
+  divineInterventionResourceId,
   paladinChannelDivinityId,
 };
 
@@ -352,6 +354,14 @@ enum BuiltInClass {
           rechargePeriod: this == bard && level >= 5
               ? RechargePeriod.shortRest
               : RechargePeriod.longRest,
+        ),
+      if (this == cleric && level >= 10)
+        const CharacterResource(
+          id: divineInterventionResourceId,
+          name: 'Divine Intervention',
+          maximum: 1,
+          initialValue: 1,
+          rechargePeriod: RechargePeriod.longRest,
         ),
       if (this == cleric && level >= 2)
         _channelDivinity(

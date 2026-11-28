@@ -90,6 +90,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   bool primalStrikeUsedThisTurn = false;
   bool divineStrikeUsedThisTurn = false;
   String? pendingClericVitalitySpellId;
+  String? interveningSpellId;
   bool cleaveUsedThisTurn = false;
   bool nickUsedThisTurn = false;
   bool sneakAttackUsedThisTurn = false;
@@ -3026,6 +3027,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
 
   CombatActionCost? spellActionCost(Spell spell) {
     if (currentMode != CharacterMode.combat) return null;
+    if (interveningSpellId == spell.id) return CombatActionCost.action;
     if (quickeningSpellId == spell.id) return CombatActionCost.bonusAction;
     return switch (spell.castingTime?.trim().toLowerCase()) {
       'action' || '1 action' => CombatActionCost.action,
@@ -3036,6 +3038,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   bool canSpendSpellAction(Spell spell, {bool fromScroll = false}) {
+    if (interveningSpellId == spell.id &&
+        (!canUseDivineIntervention ||
+            !supportsDivineInterventionSpell(spell))) {
+      return false;
+    }
     if (previewPairSpellId == spell.id &&
         castingMetamagic != null &&
         !previewPairAvailable(spell, castingMetamagic!, previewPairOption!)) {
@@ -3070,7 +3077,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
     final canCastInForm = character.levelInClass('Druid') >= 18;
     if (transformed &&
         (!canCastInForm ||
-            (!fromScroll && spell.hasCostlyOrConsumedMaterial))) {
+            (!fromScroll &&
+                interveningSpellId != spell.id &&
+                spell.hasCostlyOrConsumedMaterial))) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -3159,6 +3168,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
   );
 
   CharacterResource? freeCastResource(Spell spell) {
+    if (interveningSpellId == spell.id) {
+      return resourceWithId(divineInterventionResourceId);
+    }
     final companion = character.benefitsFromDragonCompanion(spell)
         ? resourceWithId(dragonCompanionResourceId)
         : null;
@@ -3510,7 +3522,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         !characterState.activeConditions.contains(condition)) {
       return null;
     }
-    if (greater) {
+    if (greater && interveningSpellId != spell.id) {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -3816,7 +3828,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
                   ? 'Removed $condition from you; other conditions, HP and concentration are unchanged.'
                   : 'End $condition on the confirmed ${self ? 'self' : 'other'} target at the table. Your tracked conditions, scores and HP are unchanged.') +
               (spell.name == 'Greater Restoration'
-                  ? ' Consume the confirmed diamond dust worth at least 100 GP at the table.'
+                  ? interveningSpellId == spell.id
+                        ? ' Divine Intervention waives Material components for this casting.'
+                        : ' Consume the confirmed diamond dust worth at least 100 GP at the table.'
                   : ''),
         );
         return;
@@ -3877,7 +3891,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
         recordSessionEvent(
           SessionEventType.combat,
           '${spell.name} cast',
-          detail: spell.summary,
+          detail:
+              '${spell.summary}${interveningSpellId == spell.id ? ' Divine Intervention waives all Material components for this casting.' : ''}',
         );
       }
     }
@@ -6938,6 +6953,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
       await useWholenessOfBody(resource);
     } else if (resource.id == layOnHandsResourceId) {
       await useLayOnHands(resource);
+    } else if (resource.id == divineInterventionResourceId) {
+      await useDivineIntervention();
     } else if (resource.id == clericChannelDivinityId &&
         character.levelInClass('Cleric') >= 2) {
       await useClericChannelDivinity(resource);
@@ -7356,6 +7373,182 @@ class _CharacterOverviewState extends State<CharacterOverview>
       detail:
           'Subtract $die from the creature’s ${choice.toLowerCase()}. One Bardic Inspiration and Reaction spent. Resolve the reduced total and outcome at the table.',
     );
+  }
+
+  bool get canUseDivineIntervention {
+    final pool = resourceWithId(divineInterventionResourceId);
+    return character.levelInClass('Cleric') >= 10 &&
+        pool != null &&
+        remainingUses(pool) > 0 &&
+        characterState.canConcentrate &&
+        !characterState.isRaging &&
+        (currentMode != CharacterMode.combat ||
+            !usedCombatActions.contains(CombatActionCost.action));
+  }
+
+  bool supportsDivineInterventionSpell(Spell spell) =>
+      spell.level >= 0 &&
+      spell.level <= 5 &&
+      !(spell.castingTime?.toLowerCase().contains('reaction') ?? false) &&
+      (spell.isLifeDomainGrant ||
+          (spell.isCantrip &&
+              spell.castingAbility == Ability.wisdom &&
+              character.clericCantripIds.contains(spell.id)) ||
+          spell.id == 'whetstone:intervention-manual');
+
+  Future<void> useDivineIntervention() async {
+    if (!canUseDivineIntervention) return;
+    var manualConcentration = false;
+    var spell = await showDialog<Spell>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Divine Intervention · Spell'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'Choose a Cleric spell of level 5 or lower that does not require a Reaction. '
+              'It uses a Magic action, one Divine Intervention use and no spell slot or Material components. '
+              'Tracked Life Domain spells and marked Wisdom-based Cleric cantrips use their normal effect workflows. '
+              'Other Cleric spells can be resolved at the table, even if you do not have them prepared.',
+            ),
+          ),
+          for (final spell in character.spells.where(
+            supportsDivineInterventionSpell,
+          ))
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, spell),
+              child: Text('Cast ${spell.name}'),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(
+              context,
+              const Spell(
+                id: 'whetstone:intervention-manual',
+                name: '',
+                level: 0,
+                prepared: false,
+                summary: '',
+              ),
+            ),
+            child: const Text('Another Cleric spell · At the table'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || spell == null || !canUseDivineIntervention) return;
+    if (spell.id == 'whetstone:intervention-manual') {
+      var name = '';
+      var notes = '';
+      var level = 0;
+      var confirmed = false;
+      spell = await showDialog<Spell>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Divine Intervention · Table casting'),
+            scrollable: true,
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  decoration: const InputDecoration(labelText: 'Spell name'),
+                  onChanged: (v) => setDialogState(() => name = v.trim()),
+                ),
+                DropdownButtonFormField<int>(
+                  initialValue: level,
+                  decoration: const InputDecoration(labelText: 'Spell level'),
+                  items: [
+                    for (var n = 0; n <= 5; n++)
+                      DropdownMenuItem(value: n, child: Text('Level $n')),
+                  ],
+                  onChanged: (v) => setDialogState(() => level = v ?? 0),
+                ),
+                TextField(
+                  decoration: const InputDecoration(
+                    labelText: 'Target or notes (optional)',
+                  ),
+                  onChanged: (v) => notes = v.trim(),
+                ),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Confirmed Cleric spell, level 0–5, not a Reaction',
+                  ),
+                  value: confirmed,
+                  onChanged: (v) =>
+                      setDialogState(() => confirmed = v ?? false),
+                ),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Requires Concentration'),
+                  value: manualConcentration,
+                  onChanged: (v) =>
+                      setDialogState(() => manualConcentration = v ?? false),
+                ),
+                const Text(
+                  'Resolve spell effects and targets at the table. Material components are waived. Concentration, Verbal/Somatic components and other casting requirements still apply.',
+                ),
+                if (manualConcentration)
+                  const Text(
+                    'Casting ends your current tracked concentration. Track concentration on this new spell at the table.',
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: !confirmed || name.isEmpty
+                    ? null
+                    : () => Navigator.pop(
+                        context,
+                        Spell(
+                          id: 'whetstone:intervention-manual',
+                          name: name,
+                          level: level,
+                          prepared: false,
+                          castingTime: 'Action',
+                          castingAbility: Ability.wisdom,
+                          summary:
+                              'Resolve the confirmed spell effects at the table.${notes.isEmpty ? '' : ' $notes'}',
+                        ),
+                      ),
+                child: const Text('Cast at the table'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (!mounted || spell == null || !canUseDivineIntervention) return;
+    final pool = resourceWithId(divineInterventionResourceId)!;
+    final before = remainingUses(pool);
+    interveningSpellId = spell.id;
+    try {
+      await castSpell(spell, useFreeCast: true);
+    } finally {
+      interveningSpellId = null;
+    }
+    if (mounted && remainingUses(pool) < before) {
+      if (manualConcentration) {
+        updateCharacterState(characterState.copyWith(clearConcentration: true));
+      }
+      recordSessionEvent(
+        SessionEventType.combat,
+        'Divine Intervention · ${spell.name}',
+        detail:
+            'One use spent; recover on Long Rest. Cast as a Magic action without a spell slot or Material components. '
+            '${spell.id == 'whetstone:intervention-manual' ? spell.summary : 'Other spell requirements and effects still apply.'}'
+            '${manualConcentration ? ' Previous tracked concentration ended; track this spell’s concentration at the table.' : ''}',
+      );
+    }
   }
 
   Future<void> useClericChannelDivinity(CharacterResource resource) async {
