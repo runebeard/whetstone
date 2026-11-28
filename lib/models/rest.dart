@@ -113,6 +113,7 @@ class RestPlan {
     required DiceRoller roller,
   }) {
     if (type != RestType.shortRest ||
+        updatedState.exhaustionLevel >= 6 ||
         updatedState.currentHp <= 0 ||
         updatedState.currentHp >= updatedState.maxHp) {
       return this;
@@ -170,7 +171,20 @@ class RestPlan {
     required Character character,
     required CharacterState currentState,
   }) {
+    if (currentState.exhaustionLevel >= 6) {
+      return RestPlan(
+        type: type,
+        updatedState: currentState,
+        changes: const [],
+      );
+    }
     final changes = <String>[];
+    final exhaustion = type == RestType.longRest
+        ? (currentState.exhaustionLevel - 1).clamp(0, 6)
+        : currentState.exhaustionLevel;
+    if (exhaustion != currentState.exhaustionLevel) {
+      changes.add('Exhaustion: ${currentState.exhaustionLevel} → $exhaustion');
+    }
     final resourceValues = {...currentState.resourceValues};
     final restConditions = {...currentState.activeConditions}
       ..removeAll({
@@ -281,6 +295,7 @@ class RestPlan {
     return RestPlan(
       type: type,
       updatedState: currentState.endDragonCompanion().copyWith(
+        exhaustionLevel: exhaustion,
         fiendishResilienceAvailable: character.hasFiendishResilience,
         clearFiendishResistance: !character.hasFiendishResilience,
         memorizeSpellAvailable:

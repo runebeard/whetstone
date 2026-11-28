@@ -3430,7 +3430,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
     if (!mounted || self == null) return null;
     final eligible = [
       ...(self ? selfConditions : conditions),
-      if (greater) ...manualEffects,
+      if (greater)
+        for (final effect in manualEffects)
+          if (!self ||
+              effect != '1 Exhaustion level' ||
+              characterState.exhaustionLevel > 0)
+            effect,
     ];
     final condition = await showDialog<String>(
       context: context,
@@ -3441,7 +3446,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
             SimpleDialogOption(
               onPressed: () => Navigator.pop(context, condition),
               child: Text(
-                manualEffects.contains(condition)
+                self && condition == '1 Exhaustion level'
+                    ? 'Remove 1 Exhaustion level'
+                    : manualEffects.contains(condition)
                     ? '$condition · At the table'
                     : 'End $condition',
               ),
@@ -3468,7 +3475,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
             'Confirm you have diamond dust worth at least 100 GP. '
             'Consume it at the table when you complete this casting; inventory and coins are not changed automatically. '
             'A free cast or Subtle Spell does not waive this component. '
-            '${manualEffects.contains(condition) ? 'Resolve $condition on the chosen target at the table; tracked scores and HP will stay unchanged.' : 'End only the chosen condition on the chosen target.'}',
+            '${self && condition == '1 Exhaustion level'
+                ? 'Your tracked Exhaustion decreases by one; HP and other conditions are unchanged.'
+                : manualEffects.contains(condition)
+                ? 'Resolve $condition on the chosen target at the table; tracked scores and HP will stay unchanged.'
+                : 'End only the chosen condition on the chosen target.'}',
           ),
           actions: [
             TextButton(
@@ -3723,6 +3734,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
       }
       if (lifeRestorationTarget != null) {
         final (self, condition) = lifeRestorationTarget;
+        final exhaustionRemoved = self && condition == '1 Exhaustion level';
+        if (exhaustionRemoved) {
+          updateCharacterState(
+            characterState.copyWith(
+              exhaustionLevel: characterState.exhaustionLevel - 1,
+            ),
+          );
+        }
         final trackedCondition = const {
           'Blinded',
           'Deafened',
@@ -3747,7 +3766,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
               ? '${spell.name} · $condition ended'
               : '${spell.name} · ${self ? 'Yourself' : 'Other target'}',
           detail:
-              (self && trackedCondition
+              (exhaustionRemoved
+                  ? 'Removed one Exhaustion level from you; now ${characterState.exhaustionLevel}. HP and other conditions are unchanged.'
+                  : self && trackedCondition
                   ? 'Removed $condition from you; other conditions, HP and concentration are unchanged.'
                   : 'End $condition on the confirmed ${self ? 'self' : 'other'} target at the table. Your tracked conditions, scores and HP are unchanged.') +
               (spell.name == 'Greater Restoration'
@@ -6330,6 +6351,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     return rollCheck(
       '${original.label} · Disciplined Survivor',
       original.modifier,
+      applyExhaustion: false,
       modeOverride: mode,
       minimumTotal: original.minimumTotal,
       darkLuckEligible: tableResolvedSave,
@@ -6399,6 +6421,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   CheckRoll rollCheck(
     String label,
     int modifier, {
+    bool applyExhaustion = true,
     bool useSelectedMode = true,
     Ability? checkAbility,
     int? minimumTotal,
@@ -6415,6 +6438,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
     String Function(CheckRoll)? describe,
     void Function(D20Mode, List<int>)? onD20Rolled,
   }) {
+    final exhaustionPenalty = applyExhaustion
+        ? characterState.exhaustionPenalty
+        : 0;
+    modifier -= exhaustionPenalty;
     tacticalMindCheck = null;
     peerlessSkillRoll = null;
     darkLuckRoll = null;
@@ -6472,6 +6499,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     addRollNotice(
       title: label,
       calculation: [
+        if (exhaustionPenalty > 0) 'Exhaustion −$exhaustionPenalty ·',
         if (second != null) '${mode.label}: $first, $second →',
         'd20 ${roll.naturalRoll}${minimumApplied ? ' → ${roll.effectiveRoll}' : ''} $operator ${modifier.abs()} = ${roll.unadjustedTotal}${totalMinimumApplied ? ' → ${roll.total}' : ''}',
       ].join(' '),
@@ -8701,6 +8729,16 @@ class _CharacterOverviewState extends State<CharacterOverview>
   );
 
   Future<void> takeRest(RestType restType) async {
+    if (characterState.exhaustionLevel >= 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Six Exhaustion levels cause death. Resolve revival at the table before resting.',
+          ),
+        ),
+      );
+      return;
+    }
     final canRecoverSlots =
         restType == RestType.shortRest &&
         landDruidLevel >= 6 &&

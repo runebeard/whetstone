@@ -217,7 +217,9 @@ class _CombatSummaryState extends State<CombatSummary> {
       context: context,
       builder: (context) => InitiativeRollDialog(
         beforeRecord: widget.beforeInitiativeRecord,
-        initiativeModifier: characterState.initiativeModifier,
+        initiativeModifier:
+            characterState.initiativeModifier -
+            characterState.exhaustionPenalty,
         rollD20: rollD20,
         canRecord: widget.onInitiativeRecorded != null,
         initialMode: widget.initiativeMode,
@@ -233,6 +235,10 @@ class _CombatSummaryState extends State<CombatSummary> {
       context: context,
       builder: (context) => ConditionsDialog(
         activeConditions: characterState.activeConditions,
+        exhaustionLevel: characterState.exhaustionLevel,
+        onExhaustionChanged: (level) {
+          widget.onChanged(characterState.copyWith(exhaustionLevel: level));
+        },
         conditionTurns: characterState.conditionTurns,
         onTimersChanged: (timers) {
           widget.onChanged(characterState.copyWith(conditionTurns: timers));
@@ -326,6 +332,7 @@ class _CombatSummaryState extends State<CombatSummary> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: ConditionsBox(
+                      exhaustionLevel: characterState.exhaustionLevel,
                       activeConditions: characterState.activeConditions,
                       onTap: () => editConditions(context),
                     ),

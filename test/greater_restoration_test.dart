@@ -21,6 +21,7 @@ class Scenario {
     Set<String> conditions = const {'Charmed', 'Poisoned'},
     Set<CombatActionCost> used = const {},
     bool freeSubtle = false,
+    int exhaustion = 0,
   }) async {
     var character = withBuiltInSpellGrants(
       fixtures
@@ -52,6 +53,7 @@ class Scenario {
     session = CharacterSession(
       characterState: CharacterState.fromCharacter(character).copyWith(
         currentHp: 22,
+        exhaustionLevel: exhaustion,
         activeConditions: conditions,
         conditionTurns: {for (final condition in conditions) condition: 7},
         concentrationSpellId: concentration,
@@ -86,6 +88,19 @@ class Scenario {
 }
 
 void main() {
+  testWidgets('Greater Restoration cannot remove absent self Exhaustion', (
+    tester,
+  ) async {
+    final scenario = Scenario();
+    await scenario.boot(tester);
+    await scenario.begin(tester);
+    await scenario.choose(tester, 'Treat yourself');
+    expect(find.text('Remove 1 Exhaustion level'), findsNothing);
+    expect(find.text('1 Exhaustion level · At the table'), findsNothing);
+    await scenario.choose(tester, 'Cancel');
+    expect(scenario.session.characterState.exhaustionLevel, 0);
+    expect(scenario.session.characterState.resourceValues[spellSlotId(5)], 1);
+  });
   for (final target in ['self', 'other-charmed', 'other-petrified']) {
     testWidgets('Greater Restoration removes one effect on $target', (
       tester,
@@ -132,13 +147,26 @@ void main() {
       tester,
     ) async {
       final scenario = Scenario();
-      await scenario.boot(tester, conditions: {'Poisoned'});
+      final exhaustion = effect == '1 Exhaustion level';
+      await scenario.boot(
+        tester,
+        conditions: {'Poisoned'},
+        exhaustion: exhaustion ? 2 : 0,
+      );
       final maxHp = scenario.session.characterState.maxHp;
       await scenario.begin(tester);
       await scenario.choose(tester, 'Treat yourself');
       expect(find.text('End Charmed'), findsNothing);
-      await scenario.choose(tester, '$effect · At the table');
-      expect(find.textContaining('tracked scores and HP'), findsOneWidget);
+      await scenario.choose(
+        tester,
+        exhaustion ? 'Remove 1 Exhaustion level' : '$effect · At the table',
+      );
+      expect(
+        find.textContaining(
+          exhaustion ? 'Exhaustion decreases by one' : 'tracked scores and HP',
+        ),
+        findsOneWidget,
+      );
       await scenario.choose(tester, 'Confirm components');
       await scenario.choose(tester, 'Level 5 · 1 remaining');
       final state = scenario.session.characterState;
@@ -146,7 +174,11 @@ void main() {
       expect(state.currentHp, 22);
       expect(state.maxHp, maxHp);
       expect(state.resourceValues[spellSlotId(5)], 0);
-      expect(scenario.session.timeline.first.detail, contains(effect));
+      expect(state.exhaustionLevel, exhaustion ? 1 : 0);
+      expect(
+        scenario.session.timeline.first.detail,
+        contains(exhaustion ? 'Removed one Exhaustion level' : effect),
+      );
       expect(scenario.session.timeline.first.detail, contains('at the table'));
       expect(tester.takeException(), isNull);
     });

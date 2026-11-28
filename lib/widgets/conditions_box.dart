@@ -3,16 +3,21 @@ import 'package:flutter/material.dart';
 class ConditionsBox extends StatelessWidget {
   final Set<String> activeConditions;
   final VoidCallback onTap;
+  final int exhaustionLevel;
 
   const ConditionsBox({
     super.key,
     required this.activeConditions,
     required this.onTap,
+    this.exhaustionLevel = 0,
   });
 
   @override
   Widget build(BuildContext context) {
-    final conditions = activeConditions.toList()..sort();
+    final conditions = [
+      if (exhaustionLevel > 0) 'Exhaustion · $exhaustionLevel / 6',
+      ...(activeConditions.toList()..sort()),
+    ];
 
     return Card(
       child: InkWell(

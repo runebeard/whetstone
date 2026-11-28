@@ -24,6 +24,8 @@ class ConditionsDialog extends StatefulWidget {
   final ValueChanged<Set<String>> onChanged;
   final Map<String, int> conditionTurns;
   final ValueChanged<Map<String, int>>? onTimersChanged;
+  final int exhaustionLevel;
+  final ValueChanged<int>? onExhaustionChanged;
 
   const ConditionsDialog({
     super.key,
@@ -31,6 +33,8 @@ class ConditionsDialog extends StatefulWidget {
     required this.onChanged,
     this.conditionTurns = const {},
     this.onTimersChanged,
+    this.exhaustionLevel = 0,
+    this.onExhaustionChanged,
   });
 
   @override
@@ -40,12 +44,14 @@ class ConditionsDialog extends StatefulWidget {
 class _ConditionsDialogState extends State<ConditionsDialog> {
   late final Set<String> selectedConditions;
   late final Map<String, int> timers;
+  late int exhaustion;
 
   @override
   void initState() {
     super.initState();
     selectedConditions = {...widget.activeConditions};
     timers = {...widget.conditionTurns};
+    exhaustion = widget.exhaustionLevel;
   }
 
   void toggleCondition(String condition, bool isSelected) {
@@ -93,6 +99,40 @@ class _ConditionsDialogState extends State<ConditionsDialog> {
           child: ListView(
             shrinkWrap: true,
             children: [
+              if (widget.onExhaustionChanged != null) ...[
+                Text('Exhaustion · $exhaustion / 6'),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      tooltip: 'Reduce Exhaustion',
+                      onPressed: exhaustion > 0
+                          ? () {
+                              setState(() => exhaustion--);
+                              widget.onExhaustionChanged!(exhaustion);
+                            }
+                          : null,
+                      icon: const Icon(Icons.remove),
+                    ),
+                    IconButton(
+                      tooltip: 'Increase Exhaustion',
+                      onPressed: exhaustion < 6
+                          ? () {
+                              setState(() => exhaustion++);
+                              widget.onExhaustionChanged!(exhaustion);
+                            }
+                          : null,
+                      icon: const Icon(Icons.add),
+                    ),
+                  ],
+                ),
+                Text(
+                  exhaustion == 6
+                      ? 'Six levels cause death. Resolve revival at the table; a rest cannot remove this.'
+                      : 'D20 Tests: −${2 * exhaustion}. Reduce Speed by ${5 * exhaustion} feet at the table. A Long Rest removes one level.',
+                ),
+                const Divider(),
+              ],
               for (final condition in {
                 ...standardConditions,
                 ...widget.activeConditions,

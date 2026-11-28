@@ -91,6 +91,9 @@ class CharacterState {
   final int currentHp;
   final int maxHp;
   final int temporaryHp;
+  final int exhaustionLevel;
+  int get exhaustionPenalty => 2 * exhaustionLevel;
+  int get exhaustionSpeedReduction => 5 * exhaustionLevel;
   final String? wildShapeForm;
   final int? wildShapeTurnsRemaining;
   final String? wildCompanion;
@@ -132,6 +135,7 @@ class CharacterState {
     required this.currentHp,
     required this.maxHp,
     required this.temporaryHp,
+    this.exhaustionLevel = 0,
     this.wildShapeForm,
     this.wildShapeTurnsRemaining,
     this.wildCompanion,
@@ -163,7 +167,8 @@ class CharacterState {
     this.conditionTurns = const {},
     required this.pinnedActionKeys,
     required this.resourceValues,
-  }) : legacyHitDiceSpent = hitDiceSpent;
+  }) : assert(exhaustionLevel >= 0 && exhaustionLevel <= 6),
+       legacyHitDiceSpent = hitDiceSpent;
 
   factory CharacterState.fromCharacter(Character character) {
     return CharacterState(
@@ -189,6 +194,7 @@ class CharacterState {
       'currentHp': currentHp,
       'maxHp': maxHp,
       'temporaryHp': temporaryHp,
+      if (exhaustionLevel > 0) 'exhaustionLevel': exhaustionLevel,
       'fiendishResistance': ?fiendishResistance?.name,
       if (fiendishResilienceAvailable) 'fiendishResilienceAvailable': true,
       'dragonCompanionSpellId': ?dragonCompanionSpellId,
@@ -241,6 +247,7 @@ class CharacterState {
       currentHp: json['currentHp'] as int,
       maxHp: json['maxHp'] as int,
       temporaryHp: json['temporaryHp'] as int,
+      exhaustionLevel: (json['exhaustionLevel'] as int? ?? 0).clamp(0, 6),
       fiendishResistance: IncomingDamageType.values
           .where(
             (type) =>
@@ -388,6 +395,7 @@ class CharacterState {
 
   bool get canConcentrate =>
       currentHp > 0 &&
+      exhaustionLevel < 6 &&
       !activeConditions.any(
         const {
           'Incapacitated',
@@ -399,7 +407,10 @@ class CharacterState {
       );
 
   bool get canRollDeathSave =>
-      currentHp == 0 && deathSaveSuccesses < 3 && deathSaveFailures < 3;
+      currentHp == 0 &&
+      exhaustionLevel < 6 &&
+      deathSaveSuccesses < 3 &&
+      deathSaveFailures < 3;
 
   CharacterState applyDeathSave(int roll) {
     if (!canRollDeathSave || roll < 1 || roll > 20) return this;
@@ -476,6 +487,7 @@ class CharacterState {
     int? currentHp,
     int? maxHp,
     int? temporaryHp,
+    int? exhaustionLevel,
     String? wildShapeForm,
     int? wildShapeTurnsRemaining,
     bool clearWildShape = false,
@@ -520,6 +532,7 @@ class CharacterState {
       currentHp: currentHp ?? this.currentHp,
       maxHp: maxHp ?? this.maxHp,
       temporaryHp: temporaryHp ?? this.temporaryHp,
+      exhaustionLevel: (exhaustionLevel ?? this.exhaustionLevel).clamp(0, 6),
       wildShapeForm: clearWildShape
           ? null
           : wildShapeForm ?? this.wildShapeForm,
