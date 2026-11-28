@@ -10,6 +10,21 @@ import 'skill.dart';
 import 'spell.dart';
 import 'weapon.dart';
 
+enum DivineOrder {
+  protector(
+    'Protector',
+    'Martial weapon proficiency and Heavy armor training. Confirm equipment proficiency at the table.',
+  ),
+  thaumaturge(
+    'Thaumaturge',
+    'Learn one extra Cleric cantrip in the Spellbook. Intelligence (Arcana and Religion) checks gain your Wisdom modifier, minimum +1.',
+  );
+
+  const DivineOrder(this.label, this.guidance);
+  final String label;
+  final String guidance;
+}
+
 enum PrimalOrder {
   magician('Magician'),
   warden('Warden');
@@ -44,6 +59,7 @@ class Character {
   final Map<String, int> additionalClassLevels;
   final Map<String, String> subclasses;
   final PrimalOrder? primalOrder;
+  final DivineOrder? divineOrder;
   final ElementalFury? elementalFury;
   final Set<String> druidCantripIds;
   final Set<String> sorcererSpellIds;
@@ -84,6 +100,7 @@ class Character {
     this.additionalClassLevels = const {},
     this.subclasses = const {},
     this.primalOrder,
+    this.divineOrder,
     this.elementalFury,
     this.druidCantripIds = const {},
     this.sorcererSpellIds = const {},
@@ -123,6 +140,8 @@ class Character {
     Map<String, String>? subclasses,
     PrimalOrder? primalOrder,
     bool clearPrimalOrder = false,
+    DivineOrder? divineOrder,
+    bool clearDivineOrder = false,
     ElementalFury? elementalFury,
     bool clearElementalFury = false,
     Set<String>? druidCantripIds,
@@ -160,6 +179,7 @@ class Character {
           additionalClassLevels ?? this.additionalClassLevels,
       subclasses: subclasses ?? this.subclasses,
       primalOrder: clearPrimalOrder ? null : primalOrder ?? this.primalOrder,
+      divineOrder: clearDivineOrder ? null : divineOrder ?? this.divineOrder,
       elementalFury: clearElementalFury
           ? null
           : elementalFury ?? this.elementalFury,
@@ -206,6 +226,7 @@ class Character {
         'additionalClassLevels': additionalClassLevels,
       if (subclasses.isNotEmpty) 'subclasses': subclasses,
       'primalOrder': ?primalOrder?.name,
+      'divineOrder': ?divineOrder?.name,
       'elementalFury': ?elementalFury?.name,
       if (druidCantripIds.isNotEmpty)
         'druidCantripIds': druidCantripIds.toList(),
@@ -343,6 +364,9 @@ class Character {
           .firstOrNull,
       primalOrder: PrimalOrder.values
           .where((order) => order.name == json['primalOrder'])
+          .firstOrNull,
+      divineOrder: DivineOrder.values
+          .where((order) => order.name == json['divineOrder'])
           .firstOrNull,
       subclasses:
           (json['subclasses'] as Map<String, Object?>?)
@@ -728,11 +752,19 @@ class Character {
             (skill.id == 'arcana' || skill.id == 'nature')
         ? (wisdom < 1 ? 1 : wisdom)
         : 0;
+    final divineBonus =
+        divineOrder == DivineOrder.thaumaturge &&
+            levelInClass('Cleric') > 0 &&
+            skill.ability == Ability.intelligence &&
+            (skill.id == 'arcana' || skill.id == 'religion')
+        ? wisdom.clamp(1, 99)
+        : 0;
     final modifier =
         abilityModifier +
         (proficiencyBonus * proficiencyMultiplier) +
         jackOfAllTradesBonusFor(skill) +
-        primalBonus;
+        primalBonus +
+        divineBonus;
     final minimum = skillModifierMinimums[skill.id];
     return minimum != null && minimum > modifier ? minimum : modifier;
   }

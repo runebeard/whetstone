@@ -50,6 +50,7 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
   final abilityIncreases = <Ability, int>{};
   late final Map<String, String> subclasses;
   PrimalOrder? primalOrder;
+  DivineOrder? divineOrder;
   ElementalFury? elementalFury;
   bool applyDraconicHpAdjustment = true;
 
@@ -95,6 +96,7 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
     spells = [...widget.character.spells];
     subclasses = {...widget.character.subclasses};
     primalOrder = widget.character.primalOrder;
+    divineOrder = widget.character.divineOrder;
     elementalFury = widget.character.elementalFury;
     weapons = [...widget.character.weapons];
     resources = [...widget.character.resources];
@@ -451,6 +453,7 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
         level: level,
         additionalClassLevels: allocation,
         primalOrder: primalOrder,
+        divineOrder: divineOrder,
         elementalFury: elementalFury,
         sorcererSpellIds: {
           for (final spell in spells)
@@ -655,6 +658,25 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
                           ),
                         ),
                       ),
+                    if (primary == BuiltInClass.cleric ||
+                        classAllocation.containsKey('Cleric')) ...[
+                      DropdownButtonFormField<DivineOrder>(
+                        decoration: const InputDecoration(
+                          labelText: 'Divine Order',
+                        ),
+                        initialValue: divineOrder,
+                        items: [
+                          for (final order in DivineOrder.values)
+                            DropdownMenuItem(
+                              value: order,
+                              child: Text(order.label),
+                            ),
+                        ],
+                        onChanged: (order) =>
+                            setState(() => divineOrder = order),
+                      ),
+                      if (divineOrder != null) Text(divineOrder!.guidance),
+                    ],
                     if (primary == BuiltInClass.druid ||
                         classAllocation.containsKey('Druid'))
                       DropdownButtonFormField<PrimalOrder>(

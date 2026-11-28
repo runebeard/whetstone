@@ -87,6 +87,14 @@ class ProfileModeView extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
+          if (character.levelInClass('Cleric') > 0 &&
+              character.divineOrder != null)
+            Card(
+              child: ListTile(
+                title: Text('Divine Order · ${character.divineOrder!.label}'),
+                subtitle: Text(character.divineOrder!.guidance),
+              ),
+            ),
           Card(
             child: ListTile(
               title: const Text('Proficiency Bonus'),

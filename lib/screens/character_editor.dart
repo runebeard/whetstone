@@ -62,6 +62,7 @@ class _CharacterEditorState extends State<CharacterEditor> {
   AuthoredClass? authoredClass;
   BuiltInClass? builtInClass;
   PrimalOrder? primalOrder;
+  DivineOrder? divineOrder;
   bool standardArrayActive = false;
   String? equipmentOptionId;
   late final List<AuthoredClass> authoredClasses = [
@@ -300,6 +301,11 @@ class _CharacterEditorState extends State<CharacterEditor> {
           : (previousClass == BuiltInClass.named(className)
                 ? previous?.primalOrder
                 : null),
+      divineOrder: builtInClass == BuiltInClass.cleric
+          ? divineOrder
+          : (previousClass == BuiltInClass.named(className)
+                ? previous?.divineOrder
+                : null),
       level: hasSavedAuthoredClass || keepClassAllocation || keepSubclasses
           ? widget.character!.level
           : authored == null && builtInClass == null
@@ -493,6 +499,20 @@ class _CharacterEditorState extends State<CharacterEditor> {
                 }
               }),
             ),
+          if (builtInClass == BuiltInClass.cleric) ...[
+            DropdownButtonFormField<DivineOrder>(
+              decoration: const InputDecoration(labelText: 'Divine Order'),
+              initialValue: divineOrder,
+              items: [
+                for (final order in DivineOrder.values)
+                  DropdownMenuItem(value: order, child: Text(order.label)),
+              ],
+              onChanged: (order) => setState(() => divineOrder = order),
+              validator: (order) =>
+                  order == null ? 'Choose a Divine Order' : null,
+            ),
+            if (divineOrder != null) Text(divineOrder!.guidance),
+          ],
           if (builtInClass == BuiltInClass.druid)
             DropdownButtonFormField<PrimalOrder>(
               decoration: const InputDecoration(labelText: 'Primal Order'),
