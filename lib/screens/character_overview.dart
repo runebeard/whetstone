@@ -3257,6 +3257,126 @@ class _CharacterOverviewState extends State<CharacterOverview>
     return false;
   }
 
+  bool supportsLifeHealing(Spell spell) =>
+      spell.isLifeDomainGrant &&
+      character.subclasses['Cleric'] == 'Life Domain' &&
+      character.levelInClass('Cleric') >= 3 &&
+      {
+        'Cure Wounds',
+        'Mass Healing Word',
+        'Mass Cure Wounds',
+      }.contains(spell.name);
+
+  Future<(bool, int)?> chooseLifeHealingTargets(Spell spell) async {
+    final mass = spell.name != 'Cure Wounds';
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text('${spell.name} · Healing targets'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'Confirm targets are within this casting’s range and eligible to regain HP. '
+              'Other injured targets and their actual HP changes are confirmed at the table. '
+              'Healing resolves once when this casting completes.',
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 'self'),
+            child: const Text('Heal yourself'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 'others'),
+            child: const Text('Heal other injured targets'),
+          ),
+          if (mass)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, 'both'),
+              child: const Text('Heal yourself and other injured targets'),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null) return null;
+    if (choice == 'self') return (true, 0);
+    var count = 1;
+    if (mass) {
+      final maximum = choice == 'both' ? 5 : 6;
+      final requested = await showDialog<int>(
+        context: context,
+        builder: (context) => StatEditDialog(
+          title: 'Other injured targets · 1 to $maximum',
+          initialValue: 1,
+        ),
+      );
+      if (!mounted || requested == null) return null;
+      if (requested < 1 || requested > maximum) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Choose 1 to $maximum other targets.')),
+        );
+        return null;
+      }
+      count = requested;
+    }
+    return (choice == 'both', count);
+  }
+
+  void applyLifeSpellHealing(Spell spell, (bool, int) targets, int? slotLevel) {
+    final level = slotLevel ?? spell.level;
+    final clericLevel = character.levelInClass('Cleric');
+    final supreme = clericLevel >= 17;
+    final (count, sides) = switch (spell.name) {
+      'Cure Wounds' => (2 + 2 * (level - 1), 8),
+      'Mass Healing Word' => (2 + level - 3, 4),
+      _ => (5 + level - 5, 8),
+    };
+    final rolls = [
+      for (var i = 0; i < count; i++)
+        supreme ? sides : diceRoller.rollDie(sides),
+    ];
+    final wisdom = character.abilityModifierFor(Ability.wisdom);
+    final baseHealing = (rolls.fold(0, (sum, die) => sum + die) + wisdom).clamp(
+      0,
+      999999,
+    );
+    final disciple = slotLevel != null && baseHealing > 0 ? 2 + slotLevel : 0;
+    final healing = baseHealing + disciple;
+    final (self, others) = targets;
+    final selfGain = self
+        ? healing.clamp(0, characterState.maxHp - characterState.currentHp)
+        : 0;
+    final blessed =
+        slotLevel != null && clericLevel >= 6 && others > 0 && healing > 0
+        ? 2 + slotLevel
+        : 0;
+    final blessedGain = blessed.clamp(
+      0,
+      characterState.maxHp - characterState.currentHp - selfGain,
+    );
+    updateCharacterState(
+      characterState.copyWith(
+        currentHp: characterState.currentHp + selfGain + blessedGain,
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.combat,
+      '${spell.name} healing: $healing',
+      detail:
+          '${count}d$sides (${rolls.join(' + ')}) + Wisdom $wisdom'
+          '${disciple > 0 ? ' + Disciple of Life $disciple' : ''} = $healing healing per target. '
+          '${supreme ? 'Supreme Healing maximized the dice. ' : ''}'
+          '$selfGain HP restored to you by the spell. '
+          '${others > 0 ? 'Apply $healing HP to each of $others confirmed other targets at the table. ' : ''}'
+          '${blessed > 0 ? 'Blessed Healer restored $blessedGain HP to you (up to $blessed). ' : ''}'
+          '${slotLevel == null ? 'No tracked slot spent; slot-based Life Domain bonuses were not applied.' : 'One level-$slotLevel slot spent.'}',
+    );
+  }
+
   Future<void> castSpell(
     Spell spell, {
     bool asRitual = false,
@@ -3277,6 +3397,13 @@ class _CharacterOverviewState extends State<CharacterOverview>
       return;
     }
     if (!canSpendSpellAction(spell, fromScroll: scrollName != null)) return;
+    (bool, int)? lifeHealingTargets;
+    if (scrollName == null && supportsLifeHealing(spell)) {
+      lifeHealingTargets = await chooseLifeHealingTargets(spell);
+      if (!mounted || lifeHealingTargets == null || !canSpendSpellAction(spell)) {
+        return;
+      }
+    }
     final companionCast =
         scrollName == null &&
         !asRitual &&
@@ -3413,6 +3540,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
         startSpellConcentration(spell, slotLevel: slotLevel);
       }
       trackSpellAction(spell);
+      if (lifeHealingTargets != null) {
+        applyLifeSpellHealing(spell, lifeHealingTargets, slotLevel);
+        return;
+      }
       if (applyingMetamagic(spell, Metamagic.twinned)) {
         final actualLevel = slotLevel ?? spell.level;
         final effectiveLevel = Metamagic.twinnedEffectiveLevel(

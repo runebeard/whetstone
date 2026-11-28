@@ -37,7 +37,7 @@ Spell _lifeSpell(String key, int level) {
       'Touch',
       'Instantaneous',
       'V, S',
-      'Heal 2d8 + Wisdom, plus 2d8 per higher slot. Resolve healing and Life Domain bonuses at the table.',
+      'Heal 2d8 + Wisdom, plus 2d8 per higher slot. Choose targets when casting; other creatures apply their HP changes at the table.',
     ),
     'lesser restoration' => (
       'Lesser Restoration',
@@ -51,7 +51,7 @@ Spell _lifeSpell(String key, int level) {
       '60 feet',
       'Instantaneous',
       'V',
-      'Heal up to six visible targets for 2d4 + Wisdom, plus 1d4 per higher slot. Resolve healing and Life Domain bonuses at the table.',
+      'Heal up to six visible targets for 2d4 + Wisdom, plus 1d4 per higher slot. Choose targets when casting; other creatures apply their HP changes at the table.',
     ),
     'revivify' => (
       'Revivify',
@@ -86,7 +86,7 @@ Spell _lifeSpell(String key, int level) {
       '60 feet',
       'Instantaneous',
       'V, S',
-      'Heal up to six targets in a 30-foot-radius area for 5d8 + Wisdom, plus 1d8 per higher slot. Resolve healing and Life Domain bonuses at the table.',
+      'Heal up to six targets in a 30-foot-radius area for 5d8 + Wisdom, plus 1d8 per higher slot. Choose targets when casting; other creatures apply their HP changes at the table.',
     ),
     _ => throw ArgumentError.value(key),
   };
