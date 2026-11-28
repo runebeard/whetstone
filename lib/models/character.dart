@@ -33,6 +33,21 @@ enum PrimalOrder {
   final String label;
 }
 
+enum BlessedStrikes {
+  divineStrike(
+    'Divine Strike',
+    'After a weapon attack hits on your turn, roll extra Radiant or Necrotic damage once this turn.',
+  ),
+  potentSpellcasting(
+    'Potent Spellcasting',
+    'Add Wisdom to marked Cleric cantrip damage. At Cleric level 14, grant temporary HP after damaging a creature; resolve that vitality at the table.',
+  );
+
+  const BlessedStrikes(this.label, this.guidance);
+  final String label;
+  final String guidance;
+}
+
 enum ElementalFury {
   potentSpellcasting('Potent Spellcasting'),
   primalStrike('Primal Strike');
@@ -61,6 +76,8 @@ class Character {
   final PrimalOrder? primalOrder;
   final DivineOrder? divineOrder;
   final ElementalFury? elementalFury;
+  final BlessedStrikes? blessedStrikes;
+  final Set<String> clericCantripIds;
   final Set<String> druidCantripIds;
   final Set<String> sorcererSpellIds;
   final Set<Metamagic> metamagicOptions;
@@ -102,6 +119,8 @@ class Character {
     this.primalOrder,
     this.divineOrder,
     this.elementalFury,
+    this.blessedStrikes,
+    this.clericCantripIds = const {},
     this.druidCantripIds = const {},
     this.sorcererSpellIds = const {},
     this.metamagicOptions = const {},
@@ -144,6 +163,9 @@ class Character {
     bool clearDivineOrder = false,
     ElementalFury? elementalFury,
     bool clearElementalFury = false,
+    BlessedStrikes? blessedStrikes,
+    bool clearBlessedStrikes = false,
+    Set<String>? clericCantripIds,
     Set<String>? druidCantripIds,
     Set<String>? sorcererSpellIds,
     Set<Metamagic>? metamagicOptions,
@@ -183,6 +205,10 @@ class Character {
       elementalFury: clearElementalFury
           ? null
           : elementalFury ?? this.elementalFury,
+      blessedStrikes: clearBlessedStrikes
+          ? null
+          : blessedStrikes ?? this.blessedStrikes,
+      clericCantripIds: clericCantripIds ?? this.clericCantripIds,
       druidCantripIds: druidCantripIds ?? this.druidCantripIds,
       sorcererSpellIds: sorcererSpellIds ?? this.sorcererSpellIds,
       metamagicOptions: metamagicOptions ?? this.metamagicOptions,
@@ -228,6 +254,9 @@ class Character {
       'primalOrder': ?primalOrder?.name,
       'divineOrder': ?divineOrder?.name,
       'elementalFury': ?elementalFury?.name,
+      'blessedStrikes': ?blessedStrikes?.name,
+      if (clericCantripIds.isNotEmpty)
+        'clericCantripIds': clericCantripIds.toList(),
       if (druidCantripIds.isNotEmpty)
         'druidCantripIds': druidCantripIds.toList(),
       if (sorcererSpellIds.isNotEmpty)
@@ -346,6 +375,12 @@ class Character {
       elementalFury: ElementalFury.values
           .where((choice) => choice.name == json['elementalFury'])
           .firstOrNull,
+      blessedStrikes: BlessedStrikes.values
+          .where((choice) => choice.name == json['blessedStrikes'])
+          .firstOrNull,
+      clericCantripIds: (json['clericCantripIds'] as List<Object?>? ?? const [])
+          .cast<String>()
+          .toSet(),
       druidCantripIds: (json['druidCantripIds'] as List<Object?>? ?? const [])
           .cast<String>()
           .toSet(),
@@ -623,7 +658,8 @@ class Character {
         ? abilityModifierFor(castingAbility)
         : 0;
     if (applyPotentSpellcasting &&
-        benefitsFromPotentSpellcasting(action) &&
+        (benefitsFromPotentSpellcasting(action) ||
+            benefitsFromClericPotentSpellcasting(action)) &&
         !(action.addCastingModifierToDamage &&
             castingAbility == Ability.wisdom)) {
       bonus += abilityModifierFor(Ability.wisdom);
@@ -659,6 +695,12 @@ class Character {
       levelInClass('Druid') >= 7 &&
       spell.isCantrip &&
       (spell.isCircleGrant || druidCantripIds.contains(spell.id));
+
+  bool benefitsFromClericPotentSpellcasting(Spell spell) =>
+      blessedStrikes == BlessedStrikes.potentSpellcasting &&
+      levelInClass('Cleric') >= 7 &&
+      spell.isCantrip &&
+      clericCantripIds.contains(spell.id);
 
   String? rangeForSpell(Spell spell) {
     final range = spell.range;

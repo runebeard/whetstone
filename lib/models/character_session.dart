@@ -27,6 +27,7 @@ class CharacterSession {
   final ActionSurgeState? actionSurge;
   final bool wildResurgenceUsedThisTurn;
   final bool primalStrikeUsedThisTurn;
+  final bool divineStrikeUsedThisTurn;
   final bool cleaveUsedThisTurn;
   final bool nickUsedThisTurn;
   final bool sneakAttackUsedThisTurn;
@@ -61,6 +62,7 @@ class CharacterSession {
     this.actionSurge,
     this.wildResurgenceUsedThisTurn = false,
     this.primalStrikeUsedThisTurn = false,
+    this.divineStrikeUsedThisTurn = false,
     this.cleaveUsedThisTurn = false,
     this.nickUsedThisTurn = false,
     this.sneakAttackUsedThisTurn = false,
@@ -106,6 +108,8 @@ class CharacterSession {
         'wildResurgenceUsedThisTurn': true,
       if (isInCombat && primalStrikeUsedThisTurn)
         'primalStrikeUsedThisTurn': true,
+      if (isInCombat && divineStrikeUsedThisTurn)
+        'divineStrikeUsedThisTurn': true,
       if (isInCombat && cleaveUsedThisTurn) 'cleaveUsedThisTurn': true,
       if (isInCombat && nickUsedThisTurn) 'nickUsedThisTurn': true,
       if (isInCombat && sneakAttackUsedThisTurn)
@@ -175,6 +179,8 @@ class CharacterSession {
           json['wildResurgenceUsedThisTurn'] as bool? ?? false,
       primalStrikeUsedThisTurn:
           json['primalStrikeUsedThisTurn'] as bool? ?? false,
+      divineStrikeUsedThisTurn:
+          json['divineStrikeUsedThisTurn'] as bool? ?? false,
       cleaveUsedThisTurn: json['cleaveUsedThisTurn'] as bool? ?? false,
       nickUsedThisTurn: json['nickUsedThisTurn'] as bool? ?? false,
       sneakAttackUsedThisTurn:

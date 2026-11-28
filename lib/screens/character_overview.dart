@@ -88,6 +88,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   final elementalAffinityUsedSpellIds = <String>{};
   bool wildResurgenceUsedThisTurn = false;
   bool primalStrikeUsedThisTurn = false;
+  bool divineStrikeUsedThisTurn = false;
   bool cleaveUsedThisTurn = false;
   bool nickUsedThisTurn = false;
   bool sneakAttackUsedThisTurn = false;
@@ -261,6 +262,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       wildResurgenceUsedThisTurn =
           widget.initialSession.wildResurgenceUsedThisTurn;
       primalStrikeUsedThisTurn = widget.initialSession.primalStrikeUsedThisTurn;
+      divineStrikeUsedThisTurn = widget.initialSession.divineStrikeUsedThisTurn;
       cleaveUsedThisTurn = widget.initialSession.cleaveUsedThisTurn;
       nickUsedThisTurn = widget.initialSession.nickUsedThisTurn;
       sneakAttackUsedThisTurn = widget.initialSession.sneakAttackUsedThisTurn;
@@ -377,6 +379,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         actionSurge: actionSurge,
         wildResurgenceUsedThisTurn: wildResurgenceUsedThisTurn,
         primalStrikeUsedThisTurn: primalStrikeUsedThisTurn,
+        divineStrikeUsedThisTurn: divineStrikeUsedThisTurn,
         cleaveUsedThisTurn: cleaveUsedThisTurn,
         nickUsedThisTurn: nickUsedThisTurn,
         sneakAttackUsedThisTurn: sneakAttackUsedThisTurn,
@@ -1624,6 +1627,20 @@ class _CharacterOverviewState extends State<CharacterOverview>
                   ),
                   onTap: () => Navigator.pop(context, 'druid-cantrip'),
                 ),
+              if (spell.isCantrip &&
+                  !spell.isClassGrant &&
+                  character.levelInClass('Cleric') > 0)
+                ListTile(
+                  title: Text(
+                    character.clericCantripIds.contains(spell.id)
+                        ? 'Unmark as Cleric Cantrip'
+                        : 'Mark as Cleric Cantrip',
+                  ),
+                  subtitle: const Text(
+                    'Confirm this is one of your Cleric cantrips.',
+                  ),
+                  onTap: () => Navigator.pop(context, 'cleric-cantrip'),
+                ),
               if (!spell.isClassGrant)
                 ListTile(
                   leading: const Icon(Icons.delete_outline),
@@ -1655,6 +1672,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
     if (!mounted || action == null) return;
 
     switch (action) {
+      case 'cleric-cantrip':
+        final ids = {...character.clericCantripIds};
+        if (!ids.remove(spell.id)) ids.add(spell.id);
+        final updated = character.copyWith(clericCantripIds: ids);
+        setState(() => character = updated);
+        widget.onCharacterChanged(updated);
       case 'edit':
         await editSpell(spell);
       case 'pin':
@@ -1957,6 +1980,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
       druidCantripIds: {
         for (final spell in spells)
           if (spell.isCantrip && character.druidCantripIds.contains(spell.id))
+            spell.id,
+      },
+      clericCantripIds: {
+        for (final spell in spells)
+          if (spell.isCantrip && character.clericCantripIds.contains(spell.id))
             spell.id,
       },
       initiallyPinnedActionKeys: pinnedActionKeys,
@@ -7681,6 +7709,67 @@ class _CharacterOverviewState extends State<CharacterOverview>
       character.levelInClass('Druid') >= 7 &&
       character.elementalFury == ElementalFury.primalStrike;
 
+  bool get hasDivineStrike =>
+      character.levelInClass('Cleric') >= 7 &&
+      character.blessedStrikes == BlessedStrikes.divineStrike;
+
+  bool get canUseDivineStrike =>
+      hasDivineStrike &&
+      currentMode == CharacterMode.combat &&
+      characterState.canConcentrate &&
+      !divineStrikeUsedThisTurn;
+
+  Future<void> useDivineStrike() async {
+    if (!canUseDivineStrike) return;
+    var critical = false;
+    final type = await showDialog<String>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => SimpleDialog(
+          title: const Text('Divine Strike'),
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'Confirm a weapon attack hit a creature on your own turn. This extra damage uses no additional action and can be applied once on your turn.',
+              ),
+            ),
+            CheckboxListTile(
+              title: const Text('Critical hit'),
+              value: critical,
+              onChanged: (v) => setDialogState(() => critical = v ?? false),
+            ),
+            for (final type in ['Radiant', 'Necrotic'])
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, type),
+                child: Text(type),
+              ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || type == null || !canUseDivineStrike) return;
+    final dice = character.levelInClass('Cleric') >= 14 ? 2 : 1;
+    final expression = DiceExpression(
+      diceCount: critical ? 2 * dice : dice,
+      dieSides: 8,
+    );
+    final roll = expression.roll('Divine Strike', diceRoller);
+    divineStrikeUsedThisTurn = true;
+    addRollNotice(
+      title: 'Divine Strike',
+      calculation:
+          '${expression.notation} · ${roll.dice.join(' + ')} = ${roll.total}',
+      total: roll.total,
+      tone: RollNoticeTone.damage,
+      detail: '$type damage · Once on your turn',
+    );
+  }
+
   Future<void> usePrimalStrike() async {
     if (!canUsePrimalStrike) return;
     var critical = false;
@@ -9908,6 +9997,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       actionSurge = null;
       wildResurgenceUsedThisTurn = false;
       primalStrikeUsedThisTurn = false;
+      divineStrikeUsedThisTurn = false;
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
       sneakAttackUsedThisTurn = false;
@@ -10599,6 +10689,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       actionSurge = null;
       wildResurgenceUsedThisTurn = false;
       primalStrikeUsedThisTurn = false;
+      divineStrikeUsedThisTurn = false;
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
       sneakAttackUsedThisTurn = false;
@@ -10689,6 +10780,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       actionSurge = null;
       wildResurgenceUsedThisTurn = false;
       primalStrikeUsedThisTurn = false;
+      divineStrikeUsedThisTurn = false;
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
       sneakAttackUsedThisTurn = false;
@@ -11591,6 +11683,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
           }),
 
           actions: [
+            if (hasDivineStrike)
+              IconButton(
+                tooltip: 'Divine Strike',
+                icon: const Icon(Icons.auto_awesome),
+                onPressed: canUseDivineStrike ? useDivineStrike : null,
+              ),
             if (character.levelInClass('Druid') >= 2)
               PopupMenuButton<String>(
                 tooltip: 'Druid features',

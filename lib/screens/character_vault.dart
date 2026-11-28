@@ -423,6 +423,7 @@ class _CharacterVaultState extends State<CharacterVault> {
       actionSurge: session.actionSurge,
       wildResurgenceUsedThisTurn: session.wildResurgenceUsedThisTurn,
       primalStrikeUsedThisTurn: session.primalStrikeUsedThisTurn,
+      divineStrikeUsedThisTurn: session.divineStrikeUsedThisTurn,
       cleaveUsedThisTurn: session.cleaveUsedThisTurn,
       nickUsedThisTurn: session.nickUsedThisTurn,
       sneakAttackUsedThisTurn: session.sneakAttackUsedThisTurn,

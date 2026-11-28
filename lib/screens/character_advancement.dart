@@ -52,6 +52,7 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
   PrimalOrder? primalOrder;
   DivineOrder? divineOrder;
   ElementalFury? elementalFury;
+  BlessedStrikes? blessedStrikes;
   bool applyDraconicHpAdjustment = true;
 
   int? get nextDraconicHpBonus {
@@ -98,6 +99,7 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
     primalOrder = widget.character.primalOrder;
     divineOrder = widget.character.divineOrder;
     elementalFury = widget.character.elementalFury;
+    blessedStrikes = widget.character.blessedStrikes;
     weapons = [...widget.character.weapons];
     resources = [...widget.character.resources];
     inventory = [...widget.character.initialInventory];
@@ -133,6 +135,11 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
       BuiltInClass.named(widget.character.characterClass) == BuiltInClass.druid
       ? level - allocation.values.fold<int>(0, (sum, count) => sum + count)
       : allocation['Druid'] ?? 0;
+
+  int clericLevelAt(int level, Map<String, int> allocation) =>
+      BuiltInClass.named(widget.character.characterClass) == BuiltInClass.cleric
+      ? level - allocation.values.fold<int>(0, (sum, count) => sum + count)
+      : allocation['Cleric'] ?? 0;
 
   Iterable<BuiltInClass> eligibleSubclassClasses(
     int level,
@@ -455,6 +462,13 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
         primalOrder: primalOrder,
         divineOrder: divineOrder,
         elementalFury: elementalFury,
+        blessedStrikes: blessedStrikes,
+        clearBlessedStrikes: clericLevelAt(level, allocation) < 7,
+        clericCantripIds: {
+          for (final spell in spells)
+            if (spell.isCantrip && current.clericCantripIds.contains(spell.id))
+              spell.id,
+        },
         sorcererSpellIds: {
           for (final spell in spells)
             if (current.sorcererSpellIds.contains(spell.id)) spell.id,
@@ -721,6 +735,34 @@ class _CharacterAdvancementState extends State<CharacterAdvancement> {
                         onChanged: (choice) =>
                             setState(() => elementalFury = choice),
                       ),
+                    if (clericLevelAt(
+                          int.tryParse(levelController.text) ?? 0,
+                          classAllocation,
+                        ) >=
+                        7) ...[
+                      DropdownButtonFormField<BlessedStrikes>(
+                        decoration: const InputDecoration(
+                          labelText: 'Blessed Strikes',
+                        ),
+                        initialValue: blessedStrikes,
+                        items: [
+                          for (final choice in BlessedStrikes.values)
+                            DropdownMenuItem(
+                              value: choice,
+                              child: Text(choice.label),
+                            ),
+                        ],
+                        validator: (choice) =>
+                            choice == null &&
+                                widget.character.levelInClass('Cleric') < 7
+                            ? 'Choose Blessed Strikes'
+                            : null,
+                        onChanged: (choice) =>
+                            setState(() => blessedStrikes = choice),
+                      ),
+                      if (blessedStrikes != null)
+                        Text(blessedStrikes!.guidance),
+                    ],
                     if (grantsBodyAndMind)
                       const Text(
                         'Body and Mind · +4 Dexterity and Wisdom, to a maximum of 25. Applied once when reaching Monk level 20. Recalculate equipment-dependent AC afterward.',

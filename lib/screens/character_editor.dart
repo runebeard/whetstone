@@ -314,6 +314,17 @@ class _CharacterEditorState extends State<CharacterEditor> {
       draconicHpBonus: previous?.draconicHpBonus,
       metamagicOptions: previous?.metamagicOptions ?? const {},
       elementalAffinity: previous?.elementalAffinity,
+      blessedStrikes: previousClass == BuiltInClass.named(className)
+          ? previous?.blessedStrikes
+          : null,
+      clericCantripIds: previousClass == BuiltInClass.named(className)
+          ? {
+              for (final spell in spells)
+                if (spell.isCantrip &&
+                    (previous?.clericCantripIds.contains(spell.id) ?? false))
+                  spell.id,
+            }
+          : const {},
       elementalFury: previousClass == BuiltInClass.named(className)
           ? previous?.elementalFury
           : null,
