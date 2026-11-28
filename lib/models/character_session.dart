@@ -28,6 +28,7 @@ class CharacterSession {
   final bool wildResurgenceUsedThisTurn;
   final bool primalStrikeUsedThisTurn;
   final bool divineStrikeUsedThisTurn;
+  final String? pendingClericVitalitySpellId;
   final bool cleaveUsedThisTurn;
   final bool nickUsedThisTurn;
   final bool sneakAttackUsedThisTurn;
@@ -63,6 +64,7 @@ class CharacterSession {
     this.wildResurgenceUsedThisTurn = false,
     this.primalStrikeUsedThisTurn = false,
     this.divineStrikeUsedThisTurn = false,
+    this.pendingClericVitalitySpellId,
     this.cleaveUsedThisTurn = false,
     this.nickUsedThisTurn = false,
     this.sneakAttackUsedThisTurn = false,
@@ -102,6 +104,7 @@ class CharacterSession {
           .map((item) => item.toJson())
           .toList(),
       'isInCombat': isInCombat,
+      'pendingClericVitalitySpellId': ?pendingClericVitalitySpellId,
       if (isInCombat) 'combatRound': combatRound,
       if (isInCombat) 'actionSurge': ?actionSurge?.name,
       if (isInCombat && wildResurgenceUsedThisTurn)
@@ -181,6 +184,8 @@ class CharacterSession {
           json['primalStrikeUsedThisTurn'] as bool? ?? false,
       divineStrikeUsedThisTurn:
           json['divineStrikeUsedThisTurn'] as bool? ?? false,
+      pendingClericVitalitySpellId:
+          json['pendingClericVitalitySpellId'] as String?,
       cleaveUsedThisTurn: json['cleaveUsedThisTurn'] as bool? ?? false,
       nickUsedThisTurn: json['nickUsedThisTurn'] as bool? ?? false,
       sneakAttackUsedThisTurn:

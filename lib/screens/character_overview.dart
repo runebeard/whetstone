@@ -89,6 +89,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   bool wildResurgenceUsedThisTurn = false;
   bool primalStrikeUsedThisTurn = false;
   bool divineStrikeUsedThisTurn = false;
+  String? pendingClericVitalitySpellId;
   bool cleaveUsedThisTurn = false;
   bool nickUsedThisTurn = false;
   bool sneakAttackUsedThisTurn = false;
@@ -263,6 +264,16 @@ class _CharacterOverviewState extends State<CharacterOverview>
           widget.initialSession.wildResurgenceUsedThisTurn;
       primalStrikeUsedThisTurn = widget.initialSession.primalStrikeUsedThisTurn;
       divineStrikeUsedThisTurn = widget.initialSession.divineStrikeUsedThisTurn;
+      final pendingVitality =
+          widget.initialSession.pendingClericVitalitySpellId;
+      if (characterState.canConcentrate &&
+          character.spells.any(
+            (spell) =>
+                spell.id == pendingVitality &&
+                character.clericCantripVitalityFor(spell) > 0,
+          )) {
+        pendingClericVitalitySpellId = pendingVitality;
+      }
       cleaveUsedThisTurn = widget.initialSession.cleaveUsedThisTurn;
       nickUsedThisTurn = widget.initialSession.nickUsedThisTurn;
       sneakAttackUsedThisTurn = widget.initialSession.sneakAttackUsedThisTurn;
@@ -380,6 +391,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         wildResurgenceUsedThisTurn: wildResurgenceUsedThisTurn,
         primalStrikeUsedThisTurn: primalStrikeUsedThisTurn,
         divineStrikeUsedThisTurn: divineStrikeUsedThisTurn,
+        pendingClericVitalitySpellId: pendingClericVitalitySpellId,
         cleaveUsedThisTurn: cleaveUsedThisTurn,
         nickUsedThisTurn: nickUsedThisTurn,
         sneakAttackUsedThisTurn: sneakAttackUsedThisTurn,
@@ -410,6 +422,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void updateCharacterState(CharacterState updatedState) {
+    if (!updatedState.canConcentrate) pendingClericVitalitySpellId = null;
     if (character.levelInClass('Sorcerer') < 20 ||
         !updatedState.activeConditions.contains(innateSorceryCondition)) {
       apotheosisArmed = false;
@@ -791,6 +804,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
     setState(() {
       character = updated;
+      pendingClericVitalitySpellId = null;
       characterState = updatedState;
       inventory = [...updated.initialInventory];
     });
@@ -1953,6 +1967,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     Set<String> requestedPins, {
     DruidLand? land,
   }) {
+    pendingClericVitalitySpellId = null;
     final spells = withClassSpells(
       character.copyWith(spells: requested),
       land ?? characterState.druidLand,
@@ -3083,6 +3098,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   void trackSpellAction(Spell spell, {bool newCast = true}) {
+    if (newCast) pendingClericVitalitySpellId = null;
     if (newCast) elementalAffinityUsedSpellIds.remove(spell.id);
     final cost = spellActionCost(spell);
     final options = <Metamagic>[
@@ -5461,6 +5477,13 @@ class _CharacterOverviewState extends State<CharacterOverview>
         detail: 'On a hit, a Medium or smaller target falls Prone.',
       );
     }
+    if (action is Spell &&
+        scrollName == null &&
+        !roll.isNaturalOne &&
+        character.clericCantripVitalityFor(action) > 0) {
+      pendingClericVitalitySpellId = action.id;
+      publishSession();
+    }
   }
 
   Future<CheckRoll> maybeSeekSpellAttack(
@@ -6174,6 +6197,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
         !castingSpell &&
         !repeatingEffect &&
         pendingCriticalActionKey == action.actionKey;
+    final vitalityFromAttack =
+        !castingSpell && pendingClericVitalitySpellId == action.id;
+    if (!repeatingEffect && pendingClericVitalitySpellId != null) {
+      pendingClericVitalitySpellId = null;
+      publishSession();
+    }
     if (castingSpell && action is Spell) {
       if (scrollName != null && !spendInventoryItem(scrollName)) return;
       if (useFreeCast && !spendFreeCast(action)) return;
@@ -6276,6 +6305,13 @@ class _CharacterOverviewState extends State<CharacterOverview>
       detail: damageType == null ? 'Damage' : '$damageType damage',
       tone: RollNoticeTone.damage,
     );
+    if (action is Spell &&
+        !repeatingEffect &&
+        scrollName == null &&
+        (castingSpell || vitalityFromAttack) &&
+        total > 0) {
+      await offerClericCantripVitality(action);
+    }
     if (action is Weapon && action.isMelee) {
       rollRadiantStrikes(critical: critical);
     }
@@ -6287,6 +6323,53 @@ class _CharacterOverviewState extends State<CharacterOverview>
         damageType: damageType,
       );
     }
+  }
+
+  Future<void> offerClericCantripVitality(Spell spell) async {
+    final amount = character.clericCantripVitalityFor(spell);
+    if (amount <= 0 || !characterState.canConcentrate) return;
+    final self = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Improved Potent Spellcasting · Vitality'),
+        content: Text(
+          'Confirm this casting of ${spell.name} actually dealt damage to a creature. '
+          'You may grant $amount temporary HP to yourself or one other creature within 60 feet. '
+          'Temporary HP do not add together; keep the higher amount. Skip if damage was prevented or the trigger is ineligible.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Skip'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Another creature'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Yourself'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted ||
+        self == null ||
+        !characterState.canConcentrate ||
+        character.clericCantripVitalityFor(spell) != amount) {
+      return;
+    }
+    final before = characterState.temporaryHp;
+    if (self && amount > before) {
+      updateCharacterState(characterState.copyWith(temporaryHp: amount));
+    }
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Improved Potent Spellcasting · $amount temporary HP',
+      detail: self
+          ? '${spell.name} damaged a confirmed creature. Your temporary HP: $before → ${characterState.temporaryHp}; higher existing temporary HP are retained. HP and concentration are unchanged.'
+          : '${spell.name} damaged a confirmed creature. Grant $amount temporary HP to the confirmed creature within 60 feet at the table; do not stack with its existing temporary HP. Your state is unchanged.',
+    );
   }
 
   Future<void> rollDeathSave() async {
@@ -6470,6 +6553,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
         ? characterState.exhaustionPenalty
         : 0;
     modifier -= exhaustionPenalty;
+    pendingClericVitalitySpellId = null;
     tacticalMindCheck = null;
     peerlessSkillRoll = null;
     darkLuckRoll = null;
@@ -8884,6 +8968,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
     apotheosisArmed = false;
     peerlessSkillRoll = null;
     darkLuckRoll = null;
+    pendingClericVitalitySpellId = null;
     updateCharacterState(plan.updatedState);
     recordSessionEvent(
       SessionEventType.rest,
@@ -9998,6 +10083,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       wildResurgenceUsedThisTurn = false;
       primalStrikeUsedThisTurn = false;
       divineStrikeUsedThisTurn = false;
+      pendingClericVitalitySpellId = null;
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
       sneakAttackUsedThisTurn = false;
@@ -10690,6 +10776,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       wildResurgenceUsedThisTurn = false;
       primalStrikeUsedThisTurn = false;
       divineStrikeUsedThisTurn = false;
+      pendingClericVitalitySpellId = null;
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
       sneakAttackUsedThisTurn = false;
@@ -10781,6 +10868,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
       wildResurgenceUsedThisTurn = false;
       primalStrikeUsedThisTurn = false;
       divineStrikeUsedThisTurn = false;
+      pendingClericVitalitySpellId = null;
       cleaveUsedThisTurn = false;
       nickUsedThisTurn = false;
       sneakAttackUsedThisTurn = false;

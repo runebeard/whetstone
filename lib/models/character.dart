@@ -40,7 +40,7 @@ enum BlessedStrikes {
   ),
   potentSpellcasting(
     'Potent Spellcasting',
-    'Add Wisdom to marked Cleric cantrip damage. At Cleric level 14, grant temporary HP after damaging a creature; resolve that vitality at the table.',
+    'Add Wisdom to marked Cleric cantrip damage. At Cleric level 14, a qualifying cast can grant temporary HP after it damages a creature.',
   );
 
   const BlessedStrikes(this.label, this.guidance);
@@ -701,6 +701,12 @@ class Character {
       levelInClass('Cleric') >= 7 &&
       spell.isCantrip &&
       clericCantripIds.contains(spell.id);
+
+  int clericCantripVitalityFor(Spell spell) =>
+      levelInClass('Cleric') >= 14 &&
+          benefitsFromClericPotentSpellcasting(spell)
+      ? (2 * abilityModifierFor(Ability.wisdom)).clamp(0, 999)
+      : 0;
 
   String? rangeForSpell(Spell spell) {
     final range = spell.range;
