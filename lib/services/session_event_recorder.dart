@@ -22,6 +22,19 @@ class SessionEventRecorder {
     required Iterable<CharacterResource> resources,
   }) {
     final events = <SessionEvent>[];
+    if (updated.divineInterventionRestsRemaining !=
+        previous.divineInterventionRestsRemaining) {
+      events.add(
+        create(
+          SessionEventType.resource,
+          updated.divineInterventionRestsRemaining > 0
+              ? 'Divine Intervention: ${updated.divineInterventionRestsRemaining} Long Rests remaining'
+              : 'Divine Intervention cooldown ended',
+          detail:
+              '${previous.divineInterventionRestsRemaining} → ${updated.divineInterventionRestsRemaining} Long Rests remaining',
+        ),
+      );
+    }
     if (updated.exhaustionLevel != previous.exhaustionLevel) {
       events.add(
         create(

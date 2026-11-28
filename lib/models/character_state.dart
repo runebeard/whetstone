@@ -1,4 +1,5 @@
 import 'character.dart';
+import 'built_in_class.dart';
 import 'metamagic.dart';
 
 const ragingCondition = 'Raging';
@@ -92,6 +93,7 @@ class CharacterState {
   final int maxHp;
   final int temporaryHp;
   final int exhaustionLevel;
+  final int divineInterventionRestsRemaining;
   int get exhaustionPenalty => 2 * exhaustionLevel;
   int get exhaustionSpeedReduction => 5 * exhaustionLevel;
   final String? wildShapeForm;
@@ -136,6 +138,7 @@ class CharacterState {
     required this.maxHp,
     required this.temporaryHp,
     this.exhaustionLevel = 0,
+    this.divineInterventionRestsRemaining = 0,
     this.wildShapeForm,
     this.wildShapeTurnsRemaining,
     this.wildCompanion,
@@ -168,6 +171,10 @@ class CharacterState {
     required this.pinnedActionKeys,
     required this.resourceValues,
   }) : assert(exhaustionLevel >= 0 && exhaustionLevel <= 6),
+       assert(
+         divineInterventionRestsRemaining >= 0 &&
+             divineInterventionRestsRemaining <= 8,
+       ),
        legacyHitDiceSpent = hitDiceSpent;
 
   factory CharacterState.fromCharacter(Character character) {
@@ -195,6 +202,8 @@ class CharacterState {
       'maxHp': maxHp,
       'temporaryHp': temporaryHp,
       if (exhaustionLevel > 0) 'exhaustionLevel': exhaustionLevel,
+      if (divineInterventionRestsRemaining > 0)
+        'divineInterventionRestsRemaining': divineInterventionRestsRemaining,
       'fiendishResistance': ?fiendishResistance?.name,
       if (fiendishResilienceAvailable) 'fiendishResilienceAvailable': true,
       'dragonCompanionSpellId': ?dragonCompanionSpellId,
@@ -248,6 +257,8 @@ class CharacterState {
       maxHp: json['maxHp'] as int,
       temporaryHp: json['temporaryHp'] as int,
       exhaustionLevel: (json['exhaustionLevel'] as int? ?? 0).clamp(0, 6),
+      divineInterventionRestsRemaining:
+          (json['divineInterventionRestsRemaining'] as int? ?? 0).clamp(0, 8),
       fiendishResistance: IncomingDamageType.values
           .where(
             (type) =>
@@ -314,9 +325,13 @@ class CharacterState {
                   const <String, Object?>{})
               .cast<String, int>(),
       pinnedActionKeys: stringSet('pinnedActionKeys'),
-      resourceValues: (json['resourceValues'] as Map<String, Object?>).map(
-        (key, value) => MapEntry(key, value as int),
-      ),
+      resourceValues: {
+        ...(json['resourceValues'] as Map<String, Object?>).map(
+          (key, value) => MapEntry(key, value as int),
+        ),
+        if ((json['divineInterventionRestsRemaining'] as int? ?? 0) > 0)
+          divineInterventionResourceId: 0,
+      },
     );
   }
 
@@ -488,6 +503,7 @@ class CharacterState {
     int? maxHp,
     int? temporaryHp,
     int? exhaustionLevel,
+    int? divineInterventionRestsRemaining,
     String? wildShapeForm,
     int? wildShapeTurnsRemaining,
     bool clearWildShape = false,
@@ -520,6 +536,10 @@ class CharacterState {
     Set<String>? pinnedActionKeys,
     Map<String, int>? resourceValues,
   }) {
+    final interventionRests =
+        (divineInterventionRestsRemaining ??
+                this.divineInterventionRestsRemaining)
+            .clamp(0, 8);
     return CharacterState(
       fiendishResistance: clearFiendishResistance
           ? null
@@ -533,6 +553,7 @@ class CharacterState {
       maxHp: maxHp ?? this.maxHp,
       temporaryHp: temporaryHp ?? this.temporaryHp,
       exhaustionLevel: (exhaustionLevel ?? this.exhaustionLevel).clamp(0, 6),
+      divineInterventionRestsRemaining: interventionRests,
       wildShapeForm: clearWildShape
           ? null
           : wildShapeForm ?? this.wildShapeForm,
@@ -614,7 +635,10 @@ class CharacterState {
             entry.key: entry.value,
       },
       pinnedActionKeys: pinnedActionKeys ?? this.pinnedActionKeys,
-      resourceValues: resourceValues ?? this.resourceValues,
+      resourceValues: {
+        ...(resourceValues ?? this.resourceValues),
+        if (interventionRests > 0) divineInterventionResourceId: 0,
+      },
     );
   }
 }

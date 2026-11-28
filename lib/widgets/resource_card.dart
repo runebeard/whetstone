@@ -5,6 +5,7 @@ import '../models/character_resource.dart';
 class ResourceCard extends StatelessWidget {
   final CharacterResource resource;
   final int currentValue;
+  final String? rechargeLabel;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
@@ -12,6 +13,7 @@ class ResourceCard extends StatelessWidget {
     super.key,
     required this.resource,
     required this.currentValue,
+    this.rechargeLabel,
     required this.onTap,
     required this.onLongPress,
   });
@@ -22,7 +24,7 @@ class ResourceCard extends StatelessWidget {
       button: true,
       label:
           '${resource.name}, $currentValue of ${resource.maximum} remaining, '
-          '${resource.rechargePeriod.label}. Tap to use. Long press to '
+          '${rechargeLabel ?? resource.rechargePeriod.label}. Tap to use. Long press to '
           'adjust.',
       child: Card(
         key: ValueKey('resource-${resource.id}-$currentValue'),
@@ -86,7 +88,7 @@ class ResourceCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  resource.rechargePeriod.label,
+                  rechargeLabel ?? resource.rechargePeriod.label,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     height: 1,
                     fontSize: 9,

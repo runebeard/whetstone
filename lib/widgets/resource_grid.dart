@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/character.dart';
+import '../models/built_in_class.dart';
 import '../models/character_resource.dart';
 import '../models/character_state.dart';
 import 'resource_card.dart';
@@ -39,6 +40,11 @@ class ResourceGrid extends StatelessWidget {
         return ResourceCard(
           resource: resource,
           currentValue: currentValue,
+          rechargeLabel:
+              resource.id == divineInterventionResourceId &&
+                  characterState.divineInterventionRestsRemaining > 0
+              ? '${characterState.divineInterventionRestsRemaining} Long Rests remaining'
+              : null,
           onTap: () => onResourceSpend(resource),
           onLongPress: () => onResourceManage(resource),
         );

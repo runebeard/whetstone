@@ -105,6 +105,15 @@ class ProfileModeView extends StatelessWidget {
                 subtitle: Text(character.blessedStrikes!.guidance),
               ),
             ),
+          if (characterState.divineInterventionRestsRemaining > 0)
+            Card(
+              child: ListTile(
+                title: const Text('Greater Divine Intervention · Cooldown'),
+                subtitle: Text(
+                  '${characterState.divineInterventionRestsRemaining} Long Rests until Divine Intervention returns. Short Rests do not reduce this Wish cooldown.',
+                ),
+              ),
+            ),
           Card(
             child: ListTile(
               title: const Text('Proficiency Bonus'),

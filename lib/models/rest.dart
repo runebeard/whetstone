@@ -179,6 +179,14 @@ class RestPlan {
       );
     }
     final changes = <String>[];
+    final interventionRests = type == RestType.longRest
+        ? (currentState.divineInterventionRestsRemaining - 1).clamp(0, 8)
+        : currentState.divineInterventionRestsRemaining;
+    if (interventionRests != currentState.divineInterventionRestsRemaining) {
+      changes.add(
+        'Divine Intervention: $interventionRests Long Rests remaining',
+      );
+    }
     final exhaustion = type == RestType.longRest
         ? (currentState.exhaustionLevel - 1).clamp(0, 6)
         : currentState.exhaustionLevel;
@@ -209,6 +217,11 @@ class RestPlan {
     if (ended.isNotEmpty) changes.add('Ended ${ended.join(', ')}');
 
     for (final resource in character.resources) {
+      if (resource.id == divineInterventionResourceId &&
+          interventionRests > 0) {
+        resourceValues[resource.id] = 0;
+        continue;
+      }
       final currentValue = resourceValues[resource.id] ?? resource.initialValue;
       final int recovered;
       if (_recovers(resource.rechargePeriod, type)) {
@@ -296,6 +309,7 @@ class RestPlan {
       type: type,
       updatedState: currentState.endDragonCompanion().copyWith(
         exhaustionLevel: exhaustion,
+        divineInterventionRestsRemaining: interventionRests,
         fiendishResilienceAvailable: character.hasFiendishResilience,
         clearFiendishResistance: !character.hasFiendishResilience,
         memorizeSpellAvailable:

@@ -3247,10 +3247,15 @@ class _CharacterOverviewState extends State<CharacterOverview>
     }
   }
 
-  int remainingUses(CharacterResource resource) =>
-      resource.id == circleFreeCast.id
-      ? (characterState.naturalRecoveryCastUsed ? 0 : 1)
-      : characterState.resourceValues[resource.id] ?? resource.initialValue;
+  int remainingUses(CharacterResource resource) {
+    if (resource.id == divineInterventionResourceId &&
+        characterState.divineInterventionRestsRemaining > 0) {
+      return 0;
+    }
+    return resource.id == circleFreeCast.id
+        ? (characterState.naturalRecoveryCastUsed ? 0 : 1)
+        : characterState.resourceValues[resource.id] ?? resource.initialValue;
+  }
 
   Future<(int, String)?> chooseTrackedSlot(Spell spell) => chooseAvailableSlot(
     spell.level,
@@ -6932,7 +6937,12 @@ class _CharacterOverviewState extends State<CharacterOverview>
       HapticFeedback.heavyImpact();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('No ${resource.name} remaining'),
+          content: Text(
+            resource.id == divineInterventionResourceId &&
+                    characterState.divineInterventionRestsRemaining > 0
+                ? 'Divine Intervention requires ${characterState.divineInterventionRestsRemaining} more Long Rests after Wish.'
+                : 'No ${resource.name} remaining',
+          ),
           duration: const Duration(seconds: 1),
         ),
       );
@@ -7387,18 +7397,22 @@ class _CharacterOverviewState extends State<CharacterOverview>
   }
 
   bool supportsDivineInterventionSpell(Spell spell) =>
-      spell.level >= 0 &&
-      spell.level <= 5 &&
       !(spell.castingTime?.toLowerCase().contains('reaction') ?? false) &&
-      (spell.isLifeDomainGrant ||
-          (spell.isCantrip &&
-              spell.castingAbility == Ability.wisdom &&
-              character.clericCantripIds.contains(spell.id)) ||
-          spell.id == 'whetstone:intervention-manual');
+      ((character.levelInClass('Cleric') >= 20 &&
+              spell.id == 'whetstone:intervention-wish' &&
+              spell.level == 9) ||
+          (spell.level >= 0 &&
+              spell.level <= 5 &&
+              (spell.isLifeDomainGrant ||
+                  (spell.isCantrip &&
+                      spell.castingAbility == Ability.wisdom &&
+                      character.clericCantripIds.contains(spell.id)) ||
+                  spell.id == 'whetstone:intervention-manual')));
 
   Future<void> useDivineIntervention() async {
     if (!canUseDivineIntervention) return;
     var manualConcentration = false;
+    var wishNotes = '';
     var spell = await showDialog<Spell>(
       context: context,
       builder: (context) => SimpleDialog(
@@ -7419,6 +7433,22 @@ class _CharacterOverviewState extends State<CharacterOverview>
             SimpleDialogOption(
               onPressed: () => Navigator.pop(context, spell),
               child: Text('Cast ${spell.name}'),
+            ),
+          if (character.levelInClass('Cleric') >= 20)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(
+                context,
+                const Spell(
+                  id: 'whetstone:intervention-wish',
+                  name: 'Wish',
+                  level: 9,
+                  prepared: false,
+                  castingTime: 'Action',
+                  castingAbility: Ability.wisdom,
+                  summary: 'Resolve Wish effects at the table.',
+                ),
+              ),
+              child: const Text('Wish · Greater Divine Intervention'),
             ),
           SimpleDialogOption(
             onPressed: () => Navigator.pop(
@@ -7441,6 +7471,55 @@ class _CharacterOverviewState extends State<CharacterOverview>
       ),
     );
     if (!mounted || spell == null || !canUseDivineIntervention) return;
+    if (spell.id == 'whetstone:intervention-wish') {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Greater Divine Intervention · Wish'),
+            scrollable: true,
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Resolve the chosen Wish effect, its limits and any stress at the table. '
+                  'This casting uses a Magic action, no spell slot and no Material components. '
+                  'After casting, roll 2d4: Divine Intervention cannot be used again until that many Long Rests are completed.',
+                ),
+                TextField(
+                  decoration: const InputDecoration(
+                    labelText: 'Wish effect or notes (optional)',
+                  ),
+                  onChanged: (v) => wishNotes = v.trim(),
+                ),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Chosen effect requires Concentration'),
+                  value: manualConcentration,
+                  onChanged: (v) =>
+                      setDialogState(() => manualConcentration = v ?? false),
+                ),
+                if (manualConcentration)
+                  const Text(
+                    'End current tracked concentration when cast; track the new effect at the table.',
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Cast Wish'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (!mounted || confirmed != true || !canUseDivineIntervention) return;
+    }
     if (spell.id == 'whetstone:intervention-manual') {
       var name = '';
       var notes = '';
@@ -7537,6 +7616,18 @@ class _CharacterOverviewState extends State<CharacterOverview>
       interveningSpellId = null;
     }
     if (mounted && remainingUses(pool) < before) {
+      var recovery = 'Recover on Long Rest.';
+      if (spell.id == 'whetstone:intervention-wish') {
+        final first = diceRoller.rollDie(4);
+        final second = diceRoller.rollDie(4);
+        updateCharacterState(
+          characterState.copyWith(
+            divineInterventionRestsRemaining: first + second,
+          ),
+        );
+        recovery =
+            'Wish cooldown: 2d4 ($first + $second) = ${first + second} completed Long Rests. Short Rests do not reduce it.';
+      }
       if (manualConcentration) {
         updateCharacterState(characterState.copyWith(clearConcentration: true));
       }
@@ -7544,8 +7635,9 @@ class _CharacterOverviewState extends State<CharacterOverview>
         SessionEventType.combat,
         'Divine Intervention · ${spell.name}',
         detail:
-            'One use spent; recover on Long Rest. Cast as a Magic action without a spell slot or Material components. '
+            'One use spent. $recovery Cast as a Magic action without a spell slot or Material components. '
             '${spell.id == 'whetstone:intervention-manual' ? spell.summary : 'Other spell requirements and effects still apply.'}'
+            '${wishNotes.isEmpty ? '' : ' Wish: $wishNotes.'}'
             '${manualConcentration ? ' Previous tracked concentration ended; track this spell’s concentration at the table.' : ''}',
       );
     }
