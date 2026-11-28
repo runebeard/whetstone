@@ -2920,15 +2920,21 @@ void main() {
               .text,
         ),
     ];
+    await tester.ensureVisible(find.text('Use Standard Array'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Use Standard Array'));
     await tester.pumpAndSettle();
     expect(scores(), [15, 14, 13, 12, 10, 8]);
+    await tester.ensureVisible(find.byTooltip('Swap Strength score'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Swap Strength score'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Dexterity (14)'));
     await tester.pumpAndSettle();
     expect(scores(), [14, 15, 13, 12, 10, 8]);
 
+    await tester.ensureVisible(find.text('Point Buy'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Point Buy'));
     await tester.pumpAndSettle();
     for (var i = 0; i < 7; i++) {
@@ -2947,6 +2953,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(scores(), [15, 8, 8, 8, 8, 8]);
 
+    await tester.ensureVisible(find.text('Roll Ability Scores'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Roll Ability Scores'));
     await tester.pumpAndSettle();
     expect(scores(), everyElement(inInclusiveRange(3, 18)));
@@ -4956,10 +4964,18 @@ void main() {
       expect(chip.selected, isTrue);
       expect(chip.onSelected, isNull);
     }
+    await tester.tap(find.text('Back'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Back'));
+    await tester.pumpAndSettle();
     final maxHp = tester.widget<TextFormField>(
       find.byKey(const ValueKey('maximum-hp'), skipOffstage: false),
     );
     expect(maxHp.controller!.text, '13');
+    await tester.tap(find.byKey(const ValueKey('creator-continue-0')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('creator-continue-1')));
+    await tester.pumpAndSettle();
     expect(find.widgetWithText(CheckboxListTile, 'Arcana'), findsNothing);
     final athletics = find.widgetWithText(CheckboxListTile, 'Athletics');
     final history = find.widgetWithText(CheckboxListTile, 'History');
@@ -5339,6 +5355,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('creator-continue-2')));
     await tester.pumpAndSettle();
     expect(find.text('Longsword'), findsOneWidget);
+    await tester.ensureVisible(find.byTooltip('Edit Longsword'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Edit Longsword'));
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -5356,6 +5374,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Sacred Flame'), findsOneWidget);
     expect(find.text('Shield'), findsOneWidget);
+    await tester.ensureVisible(find.byTooltip('Edit Sacred Flame'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Edit Sacred Flame'));
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -5372,6 +5392,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('creator-continue-4')));
     await tester.pumpAndSettle();
     expect(find.text('Channel Divinity'), findsOneWidget);
+    await tester.ensureVisible(find.byTooltip('Edit Channel Divinity'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Edit Channel Divinity'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const ValueKey('resource-maximum')), '3');
@@ -5384,6 +5406,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('creator-continue-5')));
     await tester.pumpAndSettle();
     expect(find.text('Potion of Healing'), findsOneWidget);
+    await tester.ensureVisible(find.byTooltip('Edit Potion of Healing'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Edit Potion of Healing'));
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -5399,6 +5423,8 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('creator-continue-6')));
     await tester.pumpAndSettle();
     expect(find.text('Second Wind'), findsOneWidget);
+    await tester.ensureVisible(find.byTooltip('Edit Second Wind'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Edit Second Wind'));
     await tester.pumpAndSettle();
     await tester.enterText(

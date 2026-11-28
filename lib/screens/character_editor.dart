@@ -153,6 +153,7 @@ class _CharacterEditorState extends State<CharacterEditor> {
   }
 
   void goToStep(int step) {
+    FocusScope.of(context).unfocus();
     setState(() => currentStep = step);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted || currentStep != step || !stepScrollController.hasClients) {
