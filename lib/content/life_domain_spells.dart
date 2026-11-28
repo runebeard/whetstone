@@ -44,7 +44,7 @@ Spell _lifeSpell(String key, int level) {
       'Touch',
       'Instantaneous',
       'V, S',
-      'End one Blinded, Deafened, Paralyzed or Poisoned condition on the touched target; apply at the table.',
+      'End one Blinded, Deafened, Paralyzed or Poisoned condition. Choose the target when casting; other creatures apply removal at the table.',
     ),
     'mass healing word' => (
       'Mass Healing Word',

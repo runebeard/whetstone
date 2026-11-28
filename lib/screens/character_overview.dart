@@ -3277,7 +3277,7 @@ class _CharacterOverviewState extends State<CharacterOverview>
           const Padding(
             padding: EdgeInsets.all(16),
             child: Text(
-              'Confirm targets are within this casting’s range and eligible to regain HP. '
+              'Confirm this casting’s range, area, target eligibility and ability to regain HP. '
               'Other injured targets and their actual HP changes are confirmed at the table. '
               'Healing resolves once when this casting completes.',
             ),
@@ -3377,6 +3377,65 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
+  Future<(bool, String)?> chooseLifeRestorationTarget() async {
+    const conditions = ['Blinded', 'Deafened', 'Paralyzed', 'Poisoned'];
+    final selfConditions = conditions
+        .where(characterState.activeConditions.contains)
+        .toList();
+    final self = await showDialog<bool>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Lesser Restoration · Target'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'Confirm the target is eligible, within this casting’s range and has the condition you choose. '
+              'End exactly one condition. Other creatures apply removal at the table.',
+            ),
+          ),
+          if (selfConditions.isNotEmpty)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Treat yourself'),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Treat another creature'),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || self == null) return null;
+    final eligible = self ? selfConditions : conditions;
+    final condition = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Lesser Restoration · Condition'),
+        children: [
+          for (final condition in eligible)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, condition),
+              child: Text('End $condition'),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || condition == null) return null;
+    if (self && !characterState.activeConditions.contains(condition)) {
+      return null;
+    }
+    return (self, condition);
+  }
+
   Future<void> castSpell(
     Spell spell, {
     bool asRitual = false,
@@ -3400,7 +3459,22 @@ class _CharacterOverviewState extends State<CharacterOverview>
     (bool, int)? lifeHealingTargets;
     if (scrollName == null && supportsLifeHealing(spell)) {
       lifeHealingTargets = await chooseLifeHealingTargets(spell);
-      if (!mounted || lifeHealingTargets == null || !canSpendSpellAction(spell)) {
+      if (!mounted ||
+          lifeHealingTargets == null ||
+          !canSpendSpellAction(spell)) {
+        return;
+      }
+    }
+    (bool, String)? lifeRestorationTarget;
+    if (scrollName == null &&
+        spell.isLifeDomainGrant &&
+        spell.name == 'Lesser Restoration' &&
+        character.subclasses['Cleric'] == 'Life Domain' &&
+        character.levelInClass('Cleric') >= 3) {
+      lifeRestorationTarget = await chooseLifeRestorationTarget();
+      if (!mounted ||
+          lifeRestorationTarget == null ||
+          !canSpendSpellAction(spell)) {
         return;
       }
     }
@@ -3540,6 +3614,29 @@ class _CharacterOverviewState extends State<CharacterOverview>
         startSpellConcentration(spell, slotLevel: slotLevel);
       }
       trackSpellAction(spell);
+      if (lifeRestorationTarget != null) {
+        final (self, condition) = lifeRestorationTarget;
+        if (self) {
+          updateCharacterState(
+            characterState.copyWith(
+              activeConditions: {...characterState.activeConditions}
+                ..remove(condition),
+              conditionTurns: {...characterState.conditionTurns}
+                ..remove(condition),
+            ),
+          );
+        }
+        recordSessionEvent(
+          SessionEventType.combat,
+          self
+              ? 'Lesser Restoration · $condition ended'
+              : 'Lesser Restoration · Other target',
+          detail: self
+              ? 'Removed $condition from you; other conditions, HP and concentration are unchanged.'
+              : 'End $condition on the confirmed other target at the table. Your conditions and HP are unchanged.',
+        );
+        return;
+      }
       if (lifeHealingTargets != null) {
         applyLifeSpellHealing(spell, lifeHealingTargets, slotLevel);
         return;

@@ -176,11 +176,19 @@ void main() {
         await tester.pumpAndSettle();
         await helpers.tap(tester, find.text(name).first);
         await helpers.tap(tester, find.text('Cast').last);
+        if (name == 'Lesser Restoration') {
+          await helpers.tap(tester, find.text('Treat another creature'));
+          await helpers.tap(tester, find.text('End Poisoned'));
+        }
         await tester.binding.handlePopRoute();
         await tester.pumpAndSettle();
         expect(session.usedCombatActions, isEmpty);
         await helpers.tap(tester, find.text(name).first);
         await helpers.tap(tester, find.text('Cast').last);
+        if (name == 'Lesser Restoration') {
+          await helpers.tap(tester, find.text('Treat another creature'));
+          await helpers.tap(tester, find.text('End Poisoned'));
+        }
         await helpers.tap(
           tester,
           find.text('Level $level · $available remaining'),
