@@ -6894,6 +6894,8 @@ class _CharacterOverviewState extends State<CharacterOverview>
             ('necrotic', 'Divine Spark · Necrotic damage'),
             ('turn', 'Turn Undead'),
             if (level >= 5) ('sear', 'Turn Undead + Sear Undead'),
+            if (level >= 3 && character.subclasses['Cleric'] == 'Life Domain')
+              ('preserve', 'Preserve Life'),
           ])
             SimpleDialogOption(
               onPressed: () => Navigator.pop(context, value),
@@ -6907,6 +6909,10 @@ class _CharacterOverviewState extends State<CharacterOverview>
       ),
     );
     if (!mounted || choice == null || !canUse()) return;
+    if (choice == 'preserve') {
+      await usePreserveLife(resource);
+      return;
+    }
     bool? successfulSave;
     final turning = choice == 'turn' || choice == 'sear';
     if (turning || choice != 'heal') {
@@ -7006,6 +7012,127 @@ class _CharacterOverviewState extends State<CharacterOverview>
                           ? 'Successful save; damage halved'
                           : 'Failed save'}. $type damage.'} '
                 'One Cleric Channel Divinity use spent.',
+    );
+  }
+
+  Future<void> usePreserveLife(CharacterResource resource) async {
+    final level = character.levelInClass('Cleric');
+    final budget = 5 * level;
+    bool canUse() =>
+        level >= 3 &&
+        character.subclasses['Cleric'] == 'Life Domain' &&
+        characterState.canConcentrate &&
+        remainingUses(resource) > 0 &&
+        (currentMode != CharacterMode.combat ||
+            !usedCombatActions.contains(CombatActionCost.action));
+    int selfLimit() =>
+        (characterState.maxHp ~/ 2 - characterState.currentHp).clamp(0, budget);
+    if (!canUse()) return;
+    var selfText = '0';
+    var otherText = '0';
+    var confirmedOthers = false;
+    final allocation = await showDialog<(int, int)>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) {
+          final self = int.tryParse(selfText.trim());
+          final others = int.tryParse(otherText.trim());
+          final valid =
+              self != null &&
+              others != null &&
+              self >= 0 &&
+              self <= selfLimit() &&
+              others >= 0 &&
+              self + others > 0 &&
+              self + others <= budget &&
+              (others == 0 || confirmedOthers);
+          return AlertDialog(
+            title: const Text('Preserve Life · Allocate healing'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Present your Holy Symbol. Share up to $budget HP among Bloodied creatures within 30 feet, including yourself. '
+                    'Each creature can recover only up to half its maximum HP. You can currently regain up to ${selfLimit()} HP. '
+                    'Unused healing is lost; one Channel Divinity use and your Magic Action are spent.',
+                  ),
+                  TextFormField(
+                    key: const ValueKey('preserve-life-self'),
+                    initialValue: '0',
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'HP for yourself',
+                    ),
+                    onChanged: (value) => update(() => selfText = value),
+                  ),
+                  TextFormField(
+                    key: const ValueKey('preserve-life-others'),
+                    initialValue: '0',
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Total HP for others',
+                    ),
+                    onChanged: (value) => update(() => otherText = value),
+                  ),
+                  if ((others ?? 0) > 0)
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'I confirmed other targets are Bloodied, within 30 feet, and will remain at or below half maximum HP.',
+                      ),
+                      value: confirmedOthers,
+                      onChanged: (value) =>
+                          update(() => confirmedOthers = value ?? false),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: valid
+                      ? () => Navigator.pop(context, (self, others))
+                    : null,
+                child: const Text('Use Preserve Life'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (!mounted || allocation == null || !canUse()) return;
+    final (self, others) = allocation;
+    if (self < 0 ||
+        self > selfLimit() ||
+        others < 0 ||
+        self + others <= 0 ||
+        self + others > budget ||
+        (others > 0 && !confirmedOthers)) {
+      return;
+    }
+    if (currentMode == CharacterMode.combat) {
+      usedCombatActions.add(CombatActionCost.action);
+    }
+    updateCharacterState(
+      characterState.copyWith(
+        currentHp: characterState.currentHp + self,
+        resourceValues: {
+          ...characterState.resourceValues,
+          resource.id: remainingUses(resource) - 1,
+        },
+      ),
+    );
+    recordSessionEvent(
+      SessionEventType.combat,
+      'Preserve Life · ${self + others} HP',
+      detail:
+          '$self HP restored to you; apply $others HP among the confirmed other targets at the table. '
+          '${budget - self - others} unused healing lost. No target may exceed half maximum HP. '
+          'One Cleric Channel Divinity use spent.',
     );
   }
 
