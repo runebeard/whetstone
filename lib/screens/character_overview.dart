@@ -3385,24 +3385,33 @@ class _CharacterOverviewState extends State<CharacterOverview>
     );
   }
 
-  Future<(bool, String)?> chooseLifeRestorationTarget() async {
-    const conditions = ['Blinded', 'Deafened', 'Paralyzed', 'Poisoned'];
+  Future<(bool, String)?> chooseLifeRestorationTarget(Spell spell) async {
+    final greater = spell.name == 'Greater Restoration';
+    final conditions = greater
+        ? ['Charmed', 'Petrified']
+        : ['Blinded', 'Deafened', 'Paralyzed', 'Poisoned'];
+    const manualEffects = [
+      '1 Exhaustion level',
+      'One curse',
+      'One ability score reduction',
+      'One maximum HP reduction',
+    ];
     final selfConditions = conditions
         .where(characterState.activeConditions.contains)
         .toList();
     final self = await showDialog<bool>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: const Text('Lesser Restoration · Target'),
+        title: Text('${spell.name} · Target'),
         children: [
-          const Padding(
+          Padding(
             padding: EdgeInsets.all(16),
             child: Text(
-              'Confirm the target is eligible, within this casting’s range and has the condition you choose. '
-              'End exactly one condition. Other creatures apply removal at the table.',
+              'Confirm the target is eligible, within this casting’s range and has the ${greater ? 'effect' : 'condition'} you choose. '
+              'End exactly one ${greater ? 'effect' : 'condition'}. Other creatures apply removal at the table.',
             ),
           ),
-          if (selfConditions.isNotEmpty)
+          if (selfConditions.isNotEmpty || greater)
             SimpleDialogOption(
               onPressed: () => Navigator.pop(context, true),
               child: const Text('Treat yourself'),
@@ -3419,16 +3428,23 @@ class _CharacterOverviewState extends State<CharacterOverview>
       ),
     );
     if (!mounted || self == null) return null;
-    final eligible = self ? selfConditions : conditions;
+    final eligible = [
+      ...(self ? selfConditions : conditions),
+      if (greater) ...manualEffects,
+    ];
     final condition = await showDialog<String>(
       context: context,
       builder: (context) => SimpleDialog(
-        title: const Text('Lesser Restoration · Condition'),
+        title: Text('${spell.name} · ${greater ? 'Effect' : 'Condition'}'),
         children: [
           for (final condition in eligible)
             SimpleDialogOption(
               onPressed: () => Navigator.pop(context, condition),
-              child: Text('End $condition'),
+              child: Text(
+                manualEffects.contains(condition)
+                    ? '$condition · At the table'
+                    : 'End $condition',
+              ),
             ),
           SimpleDialogOption(
             onPressed: () => Navigator.pop(context),
@@ -3438,8 +3454,35 @@ class _CharacterOverviewState extends State<CharacterOverview>
       ),
     );
     if (!mounted || condition == null) return null;
-    if (self && !characterState.activeConditions.contains(condition)) {
+    if (self &&
+        !manualEffects.contains(condition) &&
+        !characterState.activeConditions.contains(condition)) {
       return null;
+    }
+    if (greater) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Greater Restoration · Components'),
+          content: Text(
+            'Confirm you have diamond dust worth at least 100 GP. '
+            'Consume it at the table when you complete this casting; inventory and coins are not changed automatically. '
+            'A free cast or Subtle Spell does not waive this component. '
+            '${manualEffects.contains(condition) ? 'Resolve $condition on the chosen target at the table; tracked scores and HP will stay unchanged.' : 'End only the chosen condition on the chosen target.'}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Confirm components'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || confirmed != true) return null;
     }
     return (self, condition);
   }
@@ -3476,10 +3519,11 @@ class _CharacterOverviewState extends State<CharacterOverview>
     (bool, String)? lifeRestorationTarget;
     if (scrollName == null &&
         spell.isLifeDomainGrant &&
-        spell.name == 'Lesser Restoration' &&
+        (spell.name == 'Lesser Restoration' ||
+            spell.name == 'Greater Restoration') &&
         character.subclasses['Cleric'] == 'Life Domain' &&
         character.levelInClass('Cleric') >= 3) {
-      lifeRestorationTarget = await chooseLifeRestorationTarget();
+      lifeRestorationTarget = await chooseLifeRestorationTarget(spell);
       if (!mounted ||
           lifeRestorationTarget == null ||
           !canSpendSpellAction(spell)) {
@@ -3679,7 +3723,15 @@ class _CharacterOverviewState extends State<CharacterOverview>
       }
       if (lifeRestorationTarget != null) {
         final (self, condition) = lifeRestorationTarget;
-        if (self) {
+        final trackedCondition = const {
+          'Blinded',
+          'Deafened',
+          'Paralyzed',
+          'Poisoned',
+          'Charmed',
+          'Petrified',
+        }.contains(condition);
+        if (self && trackedCondition) {
           updateCharacterState(
             characterState.copyWith(
               activeConditions: {...characterState.activeConditions}
@@ -3691,12 +3743,16 @@ class _CharacterOverviewState extends State<CharacterOverview>
         }
         recordSessionEvent(
           SessionEventType.combat,
-          self
-              ? 'Lesser Restoration · $condition ended'
-              : 'Lesser Restoration · Other target',
-          detail: self
-              ? 'Removed $condition from you; other conditions, HP and concentration are unchanged.'
-              : 'End $condition on the confirmed other target at the table. Your conditions and HP are unchanged.',
+          self && trackedCondition
+              ? '${spell.name} · $condition ended'
+              : '${spell.name} · ${self ? 'Yourself' : 'Other target'}',
+          detail:
+              (self && trackedCondition
+                  ? 'Removed $condition from you; other conditions, HP and concentration are unchanged.'
+                  : 'End $condition on the confirmed ${self ? 'self' : 'other'} target at the table. Your tracked conditions, scores and HP are unchanged.') +
+              (spell.name == 'Greater Restoration'
+                  ? ' Consume the confirmed diamond dust worth at least 100 GP at the table.'
+                  : ''),
         );
         return;
       }

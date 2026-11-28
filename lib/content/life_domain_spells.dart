@@ -79,7 +79,7 @@ Spell _lifeSpell(String key, int level) {
       'Touch',
       'Instantaneous',
       'V, S, M (diamond dust worth 100+ GP, consumed)',
-      'Remove one eligible debilitating effect. Confirm the effect and material use at the table.',
+      'End Charmed or Petrified, one Exhaustion level, a curse, one ability score reduction or one maximum HP reduction. Choose one effect and confirm consumed diamond dust when casting. Other creatures and numeric effects are resolved at the table.',
     ),
     'mass cure wounds' => (
       'Mass Cure Wounds',
