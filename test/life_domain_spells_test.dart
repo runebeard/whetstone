@@ -272,6 +272,57 @@ void main() {
   );
 
   testWidgets(
+    'Imported grant flags cannot turn Cure Wounds into a slot-free ritual',
+    (tester) async {
+      var character = withBuiltInSpellGrants(life(9));
+      character = Character.fromJson({
+        ...character.toJson(),
+        'spells': [
+          for (final raw
+              in (character.toJson()['spells'] as List)
+                  .cast<Map<String, Object?>>())
+            {
+              ...raw,
+              'ritual': true,
+              'repeatableEffect': true,
+              'additionalDicePerSlotLevel': 7,
+              'scaleCantripDamage': true,
+              'addCastingModifierToDamage': true,
+              'halfDamageOnSave': false,
+            },
+        ],
+      });
+      var session = CharacterSession.fromCharacter(character);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CharacterOverview(
+            character: character,
+            initialSession: session,
+            onCharacterChanged: (v) => character = v,
+            onSessionChanged: (v) => session = v,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        character.spells.every(
+          (s) =>
+              !s.ritual &&
+              !s.repeatableEffect &&
+              !s.scaleCantripDamage &&
+              s.additionalDicePerSlotLevel == 0 &&
+              !s.addCastingModifierToDamage,
+        ),
+        isTrue,
+      );
+      await helpers.tap(tester, find.text('Spellbook'));
+      await helpers.tap(tester, find.text('Cure Wounds'));
+      expect(find.text('Cast as Ritual'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'Losing Life Domain cleans live grant concentration/pins without refilling slots',
     (tester) async {
       var character = withBuiltInSpellGrants(life(9));

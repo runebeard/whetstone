@@ -312,6 +312,14 @@ class _CharacterOverviewState extends State<CharacterOverview>
                             spell.deriveAttackModifier &&
                         old.savingThrowAbility == spell.savingThrowAbility &&
                         old.rollEffectOnCast == spell.rollEffectOnCast &&
+                        old.ritual == spell.ritual &&
+                        old.repeatableEffect == spell.repeatableEffect &&
+                        old.scaleCantripDamage == spell.scaleCantripDamage &&
+                        old.additionalDicePerSlotLevel ==
+                            spell.additionalDicePerSlotLevel &&
+                        old.addCastingModifierToDamage ==
+                            spell.addCastingModifierToDamage &&
+                        old.halfDamageOnSave == spell.halfDamageOnSave &&
                         old.castingAbility == spell.castingAbility &&
                         old.concentration == spell.concentration &&
                         old.castingTime == spell.castingTime &&
